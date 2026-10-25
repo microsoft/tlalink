@@ -4,7 +4,10 @@ Read [README.md](README.md) for the human-facing, agent-first introduction,
 [REFERENCE.md](REFERENCE.md) for commands/setup/schema, and [DESIGN.md](DESIGN.md)
 for architecture and evidence boundaries before changing behavior. This is a
 C#/.NET 10 tool for TLA+, Dafny and P source/model evidence, not a bundled agent
-or hosted AI service.
+or hosted AI service. Design and document it around the C#/.NET toolchain:
+Roslyn source resolution, explicit C# compiler context, and build/execution
+evidence. Formal backends complement that focus; do not present the tool as
+language-agnostic or imply support for other implementation languages.
 
 Keep shared workflow/C# infrastructure in `Common`, P in `PLang`, SANY and
 TLA bindings in `Tla`, TLC execution/trace matching in `Tlc`, PlusCal-specific
@@ -54,7 +57,11 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
 - The root solution, public tests and examples must not depend on `local`.
   Private consumer work packages, copied sources, milestones and evidence belong
   under that Git-ignored directory. Follow each package's own instructions.
-  Never publish it or force-add it. Use the allowlisted source export script.
+  Never commit or publish anything from `local`, and never force-add it.
+  Never use its files or content as sample code, examples or documentation,
+  including copied, adapted, renamed or sanitized versions. Public samples and
+  documentation examples must be independently authored synthetic material,
+  not derived from private consumer work. Use the allowlisted source export script.
 - Tool distributions belong in the ignored root `.tools` cache. Public tests
   accept `TLALINK_TLA_JAR`, `TLALINK_DAFNY`, `TLALINK_P_COMPILER` and
   `TLALINK_APALACHE_JAR` overrides;

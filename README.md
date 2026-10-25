@@ -15,6 +15,10 @@ correct"** to **"here is the evidence, its scope and what remains unproven."**
 TlaLink is a local .NET 10 command-line tool for an agent to operate, not a
 hosted AI service or a bundled coding agent. It uses upstream TLA+, Dafny and P
 tools rather than replacing their parsers, model checkers or verifiers.
+It is designed specifically for the **C#/.NET toolchain**: Roslyn resolves your
+C# sources and bindings, and execution evidence records the compiler inputs
+and loaded .NET binary. TLA+, Dafny and P complement that implementation
+workflow; TlaLink is not a language-agnostic implementation verifier.
 TlaLink itself does not upload your code; your coding agent's data handling
 depends on its own configuration.
 

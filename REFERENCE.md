@@ -28,7 +28,11 @@ root-relative because this document lives beside the README.
 TlaLink is an agent-first .NET 10 CLI for reviewing C#/TLA+/Dafny/P
 correspondence, checking selected executions against TLA+, and comparing C#
 adapters with verified Dafny oracles. It is not a bundled agent or hosted AI
-service. All maintained public JSON documents use **schema 4** and a document
+service. Its implementation-facing integrations target the C#/.NET toolchain:
+Roslyn source resolution, explicit compiler context, compiled adapters and
+build/execution provenance. TLA+, Dafny and P are complementary formal backends,
+not support for arbitrary implementation languages.
+All maintained public JSON documents use **schema 4** and a document
 `kind`; older formats are explicitly rejected, not silently upgraded.
 
 - Roslyn supplies C# syntax, symbols, field accesses and capture validation.

@@ -24,6 +24,12 @@ run locally; the surrounding agent's data handling is outside this tool's
 guarantees. Trusted hosts, build projects and asserted reviewer identities
 remain trust boundaries, not authentication.
 
+The implementation-facing design targets the C#/.NET toolchain, not a
+language-neutral source abstraction. Roslyn supplies C# resolution and capture
+validation; compiler context, compiled adapters and loaded .NET binaries tie
+execution evidence to that implementation. TLA+, Dafny and P remain distinct
+formal backends supporting the C# workflow.
+
 ## Architecture
 
 Sources are physically grouped into `Common`, `PLang`, `Tla`, `Tlc`,
