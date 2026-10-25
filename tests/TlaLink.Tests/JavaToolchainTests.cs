@@ -35,8 +35,8 @@ public static class JavaToolchainTests
             {
                 Environment.CurrentDirectory = work;
                 CoreTests.Equal(java.Java, JavaToolchain.Resolve().Java);
-                CoreTests.Equal(Path.Combine(java.Home, @"bin\java.exe"), java.Java);
-                CoreTests.Equal(Path.Combine(java.Home, @"bin\javac.exe"), java.Javac);
+                CoreTests.Equal(Path.Combine(java.Home, "bin", FilePaths.ExecutableName("java")), java.Java);
+                CoreTests.Equal(Path.Combine(java.Home, "bin", FilePaths.ExecutableName("javac")), java.Javac);
                 foreach (var pin in java.Fingerprints) CoreTests.Equal(Files.Hash(pin.Key), pin.Value);
                 foreach (string executable in new[] { java.Java, java.Javac })
                 {
@@ -64,7 +64,7 @@ public static class JavaToolchainTests
             Directory.CreateDirectory(Path.Combine(relocated, "bin"));
             foreach (string path in java.Fingerprints.Keys)
                 File.Copy(path, Path.Combine(relocated, Path.GetRelativePath(java.Home, path)));
-            File.AppendAllText(Path.Combine(relocated, @"bin\java.exe"), "changed");
+            File.AppendAllText(Path.Combine(relocated, "bin", FilePaths.ExecutableName("java")), "changed");
             WithHome(relocated, () => CoreTests.Throws(() => JavaToolchain.Resolve()));
         });
     }

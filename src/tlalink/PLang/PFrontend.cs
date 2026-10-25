@@ -17,9 +17,9 @@ public static class PFrontend
             throw new InputException(ErrorCode.InvalidModelBinding, "P inventory profile must be pchecker or pverifier.");
         if (timeout is < 1 or > 2147483)
             throw new InputException(ErrorCode.InvalidModelBinding, "P inventory timeout must be 1..2147483 seconds.");
-        string home = Path.GetFullPath(compilerHome), directory = Path.GetFullPath(output);
-        List<string> roots = sources.Select(Path.GetFullPath).ToList();
-        if (roots.Count == 0 || roots.Distinct(StringComparer.OrdinalIgnoreCase).Count() != roots.Count ||
+        string home = FilePaths.Full(compilerHome), directory = FilePaths.Full(output);
+        List<string> roots = sources.Select(FilePaths.Full).ToList();
+        if (roots.Count == 0 || roots.Distinct(FilePaths.Comparer).Count() != roots.Count ||
             roots.Any(path => !File.Exists(path) || !Path.GetExtension(path).Equals(".p", StringComparison.OrdinalIgnoreCase)))
             throw new InputException(ErrorCode.InvalidModelBinding, "P inventory requires distinct explicit .p source files; .pproj discovery is not supported.");
         if (!File.Exists(Path.Combine(home, "CompilerCore.dll")))
@@ -28,7 +28,7 @@ public static class PFrontend
         foreach (string file in Directory.EnumerateFiles(home, "*", new EnumerationOptions
         {
             RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false
-        }).Concat(roots)) Files.Pin(pins, Path.GetFullPath(file), Files.Hash(file));
+        }).Concat(roots)) Files.Pin(pins, FilePaths.Full(file), Files.Hash(file));
         Build(home, directory, pins);
         string dotnet = PProcess.Executable("dotnet");
         Files.Pin(pins, dotnet, Files.Hash(dotnet));
@@ -46,8 +46,8 @@ public static class PFrontend
         Files.RequireSchema(document.RootElement, "p-source-index");
         List<PDeclaration> declarations = document.RootElement.GetProperty("declarations").Deserialize<List<PDeclaration>>(Files.Json)
             ?? throw new InputException(ErrorCode.ToolFailure, "P inventory did not return declarations.");
-        if (declarations.Any(item => !Path.IsPathFullyQualified(item.Path) ||
-            !roots.Contains(item.Path, StringComparer.OrdinalIgnoreCase) || item.Line < 1 || item.EndLine < item.Line ||
+        if (declarations.Any(item => !FilePaths.IsAbsolute(item.Path) ||
+            !roots.Contains(item.Path, FilePaths.Comparer) || item.Line < 1 || item.EndLine < item.Line ||
             string.IsNullOrWhiteSpace(item.Name)))
             throw new InputException(ErrorCode.ToolFailure, "P inventory returned invalid or out-of-scope declarations.");
         return declarations;
@@ -72,8 +72,8 @@ public static class PFrontend
             catch (BadImageFormatException) { }
         }
         foreach (string file in references.Values.Concat(new[] { typeof(CSharpCompilation).Assembly.Location,
-            typeof(Compilation).Assembly.Location, typeof(PFrontend).Assembly.Location }).Distinct(StringComparer.OrdinalIgnoreCase))
-            Files.Pin(pins, Path.GetFullPath(file), Files.Hash(file));
+            typeof(Compilation).Assembly.Location, typeof(PFrontend).Assembly.Location }).Distinct(FilePaths.Comparer))
+            Files.Pin(pins, FilePaths.Full(file), Files.Hash(file));
         CSharpCompilation compilation = CSharpCompilation.Create("TlaLink.PIndex",
             [CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.CSharp14), path: sourcePath)],
             references.Values.Select(file => MetadataReference.CreateFromFile(file)),
@@ -94,7 +94,7 @@ public static class PFrontend
     private static void CheckPins(Dictionary<string, string> pins)
     {
         foreach ((string file, string hash) in pins)
-            if (Path.IsPathFullyQualified(file) &&
+            if (FilePaths.IsAbsolute(file) &&
                 (!File.Exists(file) || !StringComparer.OrdinalIgnoreCase.Equals(Files.Hash(file), hash)))
                 throw new InputException(ErrorCode.ToolFailure, "Pinned input changed during P inventory: " + file);
     }

@@ -172,12 +172,18 @@ bridge creates fresh processes
 to isolate upstream static state and cleans its own temporary compiler outputs.
 SANY/PlusCal compilation and execution, TLC stages and trace matching share the
 repository's `java-toolchain.json` pin through `Common/JavaToolchain.cs`.
-Explicit setup verifies the Temurin JDK 25.0.4.1+1 Windows x64 archive and installs
-it in the ignored cache; analysis never installs Java or falls back to PATH.
+Explicit setup verifies the Temurin JDK 25.0.4.1+1 archive for Windows/Linux x64
+and installs it in the platform-specific ignored cache; analysis never installs
+Java or falls back to PATH.
 An absolute `TLALINK_JAVA_HOME` can relocate the same pinned distribution.
 Release/launcher hashes are checked at selection and included in evidence;
 this does not attest every installed runtime file. Native P manifests retain
 their separately explicit Java dependency pins.
+`Common/FilePaths.cs` normalizes either input separator into canonical absolute
+native paths. File identity is ordinal case-insensitive on Windows and ordinal
+on Linux. Foreign Windows drive/UNC roots are rejected for local resolution;
+historical absolute evidence keys remain recognizable for archive validation
+without pretending they are currently applicable on another host.
 JAR/adapter/tool binaries are pinned; local imports and standard-library contents
 remain fingerprinted. Imported annotations require explicit binding scope.
 PlusCal freshness regenerates the upstream translation in memory, never trusting

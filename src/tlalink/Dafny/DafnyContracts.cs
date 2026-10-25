@@ -41,8 +41,8 @@ public sealed class IntegratedPacket(string command)
     public List<DafnyDeclaration> Inventory { get; } = [];
     public List<Endpoint> SourceInventory { get; } = [];
     public List<CorrespondenceResult> Correspondences { get; } = [];
-    public Dictionary<string, string> Fingerprints { get; } = new(StringComparer.OrdinalIgnoreCase);
-    public Dictionary<string, string> GeneratedFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> Fingerprints { get; } = new(FilePaths.Comparer);
+    public Dictionary<string, string> GeneratedFiles { get; } = new(FilePaths.Comparer);
     public Dictionary<string, StageResult> Stages { get; } = [];
     public Packet? Tla { get; set; }
     public object? Execution { get; set; }
@@ -66,7 +66,7 @@ public static class IntegratedInputs
 
     public static IntegratedManifest Load(string path, Dictionary<string, string> pins)
     {
-        path = Path.GetFullPath(path);
+        path = FilePaths.Full(path);
         IntegratedManifest manifest = JsonSerializer.Deserialize<IntegratedManifest>(Files.ReadPinned(path, pins), Json)
             ?? throw new InputException(ErrorCode.InvalidIntegratedInput, "Missing integrated manifest.");
         if (manifest.SchemaVersion != Schema.Version || manifest.Kind != "integrated-bindings" ||
@@ -78,7 +78,7 @@ public static class IntegratedInputs
         if (manifest.Bindings.Sum(b => b.Cases.Count) > 1000 || manifest.Correspondences.Count > 1000)
             throw new InputException(ErrorCode.InvalidIntegratedInput, "Scope exceeds 1000 executable cases or correspondences.");
         string root = Path.GetDirectoryName(path)!;
-        List<string> Resolve(List<string> paths) => paths.Select(p => Path.GetFullPath(p, root)).ToList();
+        List<string> Resolve(List<string> paths) => paths.Select(p => FilePaths.Full(p, root)).ToList();
         HashSet<string> ids = new(StringComparer.Ordinal);
         foreach (DafnyBinding binding in manifest.Bindings)
         {
@@ -105,7 +105,7 @@ public static class IntegratedInputs
 
     public static void CheckPins(Dictionary<string, string> pins)
     {
-        foreach (var pair in pins.Where(p => Path.IsPathFullyQualified(p.Key)))
+        foreach (var pair in pins.Where(p => FilePaths.IsAbsolute(p.Key)))
             if (!File.Exists(pair.Key) || Files.Hash(pair.Key) != pair.Value)
                 throw new InputException(ErrorCode.IntegratedInputChanged, "Input changed during integrated run: " + pair.Key);
     }

@@ -8,7 +8,7 @@ public static class IntegratedReview
 {
     public static int Run(CliOptions options)
     {
-        string output = Path.GetFullPath(options.Required("output"));
+        string output = FilePaths.Full(options.Required("output"));
         if (Directory.Exists(output) || File.Exists(output))
             throw new InputException(ErrorCode.InvalidIntegratedInput, "Integrated runs require a new output directory.");
         Directory.CreateDirectory(output);
@@ -44,7 +44,7 @@ public static class IntegratedReview
             }
             if (manifest.Models.Count > 0)
             {
-                string jar = Path.GetFullPath(options.Required("jar"));
+                string jar = FilePaths.Full(options.Required("jar"));
                 ModelScope models = ModelScope.Load(manifest.Models, jar, options.Timeout);
                 Files.Pin(models.Fingerprints, jar, Files.Hash(jar));
                 string adapter = Path.Combine(AppContext.BaseDirectory, "TlaIndex.java");
@@ -136,11 +136,11 @@ public static class IntegratedReview
             !root.TryGetProperty("kind", out JsonElement kind) || kind.GetString() != "integrated-result" ||
             !root.TryGetProperty("fingerprints", out JsonElement previous) || previous.ValueKind != JsonValueKind.Object)
             throw new InputException(ErrorCode.IntegratedBaselineChanged, "Integrated baselines require a current integrated-result fingerprint object.");
-        Dictionary<string, string> pins = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string> pins = new(FilePaths.Comparer);
         foreach (JsonProperty pair in previous.EnumerateObject())
             if (pair.Value.ValueKind != JsonValueKind.String || !pins.TryAdd(pair.Name, pair.Value.GetString()!))
                 throw new InputException(ErrorCode.IntegratedBaselineChanged, "Baseline fingerprints must be unique strings.");
-        foreach (string key in pins.Keys.Union(packet.Fingerprints.Keys, StringComparer.OrdinalIgnoreCase))
+        foreach (string key in pins.Keys.Union(packet.Fingerprints.Keys, FilePaths.Comparer))
             if (pins.GetValueOrDefault(key) != packet.Fingerprints.GetValueOrDefault(key))
                 packet.Diagnostics.Add(new(ErrorCode.IntegratedBaselineChanged, "Changed/added/removed input; evidence requires reconsideration: " + key));
         if (pins.Count == 0) throw new InputException(ErrorCode.IntegratedBaselineChanged, "Empty baseline.");
@@ -151,7 +151,7 @@ public static class IntegratedReview
     {
         string archive = Path.Combine(output, "inputs");
         Directory.CreateDirectory(archive);
-        foreach (var pin in packet.Fingerprints.Concat(packet.GeneratedFiles).Where(p => Path.IsPathFullyQualified(p.Key)))
+        foreach (var pin in packet.Fingerprints.Concat(packet.GeneratedFiles).Where(p => FilePaths.IsAbsolute(p.Key)))
         {
             // Proof/source/tool inputs remain addressable even when the working tree changes.
             string destination = Path.Combine(archive, pin.Value);

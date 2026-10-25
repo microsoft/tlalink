@@ -9,7 +9,7 @@ public static class IntegratedTests
     {
         string dafny = TestTools.Dafny(root);
         string jar = TestTools.Jar(root);
-        string example = Path.Combine(root, @"examples\Integrated");
+        string example = Path.Combine(root, "examples", "Integrated");
         string NewDirectory(string name) => Directory.CreateDirectory(Path.Combine(work, "integrated-" + name)).FullName;
         IntegratedManifest Example(string directory, bool models = false)
         {
@@ -28,7 +28,7 @@ public static class IntegratedTests
             var result = TestCli.Run(args.ToArray());
             using JsonDocument document = JsonDocument.Parse(result.Json);
             JsonElement packet = document.RootElement.Clone();
-            CoreTests.True(File.Exists(Path.Combine(directory, @"result\result.json")));
+            CoreTests.True(File.Exists(Path.Combine(directory, "result", "result.json")));
             return (result.Code, packet);
         }
         void Status(JsonElement packet, string field, string expected) => CoreTests.Equal(expected, packet.GetProperty(field).GetString());
@@ -50,7 +50,7 @@ public static class IntegratedTests
             CoreTests.Equal(JsonValueKind.Object, packet.GetProperty("execution").GetProperty("references").ValueKind);
             foreach (var pin in packet.GetProperty("fingerprints").EnumerateObject().Where(p => Path.IsPathFullyQualified(p.Name)))
                 CoreTests.Equal(pin.Value.GetString(), Files.Hash(Path.Combine(directory, "result", "inputs", pin.Value.GetString()!)));
-            string result = Path.Combine(directory, @"result\result.json");
+            string result = Path.Combine(directory, "result", "result.json");
             CoreTests.Equal(0, TestCli.Run(["read-integrated", "--result", result, "--current", "true"]).Code);
             File.AppendAllText(Path.Combine(directory, "Decisions.cs"), "\n// changed after capture\n");
             var stale = TestCli.Run(["read-integrated", "--result", result, "--current", "true"]);
@@ -190,7 +190,7 @@ public static class IntegratedTests
             var (code, _) = Run(directory, manifest, "inspect-integrated");
             CoreTests.Equal(0, code);
             File.AppendAllText(Path.Combine(directory, "Decisions.dfy"), "\n// reviewed input changed\n");
-            string baseline = Path.Combine(directory, @"result\result.json");
+            string baseline = Path.Combine(directory, "result", "result.json");
             string second = Path.Combine(directory, "second.json"); Files.WriteNew(second, manifest);
             var result = TestCli.Run(["inspect-integrated", "--bindings", Path.Combine(directory, "bindings.json"),
                 "--dafny", dafny, "--output", Path.Combine(directory, "second-result"), "--baseline", baseline]);

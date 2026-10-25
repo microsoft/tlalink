@@ -26,8 +26,9 @@ dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj
   accept `TLALINK_TLA_JAR`, `TLALINK_DAFNY` and `TLALINK_P_COMPILER` overrides;
   `--core` runs without external backend tools. Tool lifecycle management is
   planned separately; do not imply automatic installation already exists.
-- Java selection uses the single `java-toolchain.json` pin: Temurin JDK 25
-  for Windows x64, provisioned explicitly with `scripts\Initialize-Java.ps1`.
+- Java selection uses the single `java-toolchain.json` version pin: Temurin JDK 25
+  with explicit Windows/Linux x64 distributions, provisioned with
+  `scripts\Initialize-Java.ps1` under PowerShell 7.
   SANY/PlusCal, TLC and their tests use `JavaToolchain`, never PATH or
   `JAVA_HOME`. `TLALINK_JAVA_HOME` may relocate only the same pinned JDK.
   Keep native P manifests' explicitly selected Java dependencies independent.
@@ -67,14 +68,19 @@ dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj
   parallel conventions, compatibility branches or competing normalization
   helpers; reuse one shared implementation. Keep upstream formats distinct
   only at explicit integration boundaries.
-- Filepaths use Windows backslash separators, including filesystem paths in
-  JSON; URIs are not filepaths. Resolve CLI-relative paths against the caller's
-  directory and document-relative paths against the declaring document's
-  directory. Internal file identities are normalized absolute paths, with dot
-  segments removed and no trailing separator except at a filesystem root.
-  Preserve spelling for display and use ordinal case-insensitive comparison
-  for Windows file identity; never lowercase paths or use culture-sensitive
-  comparison. Artifact paths are run-relative and must remain inside the run.
+- Filepaths accept either separator at input boundaries through `FilePaths`;
+  literal backslashes in Unix filenames are outside the supported input format.
+  Emit native separators in JSON paths; URIs are not filepaths. Resolve
+  CLI-relative paths against the caller's directory and document-relative paths
+  against the declaring document's directory. Internal identities are normalized
+  absolute native paths, with dot segments removed and no trailing separator
+  except at a filesystem root. Reject foreign drive/UNC roots instead of
+  reinterpreting them as local relative paths. Preserve spelling for display and
+  compare paths ordinal case-insensitively on Windows, ordinal on Linux; never
+  lowercase paths or use culture-sensitive comparison. Native frontend bridges
+  apply the host comparer at their isolated integration boundary. Assembly names,
+  hashes and stable IDs retain their separate comparison semantics.
+  Artifact paths are run-relative and must remain inside the run.
   Normalize at input boundaries and reuse canonical values internally, not
   independent per-component normalization rules. Do not treat lexical path
   normalization as proof that symlinks or hard links identify different files.
@@ -104,4 +110,5 @@ dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj
   profiles or consumer acceptance requirements. Intentional consumer-runner
   integration changes require focused runner validation.
 - On Windows `src\tlalink` and `src\TlaLink` alias each other. Treat them as one
-  source directory.
+  source directory. Maintained references must use the actual `src\tlalink`
+  spelling so Linux builds remain case-correct.

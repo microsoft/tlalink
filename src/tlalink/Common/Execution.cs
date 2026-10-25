@@ -17,8 +17,8 @@ public static class Execution
 {
     public static ExecutionReceipt Run(string manifestPath, string project, string trace, string output, int timeout, List<string> args)
     {
-        manifestPath = Path.GetFullPath(manifestPath); project = Path.GetFullPath(project);
-        trace = Path.GetFullPath(trace); output = Path.GetFullPath(output);
+        manifestPath = FilePaths.Full(manifestPath); project = FilePaths.Full(project);
+        trace = FilePaths.Full(trace); output = FilePaths.Full(output);
         if (Directory.Exists(output) || File.Exists(output) || File.Exists(trace))
             throw new InputException(ErrorCode.InvalidExecution, "Execution needs new output directory and trace path.");
         InstrumentManifest manifest = Instrumentation.ReadManifest(manifestPath);
@@ -82,7 +82,7 @@ public static class Execution
         ExecutionReceipt receipt = document.RootElement.Deserialize<ExecutionReceipt>(Files.Json)
             ?? throw new InputException(ErrorCode.InvalidExecution, "Invalid execution receipt.");
         if (receipt.ManifestSHA256 != Files.Hash(manifest) ||
-            !Path.GetFullPath(trace).Equals(receipt.TracePath, StringComparison.OrdinalIgnoreCase) || receipt.TraceSHA256 != Files.Hash(trace))
+            !FilePaths.Full(trace).Equals(receipt.TracePath, FilePaths.Comparison) || receipt.TraceSHA256 != Files.Hash(trace))
             throw new InputException(ErrorCode.InvalidExecution, "Receipt does not bind this manifest and trace.");
         InstrumentManifest instrument = Instrumentation.ReadManifest(manifest);
         CheckContext(instrument, receipt.CompilerContext);
@@ -91,7 +91,7 @@ public static class Execution
                 throw new InputException(ErrorCode.InvalidExecution, "Receipt is missing exact generated compile input.");
         foreach (var pair in receipt.CompileInputs.Concat(receipt.References)) Files.Pin(pins, pair.Key, pair.Value);
         Files.Pin(pins, receipt.Binary, receipt.BinarySHA256);
-        Files.Pin(pins, Path.GetFullPath(path), Files.Hash(path));
+        Files.Pin(pins, FilePaths.Full(path), Files.Hash(path));
         using JsonDocument captured = JsonDocument.Parse(Files.Read(trace));
         Files.RequireSchema(captured.RootElement, "trace");
         if (!captured.RootElement.GetProperty("binaries").TryGetProperty(receipt.Binary, out JsonElement loaded) ||
@@ -102,12 +102,12 @@ public static class Execution
     private static Dictionary<string, string> ReadHashes(string path)
     {
         if (!File.Exists(path)) throw new InputException(ErrorCode.InvalidExecution, "Build did not produce compiler evidence: " + path);
-        Dictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string> result = new(FilePaths.Comparer);
         foreach (string row in File.ReadAllLines(path))
         {
             string[] fields = row.Split('|');
             if (fields.Length != 2 || fields[1].Length != 64) throw new InputException(ErrorCode.InvalidExecution, "Malformed compiler evidence.");
-            Files.Pin(result, Path.GetFullPath(fields[0]), fields[1].ToLowerInvariant());
+            Files.Pin(result, FilePaths.Full(fields[0]), fields[1].ToLowerInvariant());
         }
 
         if (result.Count == 0) throw new InputException(ErrorCode.InvalidExecution, "Empty compiler evidence.");

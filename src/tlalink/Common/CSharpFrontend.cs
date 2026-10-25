@@ -21,8 +21,8 @@ public sealed class CSharpScope
     public List<SourceBinding> Bindings { get; } = [];
     public List<Issue> Diagnostics { get; } = [];
     public List<Access> Accesses { get; } = [];
-    public Dictionary<string, string> Fingerprints { get; } = new(StringComparer.OrdinalIgnoreCase);
-    public Dictionary<string, string> Texts { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> Fingerprints { get; } = new(FilePaths.Comparer);
+    public Dictionary<string, string> Texts { get; } = new(FilePaths.Comparer);
 
     public static CSharpScope Parse(List<string> paths, IEnumerable<string>? references = null, IEnumerable<string>? defines = null)
     {
@@ -33,12 +33,12 @@ public sealed class CSharpScope
         if (symbols.Any(s => !SyntaxFacts.IsValidIdentifier(s) || s is "true" or "false"))
             throw new InputException("Invalid C# preprocessor symbol; supply individual identifier values.");
         CSharpParseOptions parse = new(LanguageVersion.CSharp14, preprocessorSymbols: symbols);
-        Dictionary<string, string> sourcePins = new(StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, string> texts = paths.ToDictionary(p => p, p => Files.ReadPinned(p, sourcePins), StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string> sourcePins = new(FilePaths.Comparer);
+        Dictionary<string, string> texts = paths.ToDictionary(p => p, p => Files.ReadPinned(p, sourcePins), FilePaths.Comparer);
         List<SyntaxTree> trees = paths.Select(p => CSharpSyntaxTree.ParseText(SourceText.From(texts[p]), parse, p)).Cast<SyntaxTree>().ToList();
         string[] framework = ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
             ?? throw new InputException("Cannot establish .NET framework references.")).Split(Path.PathSeparator);
-        string[] referencePaths = framework.Concat(references ?? []).Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        string[] referencePaths = framework.Concat(references ?? []).Select(FilePaths.Full).Distinct(FilePaths.Comparer).ToArray();
         CSharpCompilation compilation = CSharpCompilation.Create("TlaLink.ExplicitScope", trees,
             referencePaths.Select(p => MetadataReference.CreateFromFile(p)),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true,

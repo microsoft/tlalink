@@ -7,6 +7,30 @@ public static class CoreTests
 {
     public static void Register(Action<string, Action> test, string work)
     {
+        test("path inputs normalize either separator and remove dot segments and trailing separators", () =>
+        {
+            Equal(Path.Combine(work, "target"), FilePaths.Full(@"child\..\target\", work));
+            Equal(Path.Combine(work, "target"), FilePaths.Full("child/../target/", work));
+        });
+        test("file identity follows host case sensitivity without rewriting spelling", () =>
+        {
+            Equal(OperatingSystem.IsWindows(), FilePaths.Comparer.Equals("Case.cs", "case.cs"));
+            Equal(Path.Combine(work, "Case.cs"), FilePaths.Full("Case.cs", work));
+            string upper = Path.Combine(work, "Case.cs"), lower = Path.Combine(work, "case.cs");
+            File.WriteAllText(upper, "class Upper {}");
+            File.WriteAllText(lower, "class Lower {}");
+            Equal(OperatingSystem.IsWindows() ? 1 : 2, Files.Discover([upper, lower], ".cs").Count);
+        });
+        test("foreign absolute evidence paths remain identifiable without local reinterpretation", () =>
+        {
+            True(FilePaths.IsAbsolute(@"C:\evidence\input.cs"));
+            True(FilePaths.IsAbsolute(@"\\server\share\input.cs"));
+            if (!OperatingSystem.IsWindows())
+            {
+                Throws(() => FilePaths.Full(@"C:\evidence\input.cs"));
+                Throws(() => FilePaths.Full(@"\\server\share\input.cs"));
+            }
+        });
         foreach (string text in new[] {
             "@tla 1 model A;", "@tla 3 model A;", "@tla 2 model A",
             "@tla 2 state A typo=B;", "@tla 2 step A point=commit point=complete;",

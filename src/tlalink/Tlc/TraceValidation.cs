@@ -16,13 +16,13 @@ public static class TraceValidation
         if (!Regex.IsMatch(init, @"^[A-Za-z_]\w*$") || !Regex.IsMatch(next, @"^[A-Za-z_]\w*$"))
             throw new InputException(ErrorCode.InvalidTrace, "Init/next must name model operators.");
         InstrumentManifest manifest = Instrumentation.ReadManifest(manifestPath);
-        Dictionary<string, string> pins = new(manifest.Fingerprints, StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string> pins = new(manifest.Fingerprints, FilePaths.Comparer);
         JavaInstallation java = JavaToolchain.Resolve();
         foreach (var pin in java.Fingerprints) Files.Pin(pins, pin.Key, pin.Value);
         foreach (var pair in modelPins) Files.Pin(pins, pair.Key, pair.Value);
         foreach (var pair in manifest.GeneratedFiles) Files.Pin(pins, pair.Key, pair.Value);
         foreach (string path in new[] { manifestPath, tracePath, configPath, modelPath, jar })
-            Files.Pin(pins, Path.GetFullPath(path), Files.Hash(path));
+            Files.Pin(pins, FilePaths.Full(path), Files.Hash(path));
         Execution.Validate(execution, manifestPath, tracePath, pins);
         CheckPins(pins);
         using JsonDocument trace = JsonDocument.Parse(File.ReadAllText(tracePath));
@@ -177,7 +177,7 @@ public static class TraceValidation
             lines.Add(trimmed);
         }
         lines.AddRange(["SPECIFICATION TLSpec", "INVARIANT TLNotMatched", "CHECK_DEADLOCK FALSE"]);
-        output = Path.GetFullPath(output);
+        output = FilePaths.Full(output);
         if (Directory.Exists(output) || File.Exists(output)) throw new InputException(ErrorCode.InvalidTrace, "Trace output must be a new directory.");
         Directory.CreateDirectory(output);
         Dictionary<string, string> archived = [];
@@ -198,7 +198,7 @@ public static class TraceValidation
         }
         File.WriteAllText(Path.Combine(output, "TlaLinkTraceCheck.tla"), code, new UTF8Encoding(false));
         File.WriteAllLines(Path.Combine(output, "trace.cfg"), lines);
-        string[] arguments = ["-XX:+UseParallelGC", "-Xmx1g", "-cp", Path.Combine(closure, archived[Path.GetFullPath(jar)]), "tlc2.TLC",
+        string[] arguments = ["-XX:+UseParallelGC", "-Xmx1g", "-cp", Path.Combine(closure, archived[FilePaths.Full(jar)]), "tlc2.TLC",
             "-workers", "1", "-seed", "42", "-fp", "0", "-config", "trace.cfg", "-metadir", "states", "TlaLinkTraceCheck"];
         ProcessStartInfo start = new(java.Java) { WorkingDirectory = output, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (string argument in arguments) start.ArgumentList.Add(argument);

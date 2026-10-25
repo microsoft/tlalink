@@ -8,7 +8,7 @@ public static partial class ProjectWorkflow
 {
     public static int Run(CliOptions options)
     {
-        string path = Path.GetFullPath(options.Required("project"));
+        string path = FilePaths.Full(options.Required("project"));
         var (project, policy) = ProjectInputs.Load(path);
         if (options.Command == "record-review") return ProjectAcceptance.RecordReview(path, project, options);
         if (options.Command is "accept" or "explain") return ProjectAcceptance.Run(path, project, policy, options);
@@ -40,7 +40,7 @@ public static partial class ProjectWorkflow
             return 0;
         }
         if (scenarios.Count != 1) throw new InputException(ErrorCode.InvalidWorkflowInput, "run requires --scenario when the project has multiple scenarios.");
-        string output = Path.GetFullPath(options.Required("output"));
+        string output = FilePaths.Full(options.Required("output"));
         if (File.Exists(output) || Directory.Exists(output)) throw new InputException(ErrorCode.InvalidWorkflowInput, "Run output must be a new directory.");
         Directory.CreateDirectory(output);
         WorkflowRun run = new() {
@@ -86,7 +86,7 @@ public static partial class ProjectWorkflow
 
     private static Dictionary<string, string> Pins(string path, AnalysisProject project, AcceptancePolicy policy, List<AnalysisScenario> scenarios)
     {
-        Dictionary<string, string> pins = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string> pins = new(FilePaths.Comparer);
         void Pin(string file) => Files.Pin(pins, file, Files.Hash(file));
         Pin(path);
         Pin(ProjectInputs.Resolve(path, project.Requirements));
@@ -157,7 +157,7 @@ public static partial class ProjectWorkflow
             foreach (string extension in OperatingSystem.IsWindows() ? new[] { ".exe", ".cmd" } : new[] { "" })
             {
                 string candidate = Path.Combine(folder.Trim('"'), name + extension);
-                if (File.Exists(candidate)) return Path.GetFullPath(candidate);
+                if (File.Exists(candidate)) return FilePaths.Full(candidate);
             }
         throw new InputException(ErrorCode.WorkflowPrerequisiteMissing, "Required executable not on PATH: " + name);
     }
@@ -305,7 +305,7 @@ public static partial class ProjectWorkflow
     {
         string archive = Path.Combine(output, "inputs");
         Directory.CreateDirectory(archive);
-        foreach (var pin in run.Fingerprints.Where(p => Path.IsPathFullyQualified(p.Key)))
+        foreach (var pin in run.Fingerprints.Where(p => FilePaths.IsAbsolute(p.Key)))
         {
             string copy = Path.Combine(archive, pin.Value);
             if (!File.Exists(copy)) File.Copy(pin.Key, copy);
@@ -356,7 +356,7 @@ public static partial class ProjectWorkflow
             if (root.TryGetProperty("diagnostics", out JsonElement diagnostics))
                 foreach (JsonElement diagnostic in diagnostics.EnumerateArray())
                     Console.WriteLine($"{diagnostic.GetProperty("code").GetString()}: {diagnostic.GetProperty("message").GetString()}");
-            if (options.Optional("output") is string output) Console.WriteLine("output: " + Path.GetFullPath(output));
+            if (options.Optional("output") is string output) Console.WriteLine("output: " + FilePaths.Full(output));
         }
     }
 

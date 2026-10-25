@@ -37,7 +37,7 @@ public sealed class WorkflowRun
     public string ExecutionStatus { get; set; } = "incomplete";
     public string AcceptanceStatus => "not-evaluated";
     public List<WorkflowStageResult> Stages { get; init; } = [];
-    public Dictionary<string, string> Fingerprints { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> Fingerprints { get; init; } = new(FilePaths.Comparer);
     public Dictionary<string, string> Artifacts { get; init; } = new(StringComparer.Ordinal);
     public List<Issue> Diagnostics { get; init; } = [];
 }
@@ -55,7 +55,7 @@ public static class ProjectInputs
     public static T Read<T>(string path) =>
         JsonSerializer.Deserialize<T>(Files.Read(path), Json) ?? throw new InputException(ErrorCode.InvalidWorkflowInput, "Empty document: " + path);
 
-    public static string Resolve(string project, string path) => Path.GetFullPath(path, Path.GetDirectoryName(project)!);
+    public static string Resolve(string project, string path) => FilePaths.Full(path, Path.GetDirectoryName(project)!);
 
     public static (AnalysisProject Project, AcceptancePolicy Policy) Load(string path)
     {
@@ -92,7 +92,7 @@ public static class ProjectInputs
                     if (project.Tools.P == null || stage.Config == null || stage.Bindings != null ||
                         stage.Models != null || stage.Sources != null || stage.Arguments != null)
                         throw new InputException(ErrorCode.InvalidWorkflowInput, "P stages require pinned P and one explicit analysis config; scope comes from that config.");
-                    PAnalysis analysis = PInputs.Load(Resolve(path, stage.Config), new(StringComparer.OrdinalIgnoreCase));
+                    PAnalysis analysis = PInputs.Load(Resolve(path, stage.Config), new(FilePaths.Comparer));
                     if (stage.Kind != "p-" + analysis.Engine)
                         throw new InputException(ErrorCode.InvalidWorkflowInput, "P stage kind must match its configured engine.");
                     if (analysis.Engine is "pex" or "psym" or "pobserve" &&
@@ -104,7 +104,7 @@ public static class ProjectInputs
                         HashSet<string> reviewIds = policy.Requirements.Where(r => r.Scenario == scenario.Id && r.Stage == stage.Id)
                             .SelectMany(r => r.Reviews ?? []).ToHashSet(StringComparer.Ordinal);
                         HashSet<string> inputs = project.Obligations.Where(o => reviewIds.Contains(o.Id))
-                            .SelectMany(o => o.Inputs).Select(p => Resolve(path, p)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                            .SelectMany(o => o.Inputs).Select(p => Resolve(path, p)).ToHashSet(FilePaths.Comparer);
                         IEnumerable<string> required = analysis.Models.Append(Resolve(path, stage.Config));
                         required = analysis.Artifact != null ? required.Append(analysis.Artifact.Path) :
                             required.Concat(new[] { analysis.Observation!.RuntimeJar.Path, analysis.Observation.MonitorJar.Path })

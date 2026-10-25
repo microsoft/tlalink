@@ -41,7 +41,7 @@ public static class Instrumentation
         scope.RequireCompilable();
         if (packet.LinksStatus != "passed" || packet.Diagnostics.Any(d => d.Severity == "error" || d.Is(ErrorCode.UnboundModelEndpoint, ErrorCode.UncoveredStateWrite, ErrorCode.UnresolvedCompilation)))
             throw new InputException(ErrorCode.UnresolvedInstrumentation, "Instrumentation requires resolved, complete structural/state-write bindings.");
-        output = Path.GetFullPath(output);
+        output = FilePaths.Full(output);
         if (Directory.Exists(output) || File.Exists(output)) throw new InputException(ErrorCode.UnresolvedInstrumentation, "Instrumentation output must be a new directory.");
         List<SourceBinding> executable = scope.Bindings.Where(b => b.Tag.Kind == "step" && b.Tag.Options.ContainsKey("point")).ToList();
         if (executable.Count == 0) throw new InputException(ErrorCode.UnresolvedInstrumentation, "No executable observation points.");

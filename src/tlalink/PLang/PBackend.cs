@@ -7,11 +7,11 @@ public static class PBackend
     public static int Run(CliOptions options)
     {
         if (options.Command == "read-p") return PEvidence.Read(options);
-        string configPath = Path.GetFullPath(options.Required("config"));
-        string output = Path.GetFullPath(options.Required("output"));
+        string configPath = FilePaths.Full(options.Required("config"));
+        string output = FilePaths.Full(options.Required("output"));
         if (Directory.Exists(output) || File.Exists(output))
             throw new InputException(ErrorCode.InvalidPInput, "P runs require a new output directory.");
-        Dictionary<string, string> pins = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string> pins = new(FilePaths.Comparer);
         PAnalysis config = PInputs.Load(configPath, pins);
         Directory.CreateDirectory(output);
         PPacket packet = new() { Command = options.Command, Engine = config.Engine, Config = configPath,
@@ -19,7 +19,7 @@ public static class PBackend
         foreach (var pin in pins) Files.Pin(packet.Fingerprints, pin.Key, pin.Value);
         try
         {
-            string compiler = Path.GetFullPath(options.Required("p"));
+            string compiler = FilePaths.Full(options.Required("p"));
             string home = PProcess.PinCompiler(compiler, packet.Fingerprints);
             Program.PinTool(packet.Fingerprints);
             string nuget = Path.Combine(AppContext.BaseDirectory, "NuGet.Config");

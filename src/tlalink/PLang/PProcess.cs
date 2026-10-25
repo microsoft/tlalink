@@ -14,7 +14,7 @@ public static class PProcess
         };
         foreach (string arg in arguments) start.ArgumentList.Add(arg);
         string[] folders = dependencies.Select(d => Path.GetDirectoryName(d.Path)!)
-            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            .Distinct(FilePaths.Comparer).ToArray();
         if (folders.Length > 0)
             start.Environment["PATH"] = string.Join(Path.PathSeparator, folders) + Path.PathSeparator + start.Environment["PATH"];
         Files.WriteNew(Path.Combine(output, label + ".invocation.json"), new {
@@ -36,21 +36,21 @@ public static class PProcess
         foreach (string folder in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
         {
             string candidate = Path.Combine(folder.Trim('"'), name + (OperatingSystem.IsWindows() ? ".exe" : ""));
-            if (File.Exists(candidate)) return Path.GetFullPath(candidate);
+            if (File.Exists(candidate)) return FilePaths.Full(candidate);
         }
         throw new InputException(ErrorCode.PPrerequisiteMissing, "Required executable is missing: " + name);
     }
 
     public static string PinCompiler(string compiler, Dictionary<string, string> pins)
     {
-        compiler = Path.GetFullPath(compiler);
+        compiler = FilePaths.Full(compiler);
         string home = Path.GetDirectoryName(compiler)!;
         if (Path.GetFileName(compiler) != "p.dll" || !File.Exists(Path.Combine(home, "CompilerCore.dll")) ||
             !File.Exists(Path.Combine(home, "p.runtimeconfig.json")))
             throw new InputException(ErrorCode.PPrerequisiteMissing, "--p must select p.dll in a complete trusted P 3.1.0 distribution.");
         foreach (string file in Directory.EnumerateFiles(home, "*", new EnumerationOptions {
             RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false
-        })) Files.Pin(pins, Path.GetFullPath(file), Files.Hash(file));
+        })) Files.Pin(pins, FilePaths.Full(file), Files.Hash(file));
         return home;
     }
 }

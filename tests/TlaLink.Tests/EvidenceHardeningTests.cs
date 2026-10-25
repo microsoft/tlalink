@@ -57,11 +57,11 @@ public static class EvidenceHardeningTests
             using JsonDocument document = JsonDocument.Parse(run.Json);
             CoreTests.Equal("rejected", document.RootElement.GetProperty("proof_status").GetString());
             CoreTests.Equal(4, document.RootElement.GetProperty("stages").GetProperty("dafny-verify").GetProperty("exit_code").GetInt32());
-            using JsonDocument invocation = JsonDocument.Parse(Files.Read(Path.Combine(directory, @"result\dafny-verify.invocation.json")));
+            using JsonDocument invocation = JsonDocument.Parse(Files.Read(Path.Combine(directory, "result", "dafny-verify.invocation.json")));
             CoreTests.Equal(Schema.Version, invocation.RootElement.GetProperty("schema_version").GetInt32());
             CoreTests.Equal("process-invocation", invocation.RootElement.GetProperty("kind").GetString());
             CoreTests.Equal(0, IntegratedEvidence.Validate(document.RootElement).Count);
-            var inspection = IntegratedEvidence.Inspect(Path.Combine(directory, @"result\result.json"), true);
+            var inspection = IntegratedEvidence.Inspect(Path.Combine(directory, "result", "result.json"), true);
             CoreTests.Equal(0, inspection.ExitCode);
             CoreTests.Equal("consistent", inspection.SemanticStatus);
             CoreTests.Equal("rejected", inspection.RecordedStatus);

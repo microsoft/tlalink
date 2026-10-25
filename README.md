@@ -23,8 +23,9 @@ precise evidence boundary and [AGENTS.md](AGENTS.md) for the agent workflow.
 
 ## Requirements and build
 
-Use the installed .NET 10 SDK/runtime, the pinned local Temurin JDK
-**25.0.4.1+1 (Windows x64)**, and a trusted local TLA tools JAR.
+Windows x64 and Linux x64 are supported. Use the installed .NET 10 SDK/runtime,
+the pinned local Temurin JDK **25.0.4.1+1**, and a trusted local TLA tools JAR.
+Setup scripts require PowerShell 7 (`pwsh` on Linux).
 Provision Java explicitly before running Java-backed commands:
 
 ```powershell
@@ -34,12 +35,13 @@ Provision Java explicitly before running Java-backed commands:
 ```
 
 [java-toolchain.json](java-toolchain.json) pins the upstream archive URL/SHA256
-and release/launcher hashes. Setup verifies the archive and installs it into
-`.tools\java\jdk-25.0.4.1+1`; it never changes machine-wide Java. Repeated setup
+and per-platform release/launcher hashes. Setup verifies the archive and installs
+it into `.tools\java\win-x64\jdk-25.0.4.1+1` or the corresponding
+`linux-x64` directory; it never changes machine-wide Java. Repeated setup
 checks an existing installation and refuses changed pinned files rather than
 overwriting it. The CLI never downloads or updates Java.
 
-SANY/PlusCal, TLC and Java-backed tests select both `java.exe` and `javac.exe`
+SANY/PlusCal, TLC and Java-backed tests select both Java launchers
 from this one JDK, independently of the caller's directory, `PATH` and
 `JAVA_HOME`. `TLALINK_JAVA_HOME` may select an absolute relocated copy of the
 **same pinned distribution**, not another Java version or vendor. A deployed
@@ -92,6 +94,8 @@ source bundle, not legal approval or a binary release.
 The current example/cache convention is `.tools\tla\v1.8.0\tla2tools.jar`,
 `.tools\dafny\Dafny.exe` and the P local-tool installation below. Tests accept
 `TLALINK_TLA_JAR`, `TLALINK_DAFNY` and `TLALINK_P_COMPILER` overrides.
+On Linux the Dafny launcher is `.tools\dafny\dafny`; P's .NET 8 runtime
+must also be installed for native P tests.
 Missing prerequisites fail explicitly. For backend-independent tests:
 
 ```powershell
@@ -100,6 +104,32 @@ dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --core
 
 Automatic backend installation is a planned toolchain-lifecycle feature.
 The explicit Java setup script above is not automatic backend installation.
+
+## Continuous integration
+
+[GitHub Actions](.github/workflows/ci.yml) runs on pull requests, pushes to
+`main` and manual dispatches using Ubuntu 24.04 x64. It builds Release with the
+.NET SDK selected by `global.json`, runs backend-independent controls, then
+explicitly provisions the pinned Java, TLC 1.8.0, Dafny 4.11.0 and P 3.1.0 tools
+before running the complete console suite. The .NET 8 SDK supplies P's runtime.
+Archive downloads are checksum-verified; third-party actions use commit pins.
+Missing tools, build errors and failed controls fail the job rather than skip
+native tests. Console logs and the full suite's JSON report are retained for
+seven days, including on failure when available.
+
+Native P coverage exercises PChecker; the other P engines have classifier and
+evidence controls, not automatically provisioned solver/monitor distributions.
+CI setup is separate from analysis: analysis commands still never install or
+upgrade backend tools.
+
+Paths accept either separator at input boundaries; JSON output and internal
+absolute paths use the host's native separator. Relative paths remain relative
+to the caller or declaring document, as appropriate. File identity is ordinal
+case-insensitive on Windows and ordinal on Linux; foreign drive/UNC roots are
+not reinterpreted as local relative paths. Windows-style relative source paths
+work on Linux through this input normalization; launcher filenames and tool
+hashes remain platform-specific and must be selected explicitly in project
+manifests. Shell examples below use PowerShell.
 
 ## Optional P prerequisites
 

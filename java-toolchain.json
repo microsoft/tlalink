@@ -3,11 +3,24 @@
   "kind": "java-toolchain",
   "version": "25.0.4.1+1",
   "directory": "jdk-25.0.4.1+1",
-  "archive_url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_windows_hotspot_25.0.4.1_1.zip",
-  "archive_sha256": "00C847D804F4A78E9F04F2683FAF14FED898535B177B7FC704486CB0284E9283",
-  "files": {
-    "release": "86E5E51658BB2B9CF064B3957D81AC39ABDB346B2CAC19867C1625DD19D440D9",
-    "bin\\java.exe": "5808527E3DFC4EB285C7664BA356BC267055EF906E83ED4660D9F7976DA7349B",
-    "bin\\javac.exe": "1C4B1F0ED250FDF08AC324A4BEAE89D8405D408FD9880F69A6283EB256BA80F9"
+  "platforms": {
+    "win-x64": {
+      "archive_url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_windows_hotspot_25.0.4.1_1.zip",
+      "archive_sha256": "00C847D804F4A78E9F04F2683FAF14FED898535B177B7FC704486CB0284E9283",
+      "files": {
+        "release": "86E5E51658BB2B9CF064B3957D81AC39ABDB346B2CAC19867C1625DD19D440D9",
+        "bin\\java.exe": "5808527E3DFC4EB285C7664BA356BC267055EF906E83ED4660D9F7976DA7349B",
+        "bin\\javac.exe": "1C4B1F0ED250FDF08AC324A4BEAE89D8405D408FD9880F69A6283EB256BA80F9"
+      }
+    },
+    "linux-x64": {
+      "archive_url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz",
+      "archive_sha256": "DBB698396D478E7FA2B1E50F4103324B2A99B90569EE27C33F2261F9215CF41E",
+      "files": {
+        "release": "44BE64B383BAA18668AFEFBE9A780AE3A9D730A066EAAA92500F77BD1E4B934C",
+        "bin\\java": "7380CE48ED5013735D2C8414DB54ADB8F981E7933FF594BD36F3BACCDDAAFBA3",
+        "bin\\javac": "86D10CD1C73E976F364291F3C3D10BB167F0BAFDD6EB4C9C6DC44BDDEFFCC45E"
+      }
+    }
   }
 }

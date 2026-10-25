@@ -36,8 +36,8 @@ public sealed class PPacket
     public List<PSourceLink> Links { get; init; } = [];
     public List<Issue> Diagnostics { get; init; } = [];
     public List<PProcessResult> Processes { get; init; } = [];
-    public Dictionary<string, string> Fingerprints { get; init; } = new(StringComparer.OrdinalIgnoreCase);
-    public Dictionary<string, string> Artifacts { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> Fingerprints { get; init; } = new(FilePaths.Comparer);
+    public Dictionary<string, string> Artifacts { get; init; } = new(FilePaths.Comparer);
     public List<string> Boundaries { get; } = [
         "P checks the supplied P program, not all executions of linked C#.",
         "Source bindings and cross-backend reviews do not compose a refinement proof.",
@@ -57,7 +57,7 @@ public static class PInputs
 
     public static PAnalysis Load(string path, Dictionary<string, string> pins)
     {
-        path = Path.GetFullPath(path);
+        path = FilePaths.Full(path);
         string text = Files.ReadPinned(path, pins);
         PAnalysis config = JsonSerializer.Deserialize<PAnalysis>(text, ProjectInputs.Json)
             ?? throw new InputException(ErrorCode.InvalidPInput, "Empty P analysis.");

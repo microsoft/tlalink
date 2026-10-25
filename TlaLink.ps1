@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 $arguments = @($args)
-$project = Join-Path $PSScriptRoot 'src\TlaLink\TlaLink.csproj'
+$project = Join-Path $PSScriptRoot 'src\tlalink\TlaLink.csproj'
 Push-Location $PSScriptRoot
 try {
     $buildOutput = & dotnet build $project --nologo --verbosity quiet 2>&1
@@ -13,5 +13,5 @@ try {
 finally {
     Pop-Location
 }
-& dotnet (Join-Path $PSScriptRoot 'src\TlaLink\bin\Debug\net10.0\TlaLink.dll') @arguments
+& dotnet (Join-Path $PSScriptRoot 'src\tlalink\bin\Debug\net10.0\TlaLink.dll') @arguments
 exit $LASTEXITCODE

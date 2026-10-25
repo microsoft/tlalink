@@ -10,8 +10,8 @@ namespace TlaLink;
 public sealed class DafnyBackend(string executable, string output, int timeout, IntegratedPacket packet)
 {
     private List<string> dependencies = [];
-    public string Executable { get; } = Path.GetFullPath(executable);
-    public string Output { get; } = Path.GetFullPath(output);
+    public string Executable { get; } = FilePaths.Full(executable);
+    public string Output { get; } = FilePaths.Full(output);
     public string Home => Path.GetDirectoryName(Executable)!;
     public int TimeoutSeconds => timeout;
 
@@ -45,7 +45,7 @@ public sealed class DafnyBackend(string executable, string output, int timeout, 
             throw new InputException(ErrorCode.InvalidDafnyTool, "--dafny must select a trusted local Dafny 4.11.0 distribution executable.");
         foreach (string file in Directory.EnumerateFiles(Home, "*", new EnumerationOptions {
             RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false
-        })) Files.Pin(packet.Fingerprints, Path.GetFullPath(file), Files.Hash(file));
+        })) Files.Pin(packet.Fingerprints, FilePaths.Full(file), Files.Hash(file));
         StageResult version = Run("dafny-version", Executable, ["--version"]);
         if (version.Status != "passed" || !Files.Read(version.Log).Trim().StartsWith("4.11.0+", StringComparison.Ordinal))
             throw new InputException(ErrorCode.InvalidDafnyTool, "This backend requires pinned Dafny 4.11.0; see " + version.Log);
@@ -99,20 +99,20 @@ public sealed class DafnyBackend(string executable, string output, int timeout, 
         }
         foreach (string root in roots) Files.Pin(packet.Fingerprints, root, Files.Hash(root));
         DafnyIndexResult first = Read("dafny-discover");
-        foreach (string path in first.Dependencies.Concat(roots).Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (string path in first.Dependencies.Concat(roots).Distinct(FilePaths.Comparer))
         {
             if (Path.GetExtension(path) != ".dfy")
                 throw new InputException(ErrorCode.DafnyResolutionFailed, "Only .dfy source dependencies are supported: " + path);
-            Files.Pin(packet.Fingerprints, Path.GetFullPath(path), Files.Hash(path));
+            Files.Pin(packet.Fingerprints, FilePaths.Full(path), Files.Hash(path));
         }
         IntegratedInputs.CheckPins(packet.Fingerprints);
         IntegratedInputs.CheckPins(packet.GeneratedFiles);
         DafnyIndexResult resolved = Read("dafny-resolve");
-        if (!first.Dependencies.Order(StringComparer.OrdinalIgnoreCase).SequenceEqual(
-            resolved.Dependencies.Order(StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase))
+        if (!first.Dependencies.Order(FilePaths.Comparer).SequenceEqual(
+            resolved.Dependencies.Order(FilePaths.Comparer), FilePaths.Comparer))
             throw new InputException(ErrorCode.IntegratedInputChanged, "Dafny dependency closure changed between frontend passes.");
         IntegratedInputs.CheckPins(packet.Fingerprints);
-        dependencies = resolved.Dependencies.Concat(roots).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        dependencies = resolved.Dependencies.Concat(roots).Distinct(FilePaths.Comparer).ToList();
         return resolved;
     }
 

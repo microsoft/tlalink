@@ -82,7 +82,7 @@ public static class DafnyConformance
         {
             string path = reference.FilePath ?? throw new InputException(ErrorCode.OracleCompilationFailed, "References must be explicit files.");
             string name = AssemblyName.GetAssemblyName(path).Name ?? throw new InputException(ErrorCode.OracleCompilationFailed, "Invalid reference identity.");
-            if (referencePaths.TryGetValue(name, out string? prior) && !prior.Equals(path, StringComparison.OrdinalIgnoreCase))
+            if (referencePaths.TryGetValue(name, out string? prior) && !prior.Equals(path, FilePaths.Comparison))
                 throw new InputException(ErrorCode.OracleCompilationFailed, "Ambiguous runtime reference identity: " + name);
             referencePaths[name] = path;
         }
@@ -141,7 +141,7 @@ public static class DafnyConformance
                 string.Join("\n", emitted.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)));
         File.WriteAllText(Path.Combine(output, "Conformance.runtimeconfig.json"),
             """{"runtimeOptions":{"tfm":"net10.0","framework":{"name":"Microsoft.NETCore.App","version":"10.0.0"}}}""");
-        Dictionary<string, string> compiled = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string> compiled = new(FilePaths.Comparer);
         foreach (string path in source.Texts.Keys) Files.Pin(compiled, path, source.Fingerprints[path]);
         foreach (string path in new[] { oracle, harnessPath }) Files.Pin(compiled, path, packet.GeneratedFiles[path]);
         foreach (string path in new[] { binary, Path.Combine(output, "Conformance.runtimeconfig.json") })
@@ -174,7 +174,7 @@ public static class DafnyConformance
         if (packet.ConformanceStatus == "rejected")
             packet.Diagnostics.Add(new(ErrorCode.OracleComparisonFailed, "Compiled C# adapter disagreed with the generated Dafny oracle; see " + comparisons));
         packet.Execution = new {
-            CompileInputs = compiled, References = referencePaths.Values.ToDictionary(p => p, p => source.Fingerprints[p], StringComparer.OrdinalIgnoreCase),
+            CompileInputs = compiled, References = referencePaths.Values.ToDictionary(p => p, p => source.Fingerprints[p], FilePaths.Comparer),
             CompilerContext = new { LanguageVersion = parse.LanguageVersion.ToString(), Defines = parse.PreprocessorSymbolNames,
                 Nullable = executable.Options.NullableContextOptions.ToString(), Framework = "net10.0", Compiler = typeof(CSharpCompilation).Assembly.Location },
             Binary = binary, BinarySHA256 = packet.GeneratedFiles[binary], Cases = cases, TestedBindings = tested,

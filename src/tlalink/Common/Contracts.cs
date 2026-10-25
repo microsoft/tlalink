@@ -47,7 +47,7 @@ public sealed class Packet(string command)
     public List<Issue> Diagnostics { get; } = [];
     public List<Link> Links { get; set; } = [];
     public List<Endpoint> Inventory { get; } = [];
-    public Dictionary<string, string> Fingerprints { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> Fingerprints { get; } = new(FilePaths.Comparer);
     public List<string> Uncertainties { get; } = [
         "Roslyn resolves only the supplied sources, references and preprocessor symbols.",
         "A symbol binding, lock or annotation does not prove atomicity or refinement.",
@@ -103,15 +103,15 @@ public static class Files
 
     public static List<string> Discover(IEnumerable<string> inputs, string extension)
     {
-        HashSet<string> result = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> result = new(FilePaths.Comparer);
         EnumerationOptions options = new() { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false };
         foreach (string input in inputs)
         {
-            string path = Path.GetFullPath(input);
+            string path = FilePaths.Full(input);
             if (Directory.Exists(path))
             {
                 foreach (string file in Directory.EnumerateFiles(path, "*" + extension, options))
-                    result.Add(Path.GetFullPath(file));
+                    result.Add(FilePaths.Full(file));
             }
             else if (File.Exists(path) && Path.GetExtension(path).Equals(extension, StringComparison.OrdinalIgnoreCase))
                 result.Add(path);
@@ -120,7 +120,7 @@ public static class Files
             if (result.Count > 1000) throw new InputException("Scope exceeds 1000 files; supply narrower inputs.");
         }
         if (result.Count == 0) throw new InputException($"No {extension} files in explicit scope.");
-        return result.Order(StringComparer.OrdinalIgnoreCase).ToList();
+        return result.Order(FilePaths.Comparer).ToList();
     }
 
     public static void Pin(Dictionary<string, string> pins, string key, string value)
@@ -132,7 +132,7 @@ public static class Files
 
     public static void WriteNew(string path, object value)
     {
-        using FileStream file = new(Path.GetFullPath(path), FileMode.CreateNew, FileAccess.Write);
+        using FileStream file = new(FilePaths.Full(path), FileMode.CreateNew, FileAccess.Write);
         JsonSerializer.Serialize(file, value, Json);
     }
 

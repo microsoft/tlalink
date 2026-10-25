@@ -24,7 +24,7 @@ public static class Program
                 Render(receipt, options);
                 return 0;
             }
-            string jar = Path.GetFullPath(options.Required("jar"));
+            string jar = FilePaths.Full(options.Required("jar"));
             List<string> modelPaths = Files.Discover(options.Many("model"), ".tla");
             ModelScope models = ModelScope.Load(modelPaths, jar, options.Timeout, annotations: options.Command != "inputs");
             PinTool(models.Fingerprints);

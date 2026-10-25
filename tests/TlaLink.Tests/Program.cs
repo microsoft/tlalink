@@ -9,7 +9,7 @@ public static class Program
             Thread.Sleep(TimeSpan.FromSeconds(5));
             return 0;
         }
-        string root = Path.GetFullPath(args.FirstOrDefault() ?? Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\.."));
+        string root = FilePaths.Full(args.FirstOrDefault() ?? Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\.."));
         string work = Directory.CreateTempSubdirectory("tlalink-dotnet-tests-").FullName;
         List<object> results = [];
         int failed = 0;

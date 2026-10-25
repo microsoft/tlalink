@@ -31,7 +31,7 @@ public static class IntegratedEvidence
 
     public static IntegratedEvidenceInspection Inspect(string path, bool current)
     {
-        path = Path.GetFullPath(path);
+        path = FilePaths.Full(path);
         using JsonDocument document = JsonDocument.Parse(Files.Read(path), new JsonDocumentOptions { AllowDuplicateProperties = false });
         JsonElement result = document.RootElement;
         RequireSchema(result);
@@ -42,7 +42,7 @@ public static class IntegratedEvidence
             throw new InputException(ErrorCode.InvalidIntegratedEvidence, "Expected fingerprint and generated-file objects.");
         string archive = Path.Combine(Path.GetDirectoryName(path)!, "inputs");
         int count = 0;
-        foreach (JsonProperty pin in inputs.EnumerateObject().Concat(generated.EnumerateObject()).Where(p => Path.IsPathFullyQualified(p.Name)))
+        foreach (JsonProperty pin in inputs.EnumerateObject().Concat(generated.EnumerateObject()).Where(p => FilePaths.IsAbsolute(p.Name)))
         {
             string hash = pin.Value.ValueKind == JsonValueKind.String ? pin.Value.GetString()! : "";
             if (hash.Length != 64 || hash.Any(c => !char.IsAsciiHexDigit(c)))
@@ -54,7 +54,7 @@ public static class IntegratedEvidence
         }
         if (count == 0) throw new InputException(ErrorCode.InvalidIntegratedEvidence, "Packet has no archived file pins.");
         if (current)
-            foreach (JsonProperty pin in inputs.EnumerateObject().Where(p => Path.IsPathFullyQualified(p.Name)))
+            foreach (JsonProperty pin in inputs.EnumerateObject().Where(p => FilePaths.IsAbsolute(p.Name)))
                 if (!File.Exists(pin.Name) || Files.Hash(pin.Name) != pin.Value.GetString())
                     issues.Add(new(ErrorCode.IntegratedEvidenceStale, "Current input differs or is missing: " + pin.Name));
         return new(issues.Any(i => i.Code == ErrorCode.IntegratedArchiveInconsistent.Id()) ? "inconsistent" : "consistent", semantic,
@@ -107,7 +107,7 @@ public static class IntegratedEvidence
         foreach (JsonElement pins in new[] { fingerprints, generated }.Where(p => p.ValueKind == JsonValueKind.Object))
             foreach (JsonProperty pin in pins.EnumerateObject())
                 if (pin.Value.ValueKind != JsonValueKind.String ||
-                    Path.IsPathFullyQualified(pin.Name) &&
+                    FilePaths.IsAbsolute(pin.Name) &&
                     (pin.Value.GetString()!.Length != 64 || pin.Value.GetString()!.Any(c => !char.IsAsciiHexDigit(c))))
                     Error("Malformed fingerprint: " + pin.Name + ".");
         JsonElement links = Object("links", JsonValueKind.Array);

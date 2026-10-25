@@ -6,7 +6,7 @@ public static class ProjectAcceptance
 {
     public static int Run(string path, AnalysisProject project, AcceptancePolicy policy, CliOptions options)
     {
-        string directory = Path.GetFullPath(options.Required("run"));
+        string directory = FilePaths.Full(options.Required("run"));
         string runPath = Path.Combine(directory, "run.json");
         JsonElement document = Read(runPath);
         if (document.GetProperty("schema_version").GetInt32() != Schema.Version || document.GetProperty("kind").GetString() != "analysis-run")
@@ -24,7 +24,7 @@ public static class ProjectAcceptance
             !run.Stages.Select(s => s.Id).Order().SequenceEqual(scenario.Stages.Select(s => s.Id).Order()))
             Error(ErrorCode.WorkflowExecutionIncomplete, "The run does not contain exactly the declared stages.");
         if (run.Fingerprints.Count == 0 || run.Artifacts.Count == 0) Error(ErrorCode.WorkflowProvenanceInconsistent, "Missing run provenance.");
-        foreach (var pin in run.Fingerprints.Where(p => Path.IsPathFullyQualified(p.Key)))
+        foreach (var pin in run.Fingerprints.Where(p => FilePaths.IsAbsolute(p.Key)))
         {
             string archived = SafePath(directory, Path.Combine("inputs", pin.Value));
             if (!File.Exists(archived) || Files.Hash(archived) != pin.Value)
@@ -82,7 +82,7 @@ public static class ProjectAcceptance
             AnalysisStage selected = scenario.Stages.Single(s => s.Id == requirement.Stage);
             if (selected.Config != null)
             {
-                string recordedConfig = Path.GetFullPath(selected.Config, run.ProjectDirectory);
+                string recordedConfig = FilePaths.Full(selected.Config, run.ProjectDirectory);
                 if (!run.Fingerprints.TryGetValue(recordedConfig, out string? hash) ||
                     !hash.Equals(requirement.ConfigSha256, StringComparison.OrdinalIgnoreCase))
                     missing.Add("independently approved configuration bounds/properties");
@@ -136,7 +136,7 @@ public static class ProjectAcceptance
             NextActions = issues.Select(i => i.Message).Distinct().ToList(),
             Boundary = "Acceptance of declared bounded evidence and explicit reviews, not general C# refinement or host authentication."
         };
-        if (options.Optional("output") is string output) Files.WriteNew(Path.GetFullPath(output), report);
+        if (options.Optional("output") is string output) Files.WriteNew(FilePaths.Full(output), report);
         ProjectWorkflow.Render(report, options);
         return accepted ? 0 : issues.Any(i => i.Is(ErrorCode.WorkflowProjectChanged, ErrorCode.WorkflowExecutionIncomplete, ErrorCode.WorkflowEvidenceStale)) ? 2 : 1;
     }
@@ -200,9 +200,9 @@ public static class ProjectAcceptance
 
     private static string SafePath(string root, string relative)
     {
-        string path = Path.GetFullPath(relative, root);
-        if (Path.IsPathFullyQualified(relative) || !path.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
-            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        string path = FilePaths.Full(relative, root);
+        if (FilePaths.IsAbsolute(relative) || !path.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+            FilePaths.Comparison))
             throw new InputException(ErrorCode.WorkflowProvenanceInconsistent, "Artifact paths must remain inside the run directory.");
         return path;
     }

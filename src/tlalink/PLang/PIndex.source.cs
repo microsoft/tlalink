@@ -48,7 +48,8 @@ internal static class PIndex
         if (profile is not ("pchecker" or "pverifier"))
             throw new ArgumentException("P inventory profile must be pchecker or pverifier.");
         string[] paths = args.Skip(4).Select(Path.GetFullPath).ToArray();
-        if (paths.Distinct(StringComparer.OrdinalIgnoreCase).Count() != paths.Length ||
+        StringComparer pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        if (paths.Distinct(pathComparer).Count() != paths.Length ||
             paths.Any(path => !File.Exists(path) || !Path.GetExtension(path).Equals(".p", StringComparison.OrdinalIgnoreCase)))
             throw new ArgumentException("Only distinct, existing, explicit .p sources are supported.");
         CompilerConfiguration config = new()
@@ -76,7 +77,7 @@ internal static class PIndex
         }).ToArray();
         Scope scope = Analyzer.AnalyzeCompilationUnit(config, trees);
         if (config.Diagnostics.HasErrors) throw new InvalidOperationException("Native P analysis reported errors.");
-        List<Declaration> declarations = Inventory(config, scope, paths);
+        List<Declaration> declarations = Inventory(config, scope, paths, pathComparer);
         var json = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower, WriteIndented = true };
         using FileStream output = new(Path.GetFullPath(args[1]), FileMode.CreateNew, FileAccess.Write);
         JsonSerializer.Serialize(output, new
@@ -86,7 +87,7 @@ internal static class PIndex
         }, json);
     }
 
-    private static List<Declaration> Inventory(CompilerConfiguration config, Scope scope, string[] paths)
+    private static List<Declaration> Inventory(CompilerConfiguration config, Scope scope, string[] paths, StringComparer pathComparer)
     {
         List<Declaration> declarations = new();
         void Add(IPDecl node, string name, string kind)
@@ -97,7 +98,7 @@ internal static class PIndex
             // have no user-source identity and must never become binding targets.
             if (location.File == null || location.Line < 1) return;
             string path = Path.GetFullPath(location.File.FullName);
-            if (!paths.Contains(path, StringComparer.OrdinalIgnoreCase))
+            if (!paths.Contains(path, pathComparer))
                 throw new InvalidOperationException("Native inventory escaped explicit source scope: " + path);
             int endLine = context.Stop.Line + (context.Stop.Text?.Count(character => character == '\n') ?? 0);
             declarations.Add(new(name, kind, path, location.Line, Math.Max(location.Line, endLine)));
@@ -114,7 +115,7 @@ internal static class PIndex
         foreach (Event item in scope.Events) Add(item, item.Name, "event");
         foreach (var item in scope.SafetyTests) Add(item, item.Name, "testcase");
         foreach (var item in scope.RefinementTests) Add(item, item.Name, "refinement-testcase");
-        return declarations.OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
+        return declarations.OrderBy(item => item.Path, pathComparer)
             .ThenBy(item => item.Line).ThenBy(item => item.Kind, StringComparer.Ordinal)
             .ThenBy(item => item.Name, StringComparer.Ordinal).ToList();
     }

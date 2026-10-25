@@ -9,8 +9,8 @@ public static class IntegrationTests
     {
         string area = Directory.CreateDirectory(Path.Combine(work, "cli")).FullName;
         string source = Path.Combine(area, "Demo.cs"), model = Path.Combine(area, "Demo.tla");
-        File.Copy(Path.Combine(root, @"examples\Demo.cs"), source);
-        File.Copy(Path.Combine(root, @"examples\Demo.tla"), model);
+        File.Copy(Path.Combine(root, "examples", "Demo.cs"), source);
+        File.Copy(Path.Combine(root, "examples", "Demo.tla"), model);
         string jar = TestTools.Jar(root);
         string[] Common(string command) => [command, "--source", source, "--model", model, "--jar", jar];
         (int Code, string Json) Call(string[] args, int expected)

@@ -8,7 +8,7 @@ public static class PEvidence
     {
         string archive = Path.Combine(output, "inputs");
         Directory.CreateDirectory(archive);
-        foreach (var pin in packet.Fingerprints.Where(p => Path.IsPathFullyQualified(p.Key)))
+        foreach (var pin in packet.Fingerprints.Where(p => FilePaths.IsAbsolute(p.Key)))
         {
             string copy = Path.Combine(archive, pin.Value);
             if (!File.Exists(copy)) File.Copy(pin.Key, copy);
@@ -29,7 +29,7 @@ public static class PEvidence
 
     public static int Read(CliOptions options)
     {
-        string resultPath = Path.GetFullPath(options.Required("result"));
+        string resultPath = FilePaths.Full(options.Required("result"));
         using JsonDocument document = JsonDocument.Parse(Files.Read(resultPath));
         List<Issue> issues = Validate(document.RootElement, Path.GetDirectoryName(resultPath)!, options.Get("current", "false") switch {
             "true" => true, "false" => false,
@@ -58,7 +58,7 @@ public static class PEvidence
             if (!PInputs.Engines.Contains(packet.Engine, StringComparer.Ordinal) ||
                 packet.Command is not ("inspect-p" or "check-p") || packet.Fingerprints.Count == 0 || packet.Artifacts.Count == 0)
                 Error("Missing engine/command/provenance.");
-            foreach (var pin in packet.Fingerprints.Where(p => Path.IsPathFullyQualified(p.Key)))
+            foreach (var pin in packet.Fingerprints.Where(p => FilePaths.IsAbsolute(p.Key)))
             {
                 string archived = Safe(output, Path.Combine("inputs", pin.Value));
                 if (!File.Exists(archived) || Files.Hash(archived) != pin.Value)
@@ -172,8 +172,9 @@ public static class PEvidence
 
     private static string Safe(string root, string relative)
     {
-        string file = Path.GetFullPath(relative, root);
-        if (Path.IsPathRooted(relative) || !file.StartsWith(Path.GetFullPath(root) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        string file = FilePaths.Full(relative, root);
+        if (Path.IsPathRooted(FilePaths.Native(relative)) ||
+            !file.StartsWith(FilePaths.Full(root) + Path.DirectorySeparatorChar, FilePaths.Comparison))
             throw new InputException(ErrorCode.InvalidPEvidence, "Artifact escapes the P evidence directory.");
         return file;
     }

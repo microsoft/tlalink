@@ -6,7 +6,7 @@ public sealed class ModelScope
     public List<Issue> Diagnostics { get; } = [];
     public List<TlaDocument> Documents { get; } = [];
     public List<Endpoint> Inventory { get; } = [];
-    public Dictionary<string, string> Fingerprints { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> Fingerprints { get; } = new(FilePaths.Comparer);
 
     public static ModelScope Load(List<string> paths, string jar, int timeout, bool annotations = true)
     {

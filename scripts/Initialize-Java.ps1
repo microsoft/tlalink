@@ -6,13 +6,16 @@ $pin = Get-Content -LiteralPath (Join-Path $root 'java-toolchain.json') -Raw | C
 if ($pin.schema_version -ne 4 -or $pin.kind -ne 'java-toolchain') {
     throw 'Expected the current java-toolchain document.'
 }
-if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'X64') {
-    throw 'The pinned JDK distribution requires Windows x64 and PowerShell 7.'
+if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'X64' -or (-not $IsWindows -and -not $IsLinux)) {
+    throw 'The pinned JDK distributions require Windows or Linux x64 and PowerShell 7.'
 }
-$cache = Join-Path $root '.tools\java'
+$platform = if ($IsWindows) { 'win-x64' } else { 'linux-x64' }
+$distribution = $pin.platforms.$platform
+if (-not $distribution) { throw "No pinned JDK distribution for $platform." }
+$cache = Join-Path (Join-Path $root '.tools\java') $platform
 $jdkHome = Join-Path $cache $pin.directory
 function Test-PinnedFiles([string]$Directory) {
-    foreach ($file in $pin.files.PSObject.Properties) {
+    foreach ($file in $distribution.files.PSObject.Properties) {
         $path = Join-Path $Directory $file.Name
         if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or
             (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $file.Value) {
@@ -33,14 +36,21 @@ try {
         $zip = [IO.Path]::GetFullPath($Archive, (Get-Location).ProviderPath)
     }
     else {
-        $zip = Join-Path $work 'jdk.zip'
-        Invoke-WebRequest -Uri $pin.archive_url -OutFile $zip
+        $zip = Join-Path $work $(if ($IsWindows) { 'jdk.zip' } else { 'jdk.tar.gz' })
+        Invoke-WebRequest -Uri $distribution.archive_url -OutFile $zip
     }
-    if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $pin.archive_sha256) {
+    if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $distribution.archive_sha256) {
         throw "Pinned JDK archive SHA256 mismatch: $zip"
     }
     $unpacked = Join-Path $work 'unpacked'
-    Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
+    if ($IsWindows) {
+        Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
+    }
+    else {
+        $null = New-Item -ItemType Directory -Path $unpacked
+        & tar -xzf $zip -C $unpacked
+        if ($LASTEXITCODE -ne 0) { throw 'Pinned JDK archive extraction failed.' }
+    }
     $selected = Join-Path $unpacked $pin.directory
     Test-PinnedFiles $selected
     [IO.Directory]::Move($selected, $jdkHome)

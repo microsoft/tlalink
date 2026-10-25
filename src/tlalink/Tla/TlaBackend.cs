@@ -47,7 +47,7 @@ public static partial class TlaBackend
         string text = "", hash = "";
         var endpoints = new List<TlaEndpoint>();
         var diagnostics = new List<TlaBackendDiagnostic>();
-        var dependencies = new Dictionary<string, string>(StringComparer.Ordinal);
+        var dependencies = new Dictionary<string, string>(FilePaths.Comparer);
         IReadOnlyList<string> stateVariables = Array.Empty<string>();
         string module = "";
         string? raw = null, work = null;
@@ -55,8 +55,8 @@ public static partial class TlaBackend
         {
             if (timeoutSeconds < 1)
                 throw new BackendFailure("Java process timeout must be positive.");
-            path = System.IO.Path.GetFullPath(path);
-            jar = System.IO.Path.GetFullPath(jar);
+            path = FilePaths.Full(path);
+            jar = FilePaths.Full(jar);
             (text, hash) = ReadSource(path);
             if (!File.Exists(jar))
                 throw new BackendFailure($"TLA parser JAR not found: {jar}");
@@ -124,11 +124,11 @@ public static partial class TlaBackend
         List<TlaEndpoint> endpoints, List<TlaBackendDiagnostic> diagnostics,
         Dictionary<string, string> dependencies)
     {
-        var checkedPaths = new HashSet<string>(StringComparer.Ordinal) { root };
+        var checkedPaths = new HashSet<string>(FilePaths.Comparer) { root };
         while (true)
         {
             string? path = dependencies.Keys.Where(p => !checkedPaths.Contains(p))
-                .Order(StringComparer.Ordinal).FirstOrDefault();
+                .Order(FilePaths.Comparer).FirstOrDefault();
             if (path is null)
                 return;
             checkedPaths.Add(path);
