@@ -35,20 +35,9 @@ public static class ApalacheBackend
         {
             TlaDocument model = TlaBackend.Parse(config.Model, sany, options.Timeout);
             foreach (var pin in model.DependencyFingerprints) Files.Pin(pins, pin.Key, pin.Value);
-            if (model.Diagnostics.Any(d => d.Severity == "error" || d.Is(ErrorCode.StaleTranslation, ErrorCode.ToolFailure)) ||
-                model.RawAdapterJson == null)
-                throw new InputException(ErrorCode.InvalidApalacheInput, "Apalache requires a successfully parsed, fresh model: " +
-                    string.Join("; ", model.Diagnostics.Select(d => d.Message)));
-            using JsonDocument index = JsonDocument.Parse(model.RawAdapterJson);
+            RequireSupportedModel(model, config);
+            using JsonDocument index = JsonDocument.Parse(model.RawAdapterJson!);
             Files.WriteNew(Path.Combine(output, "model-index.json"), index.RootElement);
-            RequireSupportedIndex(index.RootElement, config);
-            IEnumerable<string> names = config.Mode == "typecheck" ? [] :
-                new[] { config.Init, config.Next }.Concat(config.Properties)
-                    .Concat(config.Invariant == null ? [] : new[] { config.Invariant })
-                    .Concat(config.ConstInit == null ? [] : new[] { config.ConstInit });
-            foreach (string name in names)
-                if (!model.Endpoints.Any(e => e.Kind == "operator" && e.Name == name && e.Arity == 0))
-                    throw new InputException(ErrorCode.InvalidApalacheInput, "Expected a root nullary model operator: " + name);
             string sourceDirectory = Path.Combine(output, "model");
             Directory.CreateDirectory(sourceDirectory);
             foreach (string file in model.DependencyFingerprints.Keys.Append(config.Model)
@@ -72,14 +61,15 @@ public static class ApalacheBackend
                 Files.WriteNew(Path.Combine(output, query.Id + ".json"), NativeConfig(packet, config, query));
                 ApalacheProcessResult process = RunProcess(packet, query.Id, Arguments(packet, query));
                 packet.Processes.Add(process);
-                string assessment = Assess(process, query, Text(output, process.Id),
+                string nativeText = Text(output, process.Id);
+                string assessment = Assess(process, query, nativeText,
                     HasTrace(output, process.Id, "violation", null),
                     HasTrace(output, process.Id, "example", query.Length + 1));
                 if (assessment != "passed")
                 {
                     packet.Status = assessment;
                     packet.Diagnostics.Add(new(assessment == "rejected" ? RejectionCode(config.Mode) : ErrorCode.ApalacheToolFailure,
-                        query.Id + ": native " + assessment + "; see archived logs and counterexamples."));
+                        FailureSummary(process, assessment, nativeText)));
                     break;
                 }
             }
@@ -103,11 +93,36 @@ public static class ApalacheBackend
         return packet.Status switch { "ready" or "passed" => 0, "rejected" => 1, _ => 2 };
     }
 
+    internal static void RequireSupportedModel(TlaDocument model, ApalacheAnalysis config)
+    {
+        if (model.Diagnostics.Any(d => d.Severity == "error" || d.Is(ErrorCode.StaleTranslation, ErrorCode.ToolFailure)) ||
+            model.RawAdapterJson == null)
+            throw new InputException(ErrorCode.InvalidApalacheInput, "Apalache requires a successfully parsed, fresh model: " +
+                string.Join("; ", model.Diagnostics.Select(d => d.Message)));
+        using JsonDocument index = JsonDocument.Parse(model.RawAdapterJson);
+        RequireSupportedIndex(index.RootElement, config);
+        IEnumerable<string> names = config.Mode == "typecheck" ? [] :
+            new[] { config.Init, config.Next }.Concat(config.Properties)
+                .Concat(config.Invariant == null ? [] : new[] { config.Invariant })
+                .Concat(config.ConstInit == null ? [] : new[] { config.ConstInit });
+        foreach (string name in names)
+            if (!model.Endpoints.Any(e => e.Kind == "operator" && e.Name == name && e.Arity == 0))
+                throw new InputException(ErrorCode.InvalidApalacheInput, "Expected a root nullary model operator: " + name);
+        if (model.DependencyFingerprints.Keys.Append(config.Model)
+            .Where(p => FilePaths.IsNativeAbsolute(p) && Path.GetExtension(p).Equals(".tla", StringComparison.OrdinalIgnoreCase))
+            .Distinct(FilePaths.Comparer).GroupBy(Path.GetFileName, FilePaths.Comparer).Any(group => group.Count() > 1))
+            throw new InputException(ErrorCode.InvalidApalacheInput, "Ambiguous module basename in model closure: " + config.Model);
+    }
+
     internal static void RequireSupportedIndex(JsonElement index, ApalacheAnalysis config)
     {
-        if (index.ValueKind != JsonValueKind.Array ||
-            index.EnumerateArray().Any(row => row.GetProperty("kind").GetString() == "assumptions"))
-            throw new InputException(ErrorCode.InvalidApalacheInput, "ASSUME declarations are outside the supported Apalache profile; encode constraints in Init/Next/ConstInit.");
+        if (index.ValueKind != JsonValueKind.Array)
+            throw new InputException(ErrorCode.InvalidApalacheInput, "Expected an authoritative SANY model index.");
+        string[] assumptions = index.EnumerateArray().Where(row => row.GetProperty("kind").GetString() == "assumptions")
+            .Select(row => row.GetProperty("module").GetString()!).ToArray();
+        if (assumptions.Length > 0)
+            throw new InputException(ErrorCode.InvalidApalacheInput, "ASSUME declarations in modules " +
+                string.Join(", ", assumptions) + " are outside the supported Apalache profile; encode constraints in Init/Next/ConstInit.");
         if (config.Mode == "typecheck") return;
         void Level(string name, int maximum)
         {
@@ -126,6 +141,22 @@ public static class ApalacheBackend
 
     internal static ErrorCode RejectionCode(string mode) =>
         mode == "inductive" ? ErrorCode.ApalacheInductionRejected : ErrorCode.ApalachePropertyRejected;
+
+    internal static string FailureSummary(ApalacheProcessResult process, string assessment, string text)
+    {
+        MatchCollection phases = Regex.Matches(text, @"PASS #\d+: ([A-Za-z0-9_]+)", RegexOptions.CultureInvariant);
+        string phase = phases.Count == 0 ? "" : "; phase " + phases[^1].Groups[1].Value;
+        string execution = process.TimedOut ? "deadline exceeded" : "exit " + (process.ExitCode?.ToString() ?? "not recorded");
+        string[] errors = text.Split('\n').Select(line => line.Trim())
+            .Where(line => Regex.IsMatch(line,
+                @"(?:\s[EF]@\d{2}:|^(?:Assignment error:|Type error:|Parser error:|Error:|Exception in thread|\w+(?:\.\w+)*Exception:))",
+                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase))
+            .Take(3).Select(line => Regex.Replace(line, @"\s+[EF]@\d{2}:.*$", "", RegexOptions.CultureInvariant)).ToArray();
+        string detail = errors.Length == 0 ? "No recognized native error message." : string.Join(" | ", errors);
+        if (detail.Length > 1500) detail = detail[..1500] + "...";
+        return $"{process.Id}: native {assessment} ({execution}{phase}); {detail} " +
+            $"See {process.Id}.stdout.log, {process.Id}.stderr.log and archived counterexamples.";
+    }
 
     public static string Assess(ApalacheProcessResult process, ApalacheQuery query, string text, bool counterexample,
         bool example = false)

@@ -7,6 +7,55 @@ public static class CoreTests
 {
     public static void Register(Action<string, Action> test, string work)
     {
+        test("summary output retains outcomes coverage diagnostics and receipt locations without provenance bulk", () =>
+        {
+            var receipt = new {
+                SchemaVersion = Schema.Version, Kind = "analysis-run", Project = "pilot",
+                ExecutionStatus = "incomplete", AcceptanceStatus = "not-evaluated",
+                Fingerprints = new Dictionary<string, string> { ["large"] = new('x', 10000) },
+                Stages = new[] { new { Id = "native", Kind = "tlc", ExecutionStatus = "incomplete",
+                    Outcome = "incomplete", Diagnostics = new[] { "TLC1000" }, Evidence = @"native\result.json" } },
+                Diagnostics = new[] { new Issue(ErrorCode.WorkflowStageFailed, "precise native failure") }
+            };
+            string full = System.Text.Json.JsonSerializer.Serialize(receipt, Files.Json);
+            string summary = CommandSummary.Create(receipt, new(["run", "--format", "summary", "--output", work])).ToJsonString(Files.Json);
+            True(summary.Length < full.Length / 4);
+            using var result = System.Text.Json.JsonDocument.Parse(summary);
+            var root = result.RootElement;
+            Equal("command-summary", root.GetProperty("kind").GetString());
+            Equal("analysis-run", root.GetProperty("result_kind").GetString());
+            Equal("incomplete", root.GetProperty("execution_status").GetString());
+            Equal("incomplete", root.GetProperty("stages")[0].GetProperty("outcome").GetString());
+            Equal(@"native\result.json", root.GetProperty("stages")[0].GetProperty("evidence").GetString());
+            True(root.GetProperty("presentation_only").GetBoolean());
+            True(!root.TryGetProperty("fingerprints", out _));
+            Equal(FilePaths.Full(work), root.GetProperty("output").GetString());
+            True(summary.Contains("precise native failure", StringComparison.Ordinal));
+            True(full.Contains("fingerprints", StringComparison.Ordinal));
+        });
+        test("summary CLI errors retain nonzero exit and diagnostics instead of a success-shaped projection", () =>
+        {
+            var result = TestCli.Run(["doctor", "--project", Path.Combine(work, "missing-project.json"), "--format", "summary"]);
+            Equal(2, result.Code);
+            using var document = System.Text.Json.JsonDocument.Parse(result.Json);
+            Equal("command-error", document.RootElement.GetProperty("result_kind").GetString());
+            Equal("incomplete", document.RootElement.GetProperty("status").GetString());
+            True(document.RootElement.GetProperty("diagnostics").GetArrayLength() > 0);
+        });
+        test("acceptance summary preserves current review status separately from recorded disposition", () =>
+        {
+            var packet = new {
+                Kind = "acceptance-result", AcceptanceStatus = "not-accepted",
+                Reviews = new[] { new { Obligation = "source-contract", Status = "stale",
+                    Decision = new { Disposition = "accepted", Reviewer = "test-only", Rationale = "old assertion",
+                        Fingerprints = new Dictionary<string, string> { ["large"] = new('x', 10000) } } } }
+            };
+            var summary = CommandSummary.Create(packet, new(["accept", "--format", "summary"]));
+            Equal("stale", summary["review_status"]![0]!["status"]!.GetValue<string>());
+            Equal("accepted", summary["review_status"]![0]!["disposition"]!.GetValue<string>());
+            Equal("test-only", summary["review_status"]![0]!["reviewer"]!.GetValue<string>());
+            True(!summary.ToJsonString().Contains("fingerprints", StringComparison.Ordinal));
+        });
         test("streamed fingerprints preserve exact bytes without whole-file allocations", () =>
         {
             string path = Path.Combine(work, "streamed-hash.bin");

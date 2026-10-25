@@ -95,6 +95,23 @@ public static class ApalacheTests
             CoreTests.True(!ApalacheInputs.IsStage("tlc"));
             CoreTests.True(!ApalacheInputs.IsStage("apalache-simulate"));
         });
+        test("Apalache failure summaries retain native phase location explanation and execution status", () =>
+        {
+            string text = """
+                PASS #1: TypeCheckerSnowcat I@13:57:58.064
+                PASS #10: TransitionFinderPass I@13:57:59.130
+                Assignment error: Ingress.tla:207:10-207:13: wire' is used before it is assigned. E@13:57:59.153
+                """;
+            string summary = ApalacheBackend.FailureSummary(new("preservation", [], 255, false), "incomplete", text);
+            foreach (string expected in new[] { "preservation", "incomplete", "exit 255", "TransitionFinderPass",
+                "Ingress.tla:207:10-207:13", "used before it is assigned", "preservation.stdout.log" })
+                CoreTests.True(summary.Contains(expected, StringComparison.Ordinal));
+            CoreTests.True(!summary.Contains("E@13:", StringComparison.Ordinal));
+            CoreTests.True(ApalacheBackend.FailureSummary(new("bounded", [], null, true), "incomplete", "")
+                .Contains("deadline exceeded", StringComparison.Ordinal));
+            CoreTests.True(ApalacheBackend.FailureSummary(new("bounded", [], 0, false), "incomplete", "unexpected output")
+                .Contains("No recognized native error", StringComparison.Ordinal));
+        });
     }
 
     public static void RegisterNative(Action<string, Action> test, string root, string work)
@@ -158,6 +175,31 @@ public static class ApalacheTests
             }
             finally { File.WriteAllText(model, before); }
         });
+        test("Apalache non-generative induction domains retain actionable native assignment diagnostics", () =>
+        {
+            string unassigned = Path.Combine(directory, "Unassigned.tla");
+            File.WriteAllText(unassigned, """
+                ---- MODULE Unassigned ----
+                EXTENDS Naturals, Sequences
+                VARIABLE
+                  \* @type: Seq(Int);
+                  wire
+                Init == wire = <<>>
+                Next == UNCHANGED wire
+                TypeOK == Len(wire) <= 1
+                Safety == TypeOK
+                ====
+                """);
+            string output = Run(Analysis(unassigned, "inductive") with { ConstInit = null }, 2);
+            ApalachePacket packet = ProjectInputs.Read<ApalachePacket>(Path.Combine(output, "result.json"));
+            CoreTests.Equal("incomplete", packet.Status);
+            CoreTests.Equal("not-established", packet.Claim);
+            Issue issue = packet.Diagnostics.Single();
+            CoreTests.True(issue.Is(ErrorCode.ApalacheToolFailure));
+            foreach (string expected in new[] { "preservation", "TransitionFinderPass", "Unassigned.tla:", "used before it is assigned" })
+                if (!issue.Message.Contains(expected, StringComparison.Ordinal))
+                    throw new InvalidOperationException("Missing " + expected + ": " + issue.Message);
+        });
         test("Apalache independent induction reader requires every obligation and exact native settings", () =>
         {
             string output = inductiveRun ??= Run(Analysis(model, "inductive"), 0);
@@ -205,7 +247,8 @@ public static class ApalacheTests
                 [new("credit", [
                     new("bounded", "apalache-check", [], 60, Config: bounded),
                     new("inductive", "apalache-inductive", [], 60, Config: induction),
-                    new("control", "apalache-check", [], 60, Config: negative)])], [], "reviews");
+                    new("control", "apalache-check", [], 60, Config: negative)])], [], "reviews",
+                [new("safety", "safety", "credit", ["inductive"])]);
             AcceptancePolicy policy = new(Schema.Version, "acceptance-policy", project.Id, [
                 new("bounded", "credit", "bounded", "passed", ConfigSha256: Files.Hash(bounded), Claim: "bounded-safety"),
                 new("inductive", "credit", "inductive", "passed", ConfigSha256: Files.Hash(induction), Claim: "inductive-invariants"),
@@ -215,6 +258,17 @@ public static class ApalacheTests
             Files.WriteNew(requirementsPath, policy);
             CoreTests.Equal(0, TestCli.Run(["doctor", "--project", projectPath]).Code);
             CoreTests.Equal(0, TestCli.Run(["plan", "--project", projectPath]).Code);
+            foreach (CheckObligation unsupported in new[] {
+                new CheckObligation("progress", "progress", "credit", ["bounded"]),
+                new CheckObligation("deadlock", "deadlock", "credit", ["inductive"]),
+                new CheckObligation("negative-safety", "safety", "credit", ["control"]) })
+            {
+                File.WriteAllText(projectPath, JsonSerializer.Serialize(project with { CheckObligations = [unsupported] }, Files.Json));
+                var missing = TestCli.Run(["plan", "--project", projectPath]);
+                CoreTests.Equal(2, missing.Code);
+                CoreTests.True(missing.Json.Contains("\"missing\"", StringComparison.Ordinal));
+            }
+            File.WriteAllText(projectPath, JsonSerializer.Serialize(project, Files.Json));
             string output = Path.Combine(directory, "project-run");
             var run = TestCli.Run(["run", "--project", projectPath, "--output", output]);
             if (run.Code != 0) throw new InvalidOperationException(run.Json);
@@ -227,6 +281,66 @@ public static class ApalacheTests
             CoreTests.Equal(2, TestCli.Run(["doctor", "--project", projectPath]).Code);
             File.WriteAllText(requirementsPath, JsonSerializer.Serialize(policy, Files.Json));
             File.AppendAllText(bounded, "\n");
+            CoreTests.Equal(2, TestCli.Run(["doctor", "--project", projectPath]).Code);
+        });
+        test("Apalache project preflight rejects unsupported model declarations before execution and pins imports", () =>
+        {
+            string dependency = Path.Combine(directory, "PreflightDependency.tla");
+            string pilot = Path.Combine(directory, "Preflight.tla");
+            string configPath = Path.Combine(directory, "preflight.json");
+            string projectPath = Path.Combine(directory, "preflight-project.json");
+            string requirementsPath = Path.Combine(directory, "preflight-requirements.json");
+            string source = """
+                ---- MODULE Preflight ----
+                EXTENDS Integers, PreflightDependency
+                VARIABLE x
+                Init == x = 0
+                Next == x' = x
+                Safety == x = 0
+                TemporalSafety == []Safety
+                Parameterized(value) == x = value
+                ====
+                """;
+            Files.WriteNew(projectPath, new AnalysisProject(Schema.Version, "analysis-project", "apalache-preflight",
+                new(null, new(sany, Files.Hash(sany)), Apalache: new(jar, Files.Hash(jar))),
+                new("net10.0", "14", "enable", false, true, null, []), requirementsPath,
+                [new("scope", [new("safety", "apalache-check", [], 60, Config: configPath)])], [], "reviews"));
+            File.WriteAllText(pilot, source);
+            void Configure(ApalacheAnalysis analysis)
+            {
+                File.WriteAllText(configPath, JsonSerializer.Serialize(analysis, Files.Json));
+                File.WriteAllText(requirementsPath, JsonSerializer.Serialize(
+                    new AcceptancePolicy(Schema.Version, "acceptance-policy", "apalache-preflight",
+                        [new("safety", "scope", "safety", "passed", ConfigSha256: Files.Hash(configPath), Claim: "bounded-safety")]),
+                    Files.Json));
+            }
+            ApalacheAnalysis scope = Analysis(pilot) with { ConstInit = null };
+            File.WriteAllText(dependency, "---- MODULE PreflightDependency ----\nASSUME TRUE\n====\n");
+            Configure(scope);
+            foreach (string command in new[] { "doctor", "plan", "run" })
+            {
+                string output = Path.Combine(directory, "blocked-" + command);
+                var result = TestCli.Run(command == "run"
+                    ? [command, "--project", projectPath, "--output", output]
+                    : [command, "--project", projectPath]);
+                CoreTests.Equal(2, result.Code);
+                CoreTests.True(result.Json.Contains("PreflightDependency", StringComparison.Ordinal));
+                CoreTests.True(!Directory.Exists(output));
+            }
+            File.WriteAllText(dependency, "---- MODULE PreflightDependency ----\n====\n");
+            foreach (string property in new[] { "TemporalSafety", "Parameterized", "Missing" })
+            {
+                Configure(scope with { Properties = [property] });
+                var result = TestCli.Run(["doctor", "--project", projectPath]);
+                CoreTests.Equal(2, result.Code);
+                CoreTests.True(result.Json.Contains(property, StringComparison.Ordinal));
+            }
+            Configure(scope);
+            var ready = TestCli.Run(["doctor", "--project", projectPath]);
+            CoreTests.Equal(0, ready.Code);
+            using JsonDocument report = JsonDocument.Parse(ready.Json);
+            CoreTests.Equal(Files.Hash(dependency), report.RootElement.GetProperty("fingerprints").GetProperty(dependency).GetString()!);
+            File.WriteAllText(pilot, source.Replace("Init == x = 0", "Init == Missing", StringComparison.Ordinal));
             CoreTests.Equal(2, TestCli.Run(["doctor", "--project", projectPath]).Code);
         });
     }

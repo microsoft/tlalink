@@ -48,6 +48,8 @@ for prerequisites, limits and test coverage.
 | Does this C# operation agree with a verified algorithm? | Compare selected C# adapter calls with an executable Dafny oracle. |
 | Does my model satisfy its properties? | Run explicitly selected TLC, Apalache, Dafny or P analyses, keeping their different guarantees separate. |
 | Is yesterday's evidence still relevant after a change? | Check archived evidence, current inputs and independent acceptance requirements. |
+| Which evidence must I keep, and what needs rechecking? | Use the read-only [retention planner](REFERENCE.md#evidence-retention-and-recheck-planning) to follow explicit pins, review histories and recorded dependencies. |
+| Can I share the whole evidence story with a person? | Generate a [Markdown report with Mermaid diagrams](REFERENCE.md#human-readable-evidence-reports), linked code regions, scoped claims, assumptions and open gates. |
 
 The core value is the evidence chain: **source bindings ->
 build/execution provenance -> scoped results -> change-aware acceptance**.

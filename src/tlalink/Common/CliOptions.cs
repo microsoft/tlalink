@@ -6,15 +6,17 @@ public sealed class CliOptions
     public string Command { get; }
     public CliOptions(string[] args)
     {
-        if (args.Length == 0) throw new InputException("Usage: TlaLink <doctor|plan|run|accept|explain|inspect|check|review|inputs|instrument|execute|validate-trace|check-apalache|read-apalache|inspect-integrated|verify-integrated|test-integrated|read-integrated> [--option value ...]");
+        if (args.Length == 0) throw new InputException("Usage: TlaLink <report|gc|doctor|plan|run|accept|explain|inspect|check|review|inputs|instrument|execute|validate-trace|check-apalache|read-apalache|inspect-integrated|verify-integrated|test-integrated|read-integrated> [--option value ...]");
         Command = args[0];
         Dictionary<string, string[]> allowed = new()
         {
+            ["report"] = ["manifest", "output", "format"],
             ["check-apalache"] = ["config", "apalache", "jar", "output", "timeout", "format"],
             ["read-apalache"] = ["result", "current", "format"],
             ["inspect-p"] = ["config", "p", "output", "reference", "define", "timeout", "format"],
             ["check-p"] = ["config", "p", "output", "reference", "define", "timeout", "format"],
             ["read-p"] = ["result", "current", "format"],
+            ["gc"] = ["store", "pins", "grace-hours", "apply", "exclusive", "output", "format"],
             ["doctor"] = ["project", "scenario", "format"],
             ["plan"] = ["project", "scenario", "format"],
             ["run"] = ["project", "scenario", "output", "format"],
@@ -44,7 +46,7 @@ public sealed class CliOptions
             if (!values.TryGetValue(name, out List<string>? list)) values[name] = list = [];
             list.Add(args[i + 1]);
         }
-        if (Get("format", "json") is not ("json" or "text")) throw new InputException("Format must be json or text.");
+        if (Get("format", "json") is not ("json" or "text" or "summary")) throw new InputException("Format must be json, text or summary.");
         if (!int.TryParse(Get("timeout", "30"), out int timeout) || timeout is < 1 or > 7200) throw new InputException("Timeout must be 1..7200 seconds.");
     }
 

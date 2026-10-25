@@ -87,6 +87,18 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   assumptions and uncaptured Task/queue/handoff edges.
 - Preserve archive consistency, current applicability and acceptance as distinct
   results. Never replace a baseline simply to clear drift.
+- Evidence retention uses one schema-4 `evidence-retention` manifest with
+  explicit path/reason pins and review-project roots. GC defaults to read-only;
+  unknown reference scope blocks candidates and apply. Explicit Windows apply
+  requires a saved full plan, offline writers, an exclusive assertion and a new
+  receipt; never bypass its snapshot, byte or directory-handle guards.
+  Native/legacy consumers use byte-complete protected catalogs from explicit
+  trusted adapters, not ignore lists or public legacy acceptance. Preserve
+  original applicability hashes and declaring bases; linked input targets must
+  supply real retention edges and be revalidated by opened-handle identity.
+  Retention and file-change/recheck impact
+  are distinct from acceptance; do not infer stage-level impact or deletion
+  safety from this graph. See the design for boundary rationale.
 - Prefer project `doctor`/`plan`/`run`/`accept`/`explain` for complete workflows.
   Keep requirements separate from execution and reviews in append-only sidecars.
   TLC/trace requirements pin approved configuration bytes, including properties
@@ -97,6 +109,15 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   bytes on either host rather than changing requirements after checkout.
 
 ## Maintenance safeguards
+
+- Whole-evidence human reports use one schema-4 `evidence-report` manifest and
+  Markdown with embedded Mermaid, not competing diagram formats or a generic
+  "proof passed" flag. Private adapters supply recorded native claims, source
+  coverage dispositions and milestone gaps; the public renderer checks pinned
+  bytes, not native proof semantics. Preserve recorded outcomes, expected
+  controls, current applicability and pending correspondence separately.
+  A source inventory/disposition is not validated code. Reports are presentation
+  snapshots, not acceptance receipts or automatic retention roots.
 
 - Select tools by the obligation, modeling fit and evidence required, using
   the advantages/limits in the [checker selection guide](REFERENCE.md#choosing-tools-and-checkers). Describe
@@ -122,6 +143,11 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   upstream interpretations; encode required constraints in the selected
   predicates. Pin the complete local distribution, isolate native JSON
   configuration/environment and telemetry, and never provision during analysis.
+- Keep declared safety/deadlock/progress checks explicit through
+  [check obligations](REFERENCE.md#declared-check-coverage). A compatible mapped
+  requirement is a plan, not a proof; never infer coverage from stage names.
+  Missing mappings block runs and acceptance, and safety-only Apalache checks
+  cannot discharge deadlock or progress obligations.
 - P uses explicit `p-analysis` manifests and native backend-specific evidence,
   not TLA annotations or a shared "proof passed" flag. PChecker exploration,
   PEx/PSym exhaustion, PVerifier induction and PObserve log monitoring retain
