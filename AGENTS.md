@@ -1,8 +1,13 @@
 # Working on TlaLink
 
-Read [README.md](README.md) for usage/schema and [DESIGN.md](DESIGN.md) before
-changing behavior. This is a C#/.NET 10 tool for TLA+, Dafny and P source/model
-evidence.
+Read [README.md](README.md) for the human-facing, agent-first introduction,
+[REFERENCE.md](REFERENCE.md) for commands/setup/schema, and [DESIGN.md](DESIGN.md)
+for architecture and evidence boundaries before changing behavior. This is a
+C#/.NET 10 tool for TLA+, Dafny and P source/model evidence, not a bundled agent
+or hosted AI service. Design and document it around the C#/.NET toolchain:
+Roslyn source resolution, explicit C# compiler context, and build/execution
+evidence. Formal backends complement that focus; do not present the tool as
+language-agnostic or imply support for other implementation languages.
 
 Keep shared workflow/C# infrastructure in `Common`, P in `PLang`, SANY and
 TLA bindings in `Tla`, TLC execution/trace matching in `Tlc`, PlusCal-specific
@@ -10,19 +15,53 @@ frontend helpers in `PlusCal`, symbolic safety in `Apalache`, and Dafny in
 `Dafny`. Preserve the public
 namespace and flat deployed bridge-asset names when moving implementation.
 
-## Workflow
+## Helping a user obtain evidence
+
+- Start with the user's concrete behavior/risk and relevant source scope.
+  Recommend the smallest suitable claim and checker; make the abstraction,
+  bounds, assumptions and missing context visible for human review.
+- Handle CLI commands, explicit manifests, prerequisite checks and evidence
+  collection. Provision only documented pinned tools as a separate setup step,
+  never during analysis; report unavailable prerequisites rather than substitute
+  another engine or weaken the claim.
+- Prefer project `doctor`/`plan`/`run`/`accept`/`explain` for repeatable work.
+  Select the scenario explicitly for preflight as well as execution when only
+  that scenario is needed. Start from synthetic examples, but do not treat
+  their acceptance policies as requirements for a consumer system.
+- Report the requested claim, scope, native outcomes, evidence locations,
+  archive consistency, current applicability and acceptance separately.
+  Identify coverage gaps, uncaptured causal edges and outstanding reviews.
+  Agent reasoning, resolved links and backend passes do not compose a proof
+  of C# correctness; do not summarize them as a generic "verified" badge.
+- Keep the README concise and human-facing. Put command/format details in the
+  reference, architecture and claim boundaries in the design, and actionable
+  agent safeguards here. Update the relevant documents together when behavior
+  changes. TlaLink's local execution does not establish the agent's own data
+  handling policy.
+
+## Build and validation
 
 ```powershell
 dotnet build .\TlaLink.sln
-dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj
+dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --core
+.\TlaLink.ps1 doctor --project .\examples\Workflow\project.json --scenario lanes
 .\TlaLink.ps1 plan --project .\examples\Workflow\project.json --scenario lanes
 .\TlaLink.ps1 review --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
 ```
 
+The core suite needs no external backends. The example preflight/review
+commands require their selected pinned tools. Run the focused native tests
+for a changed backend and the full suite when appropriate after provisioning
+its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
+
 - The root solution, public tests and examples must not depend on `local`.
   Private consumer work packages, copied sources, milestones and evidence belong
   under that Git-ignored directory. Follow each package's own instructions.
-  Never publish it or force-add it. Use the allowlisted source export script.
+  Never commit or publish anything from `local`, and never force-add it.
+  Never use its files or content as sample code, examples or documentation,
+  including copied, adapted, renamed or sanitized versions. Public samples and
+  documentation examples must be independently authored synthetic material,
+  not derived from private consumer work. Use the allowlisted source export script.
 - Tool distributions belong in the ignored root `.tools` cache. Public tests
   accept `TLALINK_TLA_JAR`, `TLALINK_DAFNY`, `TLALINK_P_COMPILER` and
   `TLALINK_APALACHE_JAR` overrides;
@@ -60,7 +99,7 @@ dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj
 ## Maintenance safeguards
 
 - Select tools by the obligation, modeling fit and evidence required, using
-  the advantages/limits in README's checker selection guide. Describe
+  the advantages/limits in the [checker selection guide](REFERENCE.md#choosing-tools-and-checkers). Describe
   capabilities and constraints, not status or a fixed tool priority.
   Frontend resolution, TLC exploration/trace matching, Apalache typing/safety,
   Dafny verification/oracles and the individual P checker claims are not

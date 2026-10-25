@@ -1,7 +1,34 @@
 # TlaLink design
 
-See [README.md](README.md) for commands/schema and [AGENTS.md](AGENTS.md) for
+See [README.md](README.md) to get started, [REFERENCE.md](REFERENCE.md) for
+commands/schema and [AGENTS.md](AGENTS.md) for
 maintenance instructions. All work remains outside the product tree.
+
+## Agent-first operating model
+
+TlaLink exposes deterministic CLI workflows and structured evidence for a coding
+agent to operate. It does not include an agent, language-model runtime or hosted
+analysis service. The human-facing README explains the value and workflow;
+the reference documents the commands and formats; AGENTS.md gives operational
+and maintenance safeguards.
+
+The agent helps scope a concern, prepare models/bindings, run native tools and
+explain results. The user reviews the intended claim, abstraction, assumptions
+and acceptance requirements. Neither an agent explanation nor a successful
+backend run discharges missing correspondence or coverage obligations.
+The project workflow separates planning, execution, evidence validation and
+acceptance so those distinctions remain inspectable beyond the conversation.
+
+Tool provisioning is explicit setup, separate from analysis. TlaLink's analyses
+run locally; the surrounding agent's data handling is outside this tool's
+guarantees. Trusted hosts, build projects and asserted reviewer identities
+remain trust boundaries, not authentication.
+
+The implementation-facing design targets the C#/.NET toolchain, not a
+language-neutral source abstraction. Roslyn supplies C# resolution and capture
+validation; compiler context, compiled adapters and loaded .NET binaries tie
+execution evidence to that implementation. TLA+, Dafny and P remain distinct
+formal backends supporting the C# workflow.
 
 ## Architecture
 
@@ -99,6 +126,8 @@ invariant induction have different claims. Induction requires three successful
 queries with identical constants: initiation (length 0), preservation from
 the candidate invariant (length 1), and implication of all selected safety
 properties (length 0). The candidate must include type/domain constraints.
+Those constraints must generate native initial states as well as typecheck;
+a sequence length bound alone is not a sequence assignment.
 Counterexamples to inductiveness do not necessarily originate from a reachable
 model state. Unknowns, deadlines and empty initial searches are incomplete;
 native exit zero alone is never a completed safety claim. Each successful query
@@ -120,7 +149,7 @@ bounded absence of an Apalache witness is promoted to trace rejection.
 ## Tool selection and test setup
 
 Select by the obligation and evidence required, not by a backend hierarchy.
-The [selection guide](README.md#choosing-tools-and-checkers) covers useful cases
+The [selection guide](REFERENCE.md#choosing-tools-and-checkers) covers useful cases
 and limitations for the frontends, TLC, Apalache, Dafny and each P checker.
 Parsing, sampled schedules, bounded safety, finite exhaustion, induction,
 concrete oracle comparisons and log monitoring retain different claims.
