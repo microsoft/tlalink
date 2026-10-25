@@ -1,0 +1,107 @@
+# Working on TlaLink
+
+Read [README.md](README.md) for usage/schema and [DESIGN.md](DESIGN.md) before
+changing behavior. This is a C#/.NET 10 tool for TLA+, Dafny and P source/model
+evidence.
+
+Keep shared workflow/C# infrastructure in `Common`, P in `PLang`, SANY and
+TLA bindings in `Tla`, TLC execution/trace matching in `Tlc`, PlusCal-specific
+frontend helpers in `PlusCal`, and Dafny in `Dafny`. Preserve the public
+namespace and flat deployed bridge-asset names when moving implementation.
+
+## Workflow
+
+```powershell
+dotnet build .\TlaLink.sln
+dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj
+.\TlaLink.ps1 plan --project .\examples\Workflow\project.json --scenario lanes
+.\TlaLink.ps1 review --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
+```
+
+- The root solution, public tests and examples must not depend on `local`.
+  Private consumer work packages, copied sources, milestones and evidence belong
+  under that Git-ignored directory. Follow each package's own instructions.
+  Never publish it or force-add it. Use the allowlisted source export script.
+- Tool distributions belong in the ignored root `.tools` cache. Public tests
+  accept `TLALINK_TLA_JAR`, `TLALINK_DAFNY` and `TLALINK_P_COMPILER` overrides;
+  `--core` runs without external backend tools. Tool lifecycle management is
+  planned separately; do not imply automatic installation already exists.
+- Java selection uses the single `java-toolchain.json` pin: Temurin JDK 25
+  for Windows x64, provisioned explicitly with `scripts\Initialize-Java.ps1`.
+  SANY/PlusCal, TLC and their tests use `JavaToolchain`, never PATH or
+  `JAVA_HOME`. `TLALINK_JAVA_HOME` may relocate only the same pinned JDK.
+  Keep native P manifests' explicitly selected Java dependencies independent.
+  Setup verifies the distribution archive; selection checks the pinned release
+  and launcher bytes. This is not authentication or full installed-file attestation.
+- Supply narrow sources/references/defines explicitly. Roslyn is not a product
+  MSBuild workspace; unresolved context blocks instrumentation.
+- Follow calls, competing accesses, awaits, cancellation, cleanup and external
+  effects beyond the supplied scope. Symbol resolution does not prove atomicity.
+- Use only `@tla 2`. Review-only bindings need not have executable metadata.
+- Instrument separate copied sources, never product code or frozen profiles.
+  Keep selected observation points and missing coverage explicit.
+- Use `execute` to bind generated sources to compiler inputs and a loaded binary,
+  then `validate-trace` for a whole execution. Inspect explicit hidden-step
+  assumptions and uncaptured Task/queue/handoff edges.
+- Preserve archive consistency, current applicability and acceptance as distinct
+  results. Never replace a baseline simply to clear drift.
+- Prefer project `doctor`/`plan`/`run`/`accept`/`explain` for complete workflows.
+  Keep requirements separate from execution and reviews in append-only sidecars.
+  TLC/trace requirements pin approved configuration bytes, including properties
+  and bounds; do not update those pins merely to clear an acceptance failure.
+
+## Maintenance safeguards
+
+- P uses explicit `p-analysis` manifests and native backend-specific evidence,
+  not TLA annotations or a shared "proof passed" flag. PChecker exploration,
+  PEx/PSym exhaustion, PVerifier induction and PObserve log monitoring retain
+  distinct claims. Only authoritative frontend declarations may resolve P
+  bindings. External generated JARs require explicit source/build review;
+  their hashes alone do not establish source correspondence. Unknown native
+  output, partial exploration, missing tools and deadlines are incomplete.
+  Pin complete local tool distributions and explicitly selected dependencies;
+  never install or upgrade tools while executing an analysis.
+- When multiple standards or representations are possible, choose one and
+  document the choice and rationale here before introducing new usage. Apply
+  it consistently to maintained code, schemas, examples and tests. Do not add
+  parallel conventions, compatibility branches or competing normalization
+  helpers; reuse one shared implementation. Keep upstream formats distinct
+  only at explicit integration boundaries.
+- Filepaths use Windows backslash separators, including filesystem paths in
+  JSON; URIs are not filepaths. Resolve CLI-relative paths against the caller's
+  directory and document-relative paths against the declaring document's
+  directory. Internal file identities are normalized absolute paths, with dot
+  segments removed and no trailing separator except at a filesystem root.
+  Preserve spelling for display and use ordinal case-insensitive comparison
+  for Windows file identity; never lowercase paths or use culture-sensitive
+  comparison. Artifact paths are run-relative and must remain inside the run.
+  Normalize at input boundaries and reuse canonical values internally, not
+  independent per-component normalization rules. Do not treat lexical path
+  normalization as proof that symlinks or hard links identify different files.
+  Stable IDs, model symbols, URIs and hashes retain their own documented
+  semantics and must not be processed as filepaths.
+- Keep Java SANY/PlusCal authoritative; do not hand-parse TLA+ expressions or
+  replace TLC with an ad hoc interpreter.
+- Preserve transitive import pinning, nonmutating translation freshness,
+  timeout/termination handling, strict input validation and exclusive writes.
+- All maintained public JSON uses `Schema.Version` (4) and an explicit document
+  kind. Update producers/readers/examples/tests together; do not add legacy
+  acceptance branches or rewrite historical evidence. `@tla 2` is a separate
+  source annotation grammar, not an older JSON schema.
+- Keep capture side effects and scheduling hooks separate. Never run hooks
+  under the recorder lock or generate them inside source locks.
+- No global timestamp/sequence ordering, invented cross-lock snapshots or
+  independently reset per-event model states.
+- The producing host/build project is trusted, not authenticated. A matching
+  finite observed prefix is not general C# refinement or liveness.
+- Exit 0 means structural readiness or a trace witness for the chosen command;
+  1 means structural failure or a completed trace rejection; 2 means incomplete.
+  Project `run` instead reports execution completion, including completed
+  rejection controls. Only `accept` evaluates the independent requirements.
+- Add a regression/control for a motivating defect; update directly related
+  docs and run the focused/full console suite as appropriate.
+- Do not edit generated PlusCal bodies, frozen evidence, canonical source
+  profiles or consumer acceptance requirements. Intentional consumer-runner
+  integration changes require focused runner validation.
+- On Windows `src\tlalink` and `src\TlaLink` alias each other. Treat them as one
+  source directory.

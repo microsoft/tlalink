@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\java-toolchain.json" LogicalName="TlaLink.java-toolchain.json" />
+    <None Include="..\..\NuGet.Config" CopyToOutputDirectory="PreserveNewest" TargetPath="NuGet.Config" />
+    <Compile Remove="Dafny\DafnyIndex.source.cs" />
+    <Compile Remove="PLang\PIndex.source.cs" />
+    <EmbeddedResource Include="PLang\PIndex.source.cs" LogicalName="TlaLink.PIndex.source.cs" />
+    <None Include="PLang\PIndex.source.cs" CopyToOutputDirectory="PreserveNewest" TargetPath="PIndex.source.cs" />
+    <None Include="Dafny\DafnyIndex.source.cs" CopyToOutputDirectory="PreserveNewest" TargetPath="DafnyIndex.source.cs" />
+    <Reference Include="Microsoft.CodeAnalysis" HintPath="$(MSBuildSDKsPath)\..\Roslyn\bincore\Microsoft.CodeAnalysis.dll" />
+    <Reference Include="Microsoft.CodeAnalysis.CSharp" HintPath="$(MSBuildSDKsPath)\..\Roslyn\bincore\Microsoft.CodeAnalysis.CSharp.dll" />
+    <None Update="Tla\TlaIndex.java" CopyToOutputDirectory="PreserveNewest" TargetPath="TlaIndex.java" />
+    <None Include="Common\Runtime\TraceRuntime.cs" CopyToOutputDirectory="PreserveNewest" TargetPath="TraceRuntime.source.cs" />
+  </ItemGroup>
+</Project>

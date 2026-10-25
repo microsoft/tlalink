@@ -1,0 +1,22 @@
+{
+  "schema_version": 4,
+  "kind": "p-analysis",
+  "name": "Credit",
+  "engine": "pchecker",
+  "models": ["Credit.p"],
+  "sources": ["Credit.cs"],
+  "bindings": [
+    {
+      "id": "credit-return",
+      "source": "PExample.Credit.ReturnCredit",
+      "declaration": "Credit.ReturnCredit",
+      "relation": "The returned available-credit count increases by one within the live-window precondition.",
+      "assumptions": ["The caller supplies 0 <= available < 2.", "Exception behavior and concurrent shutdown require separate checks."]
+    }
+  ],
+  "dependencies": [],
+  "test_case": "tcCredit",
+  "schedules": 10,
+  "max_steps": 100,
+  "seed": 1
+}

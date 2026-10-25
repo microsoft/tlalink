@@ -1,0 +1,13 @@
+{
+  "schema_version": 4,
+  "kind": "java-toolchain",
+  "version": "25.0.4.1+1",
+  "directory": "jdk-25.0.4.1+1",
+  "archive_url": "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_windows_hotspot_25.0.4.1_1.zip",
+  "archive_sha256": "00C847D804F4A78E9F04F2683FAF14FED898535B177B7FC704486CB0284E9283",
+  "files": {
+    "release": "86E5E51658BB2B9CF064B3957D81AC39ABDB346B2CAC19867C1625DD19D440D9",
+    "bin\\java.exe": "5808527E3DFC4EB285C7664BA356BC267055EF906E83ED4660D9F7976DA7349B",
+    "bin\\javac.exe": "1C4B1F0ED250FDF08AC324A4BEAE89D8405D408FD9880F69A6283EB256BA80F9"
+  }
+}
