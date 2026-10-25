@@ -1,0 +1,32 @@
+{
+  "schema_version": 4,
+  "kind": "acceptance-policy",
+  "project": "workflow-pilots",
+  "requirements": [
+    {
+      "id": "credit-cases",
+      "scenario": "credits",
+      "stage": "decisions",
+      "expected": "passed",
+      "bindings": ["credit-return", "record-append", "boolean-function"],
+      "cases": [
+        "credit-return/return-one", "credit-return/reject-overflow", "credit-return/reject-zero",
+        "credit-return/reject-negative", "credit-return/full-window",
+        "record-append/accept", "record-append/reject", "record-append/maximum",
+        "boolean-function/true", "boolean-function/false"
+      ]
+    },
+    {"id": "lane-model", "scenario": "lanes", "stage": "model", "expected": "passed", "config_sha256": "63cd3973b75b3ad40ea7115a4953698dce237ff00760224b57f120e3e2193de3"},
+    {"id": "lane-trace", "scenario": "lanes", "stage": "execution", "expected": "passed", "config_sha256": "63cd3973b75b3ad40ea7115a4953698dce237ff00760224b57f120e3e2193de3"},
+    {
+      "id": "cleanup-cases",
+      "scenario": "cancellation",
+      "stage": "cleanup",
+      "expected": "passed",
+      "bindings": ["cleanup"],
+      "cases": ["cleanup/normal", "cleanup/canceled"],
+      "reviews": ["cleanup-adapter"]
+    },
+    {"id": "unsafe-proof", "scenario": "cancellation", "stage": "unsafe-control", "expected": "rejected", "diagnostic": "DF100"}
+  ]
+}

@@ -1,0 +1,59 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tlalink", "tlalink", "{2D634D65-5387-0F20-C84D-57AABA72EBFD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TlaLink", "src\tlalink\TlaLink.csproj", "{BD2C7F38-4C0F-44D0-B328-EFB52E356536}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TlaLink.Tests", "tests\TlaLink.Tests\TlaLink.Tests.csproj", "{F04AA8FB-C177-47EF-8FEE-908562F3E8F9}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BD2C7F38-4C0F-44D0-B328-EFB52E356536}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BD2C7F38-4C0F-44D0-B328-EFB52E356536}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BD2C7F38-4C0F-44D0-B328-EFB52E356536}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BD2C7F38-4C0F-44D0-B328-EFB52E356536}.Debug|x64.Build.0 = Debug|Any CPU
+		{BD2C7F38-4C0F-44D0-B328-EFB52E356536}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BD2C7F38-4C0F-44D0-B328-EFB52E356536}.Debug|x86.Build.0 = Debug|Any CPU
+		{BD2C7F38-4C0F-44D0-B328-EFB52E356536}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BD2C7F38-4C0F-44D0-B328-EFB52E356536}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BD2C7F38-4C0F-44D0-B328-EFB52E356536}.Release|x64.ActiveCfg = Release|Any CPU
+		{BD2C7F38-4C0F-44D0-B328-EFB52E356536}.Release|x64.Build.0 = Release|Any CPU
+		{BD2C7F38-4C0F-44D0-B328-EFB52E356536}.Release|x86.ActiveCfg = Release|Any CPU
+		{BD2C7F38-4C0F-44D0-B328-EFB52E356536}.Release|x86.Build.0 = Release|Any CPU
+		{F04AA8FB-C177-47EF-8FEE-908562F3E8F9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F04AA8FB-C177-47EF-8FEE-908562F3E8F9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F04AA8FB-C177-47EF-8FEE-908562F3E8F9}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F04AA8FB-C177-47EF-8FEE-908562F3E8F9}.Debug|x64.Build.0 = Debug|Any CPU
+		{F04AA8FB-C177-47EF-8FEE-908562F3E8F9}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F04AA8FB-C177-47EF-8FEE-908562F3E8F9}.Debug|x86.Build.0 = Debug|Any CPU
+		{F04AA8FB-C177-47EF-8FEE-908562F3E8F9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F04AA8FB-C177-47EF-8FEE-908562F3E8F9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F04AA8FB-C177-47EF-8FEE-908562F3E8F9}.Release|x64.ActiveCfg = Release|Any CPU
+		{F04AA8FB-C177-47EF-8FEE-908562F3E8F9}.Release|x64.Build.0 = Release|Any CPU
+		{F04AA8FB-C177-47EF-8FEE-908562F3E8F9}.Release|x86.ActiveCfg = Release|Any CPU
+		{F04AA8FB-C177-47EF-8FEE-908562F3E8F9}.Release|x86.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{2D634D65-5387-0F20-C84D-57AABA72EBFD} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{BD2C7F38-4C0F-44D0-B328-EFB52E356536} = {2D634D65-5387-0F20-C84D-57AABA72EBFD}
+		{F04AA8FB-C177-47EF-8FEE-908562F3E8F9} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-tests:
+    name: Linux build and native tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+          dotnet-version: 8.0.x
+
+      - name: Restore and build
+        run: |
+          dotnet restore TlaLink.sln --configfile NuGet.Config --nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build TlaLink.sln --configuration Release --no-restore --nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run backend-independent controls
+        run: |
+          $reports = Join-Path $env:RUNNER_TEMP 'tlalink-ci'
+          $null = New-Item -ItemType Directory -Path $reports -Force
+          $tests = Join-Path $PWD 'tests\TlaLink.Tests\bin\Release\net10.0\TlaLink.Tests.dll'
+          dotnet $tests . --core 2>&1 | Tee-Object -FilePath (Join-Path $reports 'core.log')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Provision pinned Java
+        run: |
+          & (Join-Path $PWD 'scripts\Initialize-Java.ps1')
+
+      - name: Provision native test backends
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Get-PinnedArchive([string]$Uri, [string]$File, [string]$Sha256) {
+            Invoke-WebRequest -Uri $Uri -OutFile $File
+            if ((Get-FileHash -LiteralPath $File -Algorithm SHA256).Hash -ne $Sha256) {
+              throw "Backend archive SHA256 mismatch: $File"
+            }
+          }
+          $tools = Join-Path $PWD '.tools'
+          $tla = Join-Path $tools 'tla\v1.8.0'
+          $null = New-Item -ItemType Directory -Path $tla -Force
+          Get-PinnedArchive `
+            'https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar' `
+            (Join-Path $tla 'tla2tools.jar') `
+            'D15655EEAFF4B3F7B3D65C46B838BC0F35D131B2EF4B1E473689B62C98D4726F'
+          $dafny = Join-Path $env:RUNNER_TEMP 'dafny-4.11.0.zip'
+          Get-PinnedArchive `
+            'https://github.com/dafny-lang/dafny/releases/download/v4.11.0/dafny-4.11.0-x64-ubuntu-22.04.zip' `
+            $dafny `
+            'A46A9FF7CDD720F7955854C78E95DF13F4CFE6B80691B05F8654FE19E8267179'
+          unzip -q $dafny -d $tools
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet tool install P --version 3.1.0 --tool-path (Join-Path $tools 'p') --configfile NuGet.Config
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run complete console suite
+        run: |
+          $reports = Join-Path $env:RUNNER_TEMP 'tlalink-ci'
+          $tests = Join-Path $PWD 'tests\TlaLink.Tests\bin\Release\net10.0\TlaLink.Tests.dll'
+          dotnet $tests . (Join-Path $reports 'results.json') 2>&1 |
+            Tee-Object -FilePath (Join-Path $reports 'native.log')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: linux-test-results
+          path: ${{ runner.temp }}/tlalink-ci
+          if-no-files-found: warn
+          retention-days: 7
