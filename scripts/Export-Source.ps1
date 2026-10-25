@@ -12,7 +12,7 @@ if (Test-Path -LiteralPath $target) { throw 'The export destination must be new.
 
 $files = @(
     '.gitignore', '.gitattributes', 'AGENTS.md', 'DESIGN.md', 'global.json', 'NuGet.Config',
-    'README.md', 'TlaLink.ps1', 'TlaLink.sln', 'TlaLink.code-workspace', 'java-toolchain.json'
+    'README.md', 'REFERENCE.md', 'SECURITY.md', 'TlaLink.ps1', 'TlaLink.sln', 'TlaLink.code-workspace', 'java-toolchain.json'
 )
 $extensions = @('.cs', '.csproj', '.java', '.json', '.tla', '.cfg', '.dfy', '.p', '.ps1', '.md', '.yml', '.yaml')
 foreach ($directory in 'src', 'tests', 'examples', 'scripts', '.github') {
