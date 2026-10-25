@@ -29,6 +29,11 @@ public static class ProjectAcceptance
             string archived = SafePath(directory, Path.Combine("inputs", pin.Value));
             if (!File.Exists(archived) || Files.Hash(archived) != pin.Value)
                 Error(ErrorCode.WorkflowProvenanceInconsistent, "Missing/changed archived input: " + pin.Key);
+            if (!FilePaths.IsNativeAbsolute(pin.Key))
+            {
+                Error(ErrorCode.WorkflowEvidenceStale, "Input uses a foreign filesystem root: " + pin.Key);
+                continue;
+            }
             string current = pin.Key;
             string relative = Path.GetRelativePath(run.ProjectDirectory, pin.Key);
             if (!Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))

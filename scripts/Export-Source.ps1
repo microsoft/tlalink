@@ -11,7 +11,7 @@ if ($target.Equals($root, $comparison) -or
 if (Test-Path -LiteralPath $target) { throw 'The export destination must be new.' }
 
 $files = @(
-    '.gitignore', 'AGENTS.md', 'DESIGN.md', 'global.json', 'NuGet.Config',
+    '.gitignore', '.gitattributes', 'AGENTS.md', 'DESIGN.md', 'global.json', 'NuGet.Config',
     'README.md', 'TlaLink.ps1', 'TlaLink.sln', 'TlaLink.code-workspace', 'java-toolchain.json'
 )
 $extensions = @('.cs', '.csproj', '.java', '.json', '.tla', '.cfg', '.dfy', '.p', '.ps1', '.md', '.yml', '.yaml')

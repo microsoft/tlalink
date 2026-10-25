@@ -31,6 +31,8 @@ public static class ProjectWorkflowTests
             var response = TestCli.Run(["run", "--project", path, "--scenario", scenario, "--output", output]);
             if (response.Code != expected)
             {
+                if (!File.Exists(Path.Combine(output, "run.json")))
+                    throw new InvalidOperationException(response.Json);
                 WorkflowRun failed = ProjectInputs.Read<WorkflowRun>(Path.Combine(output, "run.json"));
                 string details = string.Join("\n", failed.Stages.Select(s => s.Id + ": " + s.Outcome +
                     (s.Evidence.Length == 0 ? "" : "\n" + Files.Read(Path.Combine(output, s.Evidence)))));
@@ -45,10 +47,10 @@ public static class ProjectWorkflowTests
         test("project doctor and plan resolve project-relative inputs from another directory", () =>
         {
             var doctor = TestCli.Run(["doctor", "--project", path]);
-            CoreTests.Equal(0, doctor.Code);
+            if (doctor.Code != 0) throw new InvalidOperationException(doctor.Json);
             CoreTests.True(doctor.Json.Contains("pending", StringComparison.Ordinal));
             var plan = TestCli.Run(["plan", "--project", path, "--scenario", "lanes"]);
-            CoreTests.Equal(0, plan.Code);
+            if (plan.Code != 0) throw new InvalidOperationException(plan.Json);
             CoreTests.True(plan.Json.Contains("explicit handoffs", StringComparison.Ordinal));
             var text = TestCli.Run(["doctor", "--project", path, "--format", "text"]);
             CoreTests.Equal(0, text.Code);

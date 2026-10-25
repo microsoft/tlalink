@@ -20,7 +20,10 @@ public static class FilePaths
         return Path.TrimEndingDirectorySeparator(Path.GetFullPath(Native(path), Native(directory)));
     }
 
-    public static bool IsAbsolute(string path) => Path.IsPathFullyQualified(Native(path)) ||
+    public static bool IsNativeAbsolute(string path) => Path.IsPathFullyQualified(path) &&
+        (OperatingSystem.IsWindows() || !path.StartsWith("//", StringComparison.Ordinal));
+
+    public static bool IsAbsolute(string path) => IsNativeAbsolute(path) || path.StartsWith("/", StringComparison.Ordinal) ||
         HasDrive(path) && path.Length > 2 && path[2] is '\\' or '/' ||
         path.StartsWith(@"\\", StringComparison.Ordinal);
 

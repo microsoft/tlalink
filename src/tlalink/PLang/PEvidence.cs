@@ -63,7 +63,7 @@ public static class PEvidence
                 string archived = Safe(output, Path.Combine("inputs", pin.Value));
                 if (!File.Exists(archived) || Files.Hash(archived) != pin.Value)
                     Error("Missing/changed archived input: " + pin.Key);
-                if (current && (!File.Exists(pin.Key) || Files.Hash(pin.Key) != pin.Value))
+                if (current && (!FilePaths.IsNativeAbsolute(pin.Key) || !File.Exists(pin.Key) || Files.Hash(pin.Key) != pin.Value))
                     issues.Add(new(ErrorCode.PEvidenceStale, "Changed current input: " + pin.Key));
             }
             foreach (var artifact in packet.Artifacts)

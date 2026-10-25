@@ -95,7 +95,7 @@ public static class PFrontend
     {
         foreach ((string file, string hash) in pins)
             if (FilePaths.IsAbsolute(file) &&
-                (!File.Exists(file) || !StringComparer.OrdinalIgnoreCase.Equals(Files.Hash(file), hash)))
+                (!FilePaths.IsNativeAbsolute(file) || !File.Exists(file) || !StringComparer.OrdinalIgnoreCase.Equals(Files.Hash(file), hash)))
                 throw new InputException(ErrorCode.ToolFailure, "Pinned input changed during P inventory: " + file);
     }
 }

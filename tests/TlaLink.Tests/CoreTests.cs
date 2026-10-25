@@ -25,6 +25,10 @@ public static class CoreTests
         {
             True(FilePaths.IsAbsolute(@"C:\evidence\input.cs"));
             True(FilePaths.IsAbsolute(@"\\server\share\input.cs"));
+            True(FilePaths.IsAbsolute("/evidence/input.cs"));
+            Equal(OperatingSystem.IsWindows(), FilePaths.IsNativeAbsolute(@"C:\evidence\input.cs"));
+            Equal(OperatingSystem.IsWindows(), FilePaths.IsNativeAbsolute(@"\\server\share\input.cs"));
+            Equal(!OperatingSystem.IsWindows(), FilePaths.IsNativeAbsolute("/evidence/input.cs"));
             if (!OperatingSystem.IsWindows())
             {
                 Throws(() => FilePaths.Full(@"C:\evidence\input.cs"));

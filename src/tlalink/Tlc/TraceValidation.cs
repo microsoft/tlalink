@@ -230,8 +230,9 @@ public static class TraceValidation
 
     private static void CheckPins(Dictionary<string, string> pins)
     {
-        foreach (var pin in pins.Where(p => Path.IsPathRooted(p.Key)))
-            if (!File.Exists(pin.Key) || Files.Hash(pin.Key) != pin.Value) throw new InputException(ErrorCode.InvalidTrace, $"Current input mismatch: {pin.Key}");
+        foreach (var pin in pins.Where(p => FilePaths.IsAbsolute(p.Key)))
+            if (!FilePaths.IsNativeAbsolute(pin.Key) || !File.Exists(pin.Key) || Files.Hash(pin.Key) != pin.Value)
+                throw new InputException(ErrorCode.InvalidTrace, $"Current input mismatch: {pin.Key}");
     }
 
     private static string TlaValue(JsonElement value) => value.ValueKind switch

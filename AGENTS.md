@@ -50,6 +50,8 @@ dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj
   Keep requirements separate from execution and reviews in append-only sidecars.
   TLC/trace requirements pin approved configuration bytes, including properties
   and bounds; do not update those pins merely to clear an acceptance failure.
+  Pinned fixture inputs must declare any required checkout line endings in
+  `.gitattributes`, so host defaults cannot change their approved bytes.
 
 ## Maintenance safeguards
 

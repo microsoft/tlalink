@@ -55,7 +55,7 @@ public static class IntegratedEvidence
         if (count == 0) throw new InputException(ErrorCode.InvalidIntegratedEvidence, "Packet has no archived file pins.");
         if (current)
             foreach (JsonProperty pin in inputs.EnumerateObject().Where(p => FilePaths.IsAbsolute(p.Name)))
-                if (!File.Exists(pin.Name) || Files.Hash(pin.Name) != pin.Value.GetString())
+                if (!FilePaths.IsNativeAbsolute(pin.Name) || !File.Exists(pin.Name) || Files.Hash(pin.Name) != pin.Value.GetString())
                     issues.Add(new(ErrorCode.IntegratedEvidenceStale, "Current input differs or is missing: " + pin.Name));
         return new(issues.Any(i => i.Code == ErrorCode.IntegratedArchiveInconsistent.Id()) ? "inconsistent" : "consistent", semantic,
             !current ? "not-checked" : issues.Any(i => i.Code == ErrorCode.IntegratedEvidenceStale.Id()) ? "stale" : "current",

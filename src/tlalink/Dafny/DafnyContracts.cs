@@ -106,7 +106,7 @@ public static class IntegratedInputs
     public static void CheckPins(Dictionary<string, string> pins)
     {
         foreach (var pair in pins.Where(p => FilePaths.IsAbsolute(p.Key)))
-            if (!File.Exists(pair.Key) || Files.Hash(pair.Key) != pair.Value)
+            if (!FilePaths.IsNativeAbsolute(pair.Key) || !File.Exists(pair.Key) || Files.Hash(pair.Key) != pair.Value)
                 throw new InputException(ErrorCode.IntegratedInputChanged, "Input changed during integrated run: " + pair.Key);
     }
 }

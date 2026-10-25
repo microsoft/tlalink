@@ -130,6 +130,8 @@ not reinterpreted as local relative paths. Windows-style relative source paths
 work on Linux through this input normalization; launcher filenames and tool
 hashes remain platform-specific and must be selected explicitly in project
 manifests. Shell examples below use PowerShell.
+Approved configuration bytes are preserved across checkouts with explicit
+`.gitattributes` rules; CI does not rewrite acceptance pins for its host.
 
 ## Optional P prerequisites
 
