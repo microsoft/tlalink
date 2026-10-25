@@ -1,0 +1,40 @@
+{
+  "schema_version": 4,
+  "kind": "analysis-project",
+  "id": "apalache-credit",
+  "tools": {
+    "dafny": null,
+    "jar": {
+      "path": "..\\..\\.tools\\tla\\v1.8.0\\tla2tools.jar",
+      "sha256": "D15655EEAFF4B3F7B3D65C46B838BC0F35D131B2EF4B1E473689B62C98D4726F"
+    },
+    "apalache": {
+      "path": "..\\..\\.tools\\apalache\\0.62.4\\lib\\apalache.jar",
+      "sha256": "E5223915507B65CC5F1638BD037EDE60F8A4FC1644AFF46355779F9B05DF9262"
+    }
+  },
+  "compiler": {
+    "target_framework": "net10.0",
+    "language_version": "14",
+    "nullable": "enable",
+    "checked": false,
+    "allow_unsafe": true,
+    "defines": null,
+    "references": []
+  },
+  "requirements": "requirements.json",
+  "scenarios": [
+    {
+      "id": "credit",
+      "stages": [
+        {"id": "types", "kind": "apalache-typecheck", "depends_on": [], "timeout_seconds": 60, "config": "typecheck.json"},
+        {"id": "bounded", "kind": "apalache-check", "depends_on": ["types"], "timeout_seconds": 60, "config": "bounded.json"},
+        {"id": "inductive", "kind": "apalache-inductive", "depends_on": ["types"], "timeout_seconds": 60, "config": "inductive.json"},
+        {"id": "counterexample", "kind": "apalache-check", "depends_on": [], "timeout_seconds": 60, "config": "rejected.json"},
+        {"id": "noninductive", "kind": "apalache-inductive", "depends_on": [], "timeout_seconds": 60, "config": "noninductive.json"}
+      ]
+    }
+  ],
+  "obligations": [],
+  "review_directory": "reviews"
+}

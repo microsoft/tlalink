@@ -6,10 +6,12 @@ public sealed class CliOptions
     public string Command { get; }
     public CliOptions(string[] args)
     {
-        if (args.Length == 0) throw new InputException("Usage: TlaLink <doctor|plan|run|accept|explain|inspect|check|review|inputs|instrument|execute|validate-trace|inspect-integrated|verify-integrated|test-integrated|read-integrated> [--option value ...]");
+        if (args.Length == 0) throw new InputException("Usage: TlaLink <doctor|plan|run|accept|explain|inspect|check|review|inputs|instrument|execute|validate-trace|check-apalache|read-apalache|inspect-integrated|verify-integrated|test-integrated|read-integrated> [--option value ...]");
         Command = args[0];
         Dictionary<string, string[]> allowed = new()
         {
+            ["check-apalache"] = ["config", "apalache", "jar", "output", "timeout", "format"],
+            ["read-apalache"] = ["result", "current", "format"],
             ["inspect-p"] = ["config", "p", "output", "reference", "define", "timeout", "format"],
             ["check-p"] = ["config", "p", "output", "reference", "define", "timeout", "format"],
             ["read-p"] = ["result", "current", "format"],

@@ -77,6 +77,19 @@ public static class ProjectAcceptance
                     timeout.GetInt32() != scenario.Stages.Single(s => s.Id == stage.Id).TimeoutSeconds)
                     Error(ErrorCode.WorkflowStageInconsistent, "P stage deadline differs from the declared stage.");
             }
+            if (ApalacheInputs.IsStage(stage.Kind))
+            {
+                issues.AddRange(ApalacheEvidence.Validate(result, Path.Combine(directory, stage.Id, "engine")));
+                AnalysisStage selectedStage = scenario.Stages.Single(s => s.Id == stage.Id);
+                ApalacheAnalysis analysis = ApalacheInputs.Load(ProjectInputs.Resolve(path, selectedStage.Config!), new(FilePaths.Comparer));
+                if (!result.TryGetProperty("timeout_seconds", out JsonElement timeout) || timeout.GetInt32() != selectedStage.TimeoutSeconds ||
+                    !result.TryGetProperty("mode", out JsonElement mode) || mode.GetString() != analysis.Mode ||
+                    !result.TryGetProperty("config_sha256", out JsonElement configHash) ||
+                    configHash.GetString() != Files.Hash(ProjectInputs.Resolve(path, selectedStage.Config!)) ||
+                    !result.TryGetProperty("jar", out JsonElement jar) ||
+                    !FilePaths.Comparer.Equals(jar.GetString(), ProjectInputs.Resolve(path, project.Tools.Apalache!.Path)))
+                    Error(ErrorCode.WorkflowStageInconsistent, "Apalache evidence differs from the declared stage/configuration/tool/deadline.");
+            }
             evidence[stage.Id] = result;
         }
         List<object> requirements = [];
@@ -98,7 +111,7 @@ public static class ProjectAcceptance
                 missing.Add("validated stage evidence");
             else
             {
-                if (PInputs.IsStage(selected.Kind) && (!result.TryGetProperty("claim", out JsonElement claim) ||
+                if ((PInputs.IsStage(selected.Kind) || ApalacheInputs.IsStage(selected.Kind)) && (!result.TryGetProperty("claim", out JsonElement claim) ||
                     claim.GetString() != requirement.Claim))
                     missing.Add("evidence claim " + requirement.Claim);
                 List<string> diagnostics = result.TryGetProperty("diagnostics", out JsonElement found)

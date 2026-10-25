@@ -1,0 +1,13 @@
+{
+  "schema_version": 4,
+  "kind": "apalache-analysis",
+  "name": "credit-inductive",
+  "mode": "inductive",
+  "model": "Credit.tla",
+  "init": "Init",
+  "next": "Next",
+  "properties": ["Safety"],
+  "assumptions": ["TypeOK includes the finite domain constraints; Capacity is explicitly initialized to 3."],
+  "invariant": "TypeOK",
+  "const_init": "ConstInit"
+}

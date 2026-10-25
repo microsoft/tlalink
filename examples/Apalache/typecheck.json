@@ -1,0 +1,11 @@
+{
+  "schema_version": 4,
+  "kind": "apalache-analysis",
+  "name": "credit-types",
+  "mode": "typecheck",
+  "model": "Credit.tla",
+  "init": "Init",
+  "next": "Next",
+  "properties": [],
+  "assumptions": []
+}

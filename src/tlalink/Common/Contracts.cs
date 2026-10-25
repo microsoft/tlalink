@@ -3,6 +3,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("TlaLink.Tests")]
+
 namespace TlaLink;
 
 public sealed class InputException(string message) : Exception(message)
@@ -58,6 +60,8 @@ public sealed class Packet(string command)
 
 public static class Files
 {
+    internal static Func<string, string?>? ImmutableToolHashLookup { get; set; }
+
     public static readonly JsonSerializerOptions Json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
@@ -67,7 +71,18 @@ public static class Files
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) }
     };
 
-    public static string Hash(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
+    public static string Hash(string path)
+    {
+        if (ImmutableToolHashLookup?.Invoke(FilePaths.Full(path)) is string cached) return cached;
+        return HashUncached(path);
+    }
+
+    internal static string HashUncached(string path)
+    {
+        using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 64 * 1024, FileOptions.SequentialScan);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+    }
     public static void RequireSchema(JsonElement root, string kind)
     {
         if (root.ValueKind != JsonValueKind.Object ||
