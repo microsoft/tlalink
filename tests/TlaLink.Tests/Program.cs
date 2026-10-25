@@ -50,6 +50,7 @@ public static class Program
             using ToolHashSession session = new(TestTools.ImmutableAssets(root, selection), Path.Combine(work, "tool-hashes.json"));
             hashes = session;
             ToolHashTests.Register(Test, work);
+            if (selection is null or "--core" or "--apalache") ApalacheTests.RegisterExample(Test, root);
             DiagnosticTests.Register(Test);
             if (args.Length == 2 && args[1] == "--apalache")
             {

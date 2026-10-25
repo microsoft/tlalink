@@ -54,6 +54,8 @@ dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj
   and bounds; do not update those pins merely to clear an acceptance failure.
   Pinned fixture inputs must declare any required checkout line endings in
   `.gitattributes`, so host defaults cannot change their approved bytes.
+  Workflow and Apalache examples pin CRLF configuration bytes; preserve those
+  bytes on either host rather than changing requirements after checkout.
 
 ## Maintenance safeguards
 

@@ -6,6 +6,23 @@ namespace TlaLink.Tests;
 
 public static class ApalacheTests
 {
+    public static void RegisterExample(Action<string, Action> test, string root)
+    {
+        test("maintained Apalache example preserves approved configuration bytes", () =>
+        {
+            string path = Path.Combine(root, "examples", "Apalache", "project.json");
+            var (project, policy) = ProjectInputs.Load(path);
+            foreach (AnalysisRequirement requirement in policy.Requirements)
+            {
+                AnalysisStage stage = project.Scenarios.Single(s => s.Id == requirement.Scenario)
+                    .Stages.Single(s => s.Id == requirement.Stage);
+                string config = ProjectInputs.Resolve(path, stage.Config!);
+                if (!string.Equals(requirement.ConfigSha256, Files.Hash(config), StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Maintained example configuration differs from approved bytes: " + config);
+            }
+        });
+    }
+
     private static ApalacheAnalysis Analysis(string model, string mode = "bounded") =>
         new(Schema.Version, "apalache-analysis", "credit", mode, model, "Init", "Next",
             mode == "typecheck" ? [] : ["Safety"], [], mode == "bounded" ? 5 : null,
