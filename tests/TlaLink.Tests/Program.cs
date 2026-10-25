@@ -18,6 +18,18 @@ public static class Program
             return 0;
         }
         string root = FilePaths.Full(args.FirstOrDefault() ?? Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\.."));
+        string[] testArguments = args.Skip(1).ToArray();
+        string[] selections = ["--core", "--apalache", "--p", "--diagnostics", "--integrated", "--workflow"];
+        if (testArguments.Length > 2 ||
+            testArguments.Count(a => a.StartsWith("--", StringComparison.Ordinal)) > 1 ||
+            testArguments.Count(a => !a.StartsWith("--", StringComparison.Ordinal)) > 1 ||
+            testArguments.Any(a => a.StartsWith("--", StringComparison.Ordinal) && !selections.Contains(a)))
+        {
+            Console.Error.WriteLine("Usage: TlaLink.Tests [root [report.json] [--core|--apalache|--p|--diagnostics|--integrated|--workflow]]");
+            return 2;
+        }
+        string? selection = testArguments.SingleOrDefault(a => a.StartsWith("--", StringComparison.Ordinal));
+        string? reportPath = testArguments.SingleOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal));
         string work = Directory.CreateTempSubdirectory("tlalink-dotnet-tests-").FullName;
         List<object> results = [];
         int failed = 0;
@@ -40,46 +52,47 @@ public static class Program
                 Console.WriteLine($"Immutable tool hashes: {hashes.Count} files, {hashes.Hits} in-process cache hits; startup {hashes.StartupSeconds:F2}s.");
             }
             Console.WriteLine($"{results.Count - failed}/{results.Count} passed.");
-            if (args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal))
-                TlaLink.Files.WriteNew(args[1], new { SchemaVersion = Schema.Version, Kind = "test-results", Results = results, Root = root, Failed = failed, Runtime = Environment.Version.ToString() });
+            if (reportPath is not null)
+                TlaLink.Files.WriteNew(reportPath, new { SchemaVersion = Schema.Version, Kind = "test-results", Results = results, Root = root, Failed = failed, Runtime = Environment.Version.ToString() });
             return failed == 0 ? 0 : 1;
         }
         try
         {
-            string? selection = args.Length == 2 && args[1].StartsWith("--", StringComparison.Ordinal) ? args[1] : null;
             using ToolHashSession session = new(TestTools.ImmutableAssets(root, selection), Path.Combine(work, "tool-hashes.json"));
             hashes = session;
             ToolHashTests.Register(Test, work);
             if (selection is null or "--core" or "--apalache") ApalacheTests.RegisterExample(Test, root);
             DiagnosticTests.Register(Test);
-            if (args.Length == 2 && args[1] == "--apalache")
+            if (selection == "--apalache")
             {
                 ApalacheTests.RegisterCore(Test, work);
                 ApalacheTests.RegisterNative(Test, root, work);
                 return Finish();
             }
-            if (args.Length == 2 && args[1] == "--p")
+            if (selection == "--p")
             {
                 PTests.Register(Test, root, work);
                 return Finish();
             }
-            if (args.Length == 2 && args[1] == "--diagnostics")
+            if (selection == "--diagnostics")
             {
                 return Finish();
             }
-            if (args.Length == 2 && args[1] == "--core")
+            if (selection == "--core")
             {
                 ApalacheTests.RegisterCore(Test, work);
                 JavaToolchainTests.RegisterCore(Test, work);
                 CoreTests.Register(Test, work);
+                EvidenceReportTests.Register(Test, work);
+                EvidenceRetentionTests.Register(Test, work);
                 return Finish();
             }
-            if (args.Length == 2 && args[1] == "--integrated")
+            if (selection == "--integrated")
             {
                 IntegratedTests.Register(Test, root, work);
                 return Finish();
             }
-            if (args.Length == 2 && args[1] == "--workflow")
+            if (selection == "--workflow")
             {
                 ProjectWorkflowTests.Register(Test, root, work);
                 EvidenceHardeningTests.Register(Test, root, work);
@@ -87,6 +100,8 @@ public static class Program
                 return Finish();
             }
             CoreTests.Register(Test, work);
+            EvidenceReportTests.Register(Test, work);
+            EvidenceRetentionTests.Register(Test, work);
             ApalacheTests.RegisterCore(Test, work);
             ApalacheTests.RegisterNative(Test, root, work);
             JavaToolchainTests.RegisterCore(Test, work);

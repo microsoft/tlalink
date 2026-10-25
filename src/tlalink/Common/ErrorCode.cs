@@ -2,6 +2,12 @@ namespace TlaLink;
 
 public enum ErrorCode
 {
+    [DiagnosticInfo("RP001", IssueSeverity.Error)]
+    InvalidReportInput,
+    [DiagnosticInfo("RP002", IssueSeverity.Warning)]
+    ReportInputStale,
+    [DiagnosticInfo("RP003", IssueSeverity.Error)]
+    ReportSnapshotChanged,
     [DiagnosticInfo("TL001", IssueSeverity.Error)]
     InvalidAnnotation,
     [DiagnosticInfo("TL003", IssueSeverity.Error)]
@@ -38,6 +44,13 @@ public enum ErrorCode
     InvalidExecution,
     [DiagnosticInfo("TL900", IssueSeverity.Error)]
     ToolFailure,
+
+    [DiagnosticInfo("GC001", IssueSeverity.Error)]
+    InvalidRetention,
+    [DiagnosticInfo("GC002", IssueSeverity.Error)]
+    RetentionScanIncomplete,
+    [DiagnosticInfo("GC003", IssueSeverity.Error)]
+    RetentionApplyIncomplete,
 
     [DiagnosticInfo("DF001", IssueSeverity.Error)]
     InvalidIntegratedInput,

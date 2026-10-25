@@ -25,7 +25,7 @@ public static class IntegratedEvidence
             "true" => true, "false" => false, _ => throw new InputException(ErrorCode.InvalidIntegratedEvidence, "--current must be true or false.")
         };
         IntegratedEvidenceInspection inspection = Inspect(options.Required("result"), current);
-        Console.WriteLine(JsonSerializer.Serialize(inspection, Files.Json));
+        ProjectWorkflow.Render(inspection, options);
         return inspection.ExitCode;
     }
 

@@ -9,9 +9,12 @@ public static class Program
 {
     public static int Main(string[] args)
     {
+        CliOptions? options = null;
         try
         {
-            CliOptions options = new(args);
+            options = new(args);
+            if (options.Command == "report") return EvidenceReport.Run(options);
+            if (options.Command == "gc") return EvidenceGarbageCollection.Run(options);
             if (options.Command is "check-apalache" or "read-apalache") return ApalacheBackend.Run(options);
             if (options.Command is "inspect-p" or "check-p" or "read-p") return PBackend.Run(options);
             if (options.Command is "doctor" or "plan" or "run" or "accept" or "explain" or "record-review") return ProjectWorkflow.Run(options);
@@ -69,11 +72,14 @@ public static class Program
             or DecoderFallbackException or Win32Exception or TimeoutException or KeyNotFoundException or BadImageFormatException ||
             error is (InvalidOperationException or FormatException) && error.TargetSite?.DeclaringType?.Assembly == typeof(JsonDocument).Assembly)
         {
-            Console.WriteLine(JsonSerializer.Serialize(new
+            object failure = new
             {
                 SchemaVersion = Schema.Version, Kind = "command-error", Status = "incomplete",
-                Diagnostics = new[] { new Issue(ErrorCode.ToolFailure, error.Message) }
-            }, Files.Json));
+                Diagnostics = new[] { new Issue(
+                    error is InputException { Code: { } code } ? code : ErrorCode.ToolFailure, error.Message) }
+            };
+            if (options == null) Console.WriteLine(JsonSerializer.Serialize(failure, Files.Json));
+            else Render(failure, options);
             return 2;
         }
     }
@@ -112,7 +118,8 @@ public static class Program
 
     private static void Render(object value, CliOptions options)
     {
-        if (options.Get("format", "json") == "json") Console.WriteLine(JsonSerializer.Serialize(value, Files.Json));
+        if (options.Get("format", "json") == "summary") Console.WriteLine(CommandSummary.Create(value, options).ToJsonString(Files.Json));
+        else if (options.Get("format", "json") == "json") Console.WriteLine(JsonSerializer.Serialize(value, Files.Json));
         else if (value is Packet packet)
         {
             Console.WriteLine($"Links: {packet.LinksStatus}; coverage: {packet.CoverageStatus}; conformance: {packet.ConformanceStatus}");

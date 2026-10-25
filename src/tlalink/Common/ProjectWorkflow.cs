@@ -19,11 +19,15 @@ public static partial class ProjectWorkflow
                 ?? throw new InputException(ErrorCode.InvalidWorkflowInput, "Unknown scenario: " + selected)]
             : project.Scenarios;
         Dictionary<string, string> pins = Pins(path, project, policy, scenarios);
+        List<CheckCoverage> coverage = ProjectInputs.Coverage(project, policy, scenarios.Select(s => s.Id));
+        List<Issue> coverageIssues = coverage.SelectMany(o => o.Gaps.Select(gap =>
+            new Issue(ErrorCode.WorkflowPrerequisiteMissing, o.Id + ": " + gap))).ToList();
         if (options.Command is "doctor" or "plan")
         {
             var report = new {
                 SchemaVersion = Schema.Version, Kind = options.Command == "doctor" ? "project-preflight" : "analysis-plan",
-                Project = project.Id, Status = "ready", Compiler = project.Compiler,
+                Project = project.Id, Status = coverageIssues.Count == 0 ? "ready" : "incomplete", Compiler = project.Compiler,
+                CheckCoverage = coverage, Diagnostics = coverageIssues,
                 Fingerprints = pins, Scenarios = scenarios.Select(s => new {
                     s.Id, Stages = ProjectInputs.Order(s).Select(stage => new {
                         stage.Id, stage.Kind, stage.DependsOn, stage.TimeoutSeconds,
@@ -37,11 +41,13 @@ public static partial class ProjectWorkflow
                 }),
                 ReviewStatus = project.Obligations.Select(o => new {
                     o.Id, ClaimSha256 = Schema.Hash(o), Status = ProjectAcceptance.ReviewStatus(path, project, o.Id) }),
-                Boundary = "Preflight validates configuration and available inputs, not proofs, native signature resolution, review discharge or milestone acceptance."
+                Boundary = "Check coverage maps explicit declarations to required compatible backends, not proofs or inferred TLC properties/fairness. Preflight does not discharge reviews or establish milestone acceptance."
             };
             Render(report, options);
-            return 0;
+            return coverageIssues.Count == 0 ? 0 : 2;
         }
+        if (coverageIssues.Count > 0)
+            throw new InputException(ErrorCode.WorkflowPrerequisiteMissing, string.Join("; ", coverageIssues.Select(i => i.Message)));
         if (scenarios.Count != 1) throw new InputException(ErrorCode.InvalidWorkflowInput, "run requires --scenario when the project has multiple scenarios.");
         string output = FilePaths.Full(options.Required("output"));
         if (File.Exists(output) || Directory.Exists(output)) throw new InputException(ErrorCode.InvalidWorkflowInput, "Run output must be a new directory.");
@@ -69,7 +75,9 @@ public static partial class ProjectWorkflow
                 List<string> diagnostics = result.TryGetProperty("diagnostics", out JsonElement list)
                     ? list.EnumerateArray().Select(i => i.GetProperty("code").GetString()!).ToList() : [];
                 run.Stages.Add(new(stage.Id, stage.Kind, outcome == "incomplete" ? "incomplete" : "completed",
-                    outcome, Path.GetRelativePath(output, evidence), Files.Hash(evidence), diagnostics, clock.Elapsed.TotalSeconds));
+                    outcome, Path.GetRelativePath(output, evidence), Files.Hash(evidence), diagnostics, clock.Elapsed.TotalSeconds,
+                    stage.Kind == "tlc" && result.TryGetProperty("statistics", out JsonElement statistics)
+                        ? statistics.Deserialize<TlcStatistics>(ProjectInputs.Json) : null));
             }
             catch (Exception error) when (error is InputException or IOException or UnauthorizedAccessException or
                 JsonException or System.ComponentModel.Win32Exception or TimeoutException)
@@ -95,6 +103,7 @@ public static partial class ProjectWorkflow
         Pin(ProjectInputs.Resolve(path, project.Requirements));
         Program.PinTool(pins);
         bool needDafny = false, needJar = false, needP = false, needApalache = false;
+        List<(ApalacheAnalysis Config, int Timeout)> apalache = [];
         foreach (string reference in project.Compiler.References) Pin(ProjectInputs.Resolve(path, reference));
         foreach (var entry in scenarios.SelectMany(s => s.Stages.Select(stage => (Scenario: s.Id, Stage: stage))))
         {
@@ -103,7 +112,7 @@ public static partial class ProjectWorkflow
             {
                 needApalache = true;
                 needJar = true;
-                _ = ApalacheInputs.Load(ProjectInputs.Resolve(path, stage.Config!), pins);
+                apalache.Add((ApalacheInputs.Load(ProjectInputs.Resolve(path, stage.Config!), pins), stage.TimeoutSeconds));
                 ApalacheInputs.PinDistribution(ProjectInputs.Resolve(path, project.Tools.Apalache!.Path), pins);
             }
             if (PInputs.IsStage(stage.Kind))
@@ -153,6 +162,22 @@ public static partial class ProjectWorkflow
         Pin(Executable("dotnet"));
         if (needJar)
             foreach (var pin in JavaToolchain.Resolve().Fingerprints) Files.Pin(pins, pin.Key, pin.Value);
+        Dictionary<string, TlaDocument> parsedModels = new(FilePaths.Comparer);
+        TlaDocument ParsedModel(string file, int timeout)
+        {
+            if (!parsedModels.TryGetValue(file, out TlaDocument? model))
+            {
+                model = TlaBackend.Parse(file, ProjectInputs.Resolve(path, project.Tools.Jar!.Path), timeout);
+                foreach (var pin in model.DependencyFingerprints) Files.Pin(pins, pin.Key, pin.Value);
+                parsedModels.Add(file, model);
+            }
+            return model;
+        }
+        foreach (var analysis in apalache)
+            ApalacheBackend.RequireSupportedModel(ParsedModel(analysis.Config.Model, analysis.Timeout), analysis.Config);
+        foreach (AnalysisStage stage in scenarios.SelectMany(s => s.Stages).Where(s => s.Kind == "tlc"))
+            RequireTlcModel(ParsedModel(ProjectInputs.Resolve(path, stage.Models![0]), stage.TimeoutSeconds));
+        IntegratedInputs.CheckPins(pins);
         return pins;
     }
 
@@ -342,7 +367,8 @@ public static partial class ProjectWorkflow
 
     internal static void Render(object result, CliOptions options)
     {
-        if (options.Get("format", "json") == "json") Console.WriteLine(JsonSerializer.Serialize(result, Files.Json));
+        if (options.Get("format", "json") == "summary") Console.WriteLine(CommandSummary.Create(result, options).ToJsonString(Files.Json));
+        else if (options.Get("format", "json") == "json") Console.WriteLine(JsonSerializer.Serialize(result, Files.Json));
         else
         {
             JsonElement root = JsonSerializer.SerializeToElement(result, Files.Json);

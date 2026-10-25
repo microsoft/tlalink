@@ -96,7 +96,7 @@ public static class IntegratedReview
             foreach (Issue issue in packet.Diagnostics) Console.WriteLine($"{issue.Code} {issue.Severity}: {issue.Message}");
             Console.WriteLine("Evidence: " + Path.Combine(output, "result.json"));
         }
-        else Console.WriteLine(JsonSerializer.Serialize(packet, Files.Json));
+        else ProjectWorkflow.Render(packet, options);
         return packet.Status switch { "passed" or "ready" => 0, "rejected" => 1, _ => 2 };
     }
 

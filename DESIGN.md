@@ -63,6 +63,8 @@ and freshness handling are in a separate partial frontend under `PlusCal`.
 | `ProjectContracts.cs` | Strict project, compiler profile, requirements, run and review records |
 | `ProjectWorkflow.cs` | Preflight, dependency plan, bounded orchestration and immutable run provenance |
 | `ProjectAcceptance.cs` | Semantic acceptance, exact requirements, current review decisions and explanations |
+| `CommandSummary.cs` | Presentation-only status/diagnostic projections; full saved evidence and exit semantics remain unchanged |
+| `EvidenceReport.cs` | Backend-neutral schema-4 evidence-report validation and local Markdown/Mermaid presentation; recorded claims remain separate from byte applicability and acceptance |
 | `Program.cs` / `CliOptions.cs` | Strict command surface, drift and exit semantics |
 | `PLang/PFrontend.cs` / `PLang/PIndex.source.cs` | Isolated authoritative P parse/typecheck and qualified declaration inventory |
 | `PLang/PContracts.cs` | Strict explicit P scope, resolved source links, native claim dimensions |
@@ -70,6 +72,27 @@ and freshness handling are in a separate partial frontend under `PlusCal`.
 | `PLang/PResults.cs` / `PLang/PEvidence.cs` | Conservative backend-specific outcomes and independent immutable-evidence validation |
 | `Apalache/ApalacheContracts.cs` | Strict selected safety scopes, queries, tool-distribution pins and native receipts |
 | `Apalache/ApalacheBackend.cs` / `Apalache/ApalacheEvidence.cs` | Isolated native checks and independent mode/obligation/artifact validation |
+
+## Human-readable evidence reports
+
+One explicit `evidence-report` manifest describes an acyclic graph of recorded
+claims, their pinned supporting files, code-region dispositions, assumptions
+and open gates. `report` renders it into Markdown with Mermaid role/dependency
+diagrams, evidence tables and a complete selected-code appendix. It needs no
+backend tool or online diagram service.
+
+Native/private adapters perform independent backend rereads before producing
+this presentation manifest. The generic renderer does not decode private
+archives or infer source-to-proof edges from symbol or contract names.
+Historical milestone claims, expected negative controls and pending reviews
+retain their own recorded statuses. Green denotes a declared expectation
+matched in a byte-current snapshot, not verified C#.
+
+The renderer validates graph identity, source spans and pinned evidence,
+rechecks the observed snapshot before exclusive publication, and exposes
+changed/missing input files as a stale report with exit 2. A report is neither
+an acceptance receipt nor an automatic retention root; no archived evidence or
+independent requirements are rewritten to improve its appearance.
 
 ## P analysis and evidence claims
 
@@ -113,6 +136,10 @@ freshness. The adapter reports authoritative ASSUME declarations over loaded
 modules; Apalache's initial profile rejects them without changing TLC behavior.
 Only explicit nullary predicates and constant initialization are supported.
 TLC configuration translation, temporal checking and simulation are excluded.
+Project preflight reuses native execution's SANY compatibility validator and
+pins imported model dependencies before creating a run. Parsing is shared only
+within that preflight invocation; execution reparses and validates its inputs.
+This is structural compatibility, not native Snowcat typing or a safety claim.
 
 The backend pins the local 0.62.4 distribution and Java toolchain, stages the
 model closure, and invokes fresh local incremental Z3/oopsla19 processes.
@@ -128,6 +155,9 @@ the candidate invariant (length 1), and implication of all selected safety
 properties (length 0). The candidate must include type/domain constraints.
 Those constraints must generate native initial states as well as typecheck;
 a sequence length bound alone is not a sequence assignment.
+Native failure summaries retain the query, last native pass, exit/deadline and
+recognized error/source text. They are bounded excerpts of archived logs, not
+an alternate outcome classifier; unsupported assignment remains incomplete.
 Counterexamples to inductiveness do not necessarily originate from a reachable
 model state. Unknowns, deadlines and empty initial searches are incomplete;
 native exit zero alone is never a completed safety claim. Each successful query
@@ -145,6 +175,76 @@ claim requirement. A bounded pass cannot satisfy an induction or TLC requirement
 Archived validity, optional current applicability and acceptance stay separate.
 Existing TLC causal trace witness/rejection semantics are unchanged; no
 bounded absence of an Apalache witness is promoted to trace rejection.
+
+## Evidence retention and dependency impact
+
+GC defaults to a read-only planner. One schema-4
+`evidence-retention` document declares path/reason `pins` and `review_projects`.
+CLI paths are caller-relative; manifest paths are document-relative. Store
+units are immediate child directories. Only completed schema-4 workflow runs
+are collection candidates. Other archives and loose sidecars may participate
+through one schema-4 `protected-consumer-catalog`, selected by the retention
+manifest's optional `catalog` path. This is an explicit native integration
+boundary, not legacy public evidence acceptance or an ignore switch.
+
+A catalog pins its producer sources and every file in each declared protected
+unit/sidecar, and supplies native-adapter-extracted file inputs and references.
+The complete on-disk file set and bytes must match; missing entries, extra files,
+stale producer code or changed bytes block the scope. Catalog consumers remain
+protected roots, whose dependency closure retains ordinary workflow runs.
+Catalog generation is trusted, not authenticated: the native adapter must cover
+its recorded path fields and declaring bases, including explicit historical
+relocations, and must reject unknown reference-bearing representations.
+It does not infer arbitrary external consumers or future executions of archived
+code. Private adapters stay private; the public engine reads only this one
+current schema. Historical source evidence is not upgraded or rewritten.
+
+Retention follows recorded file fingerprints and review evidence transitively,
+including decisions embedded in acceptance receipts. Explicit review projects
+provide the project-relative base for append-only review sidecars and retain
+that history, not just the latest decision. Accepted or stale status alone is
+neither a retention root nor permission to collect.
+
+The same graph reports changed/missing recorded file inputs and transitively
+affected runs/reviews. Recheck is conservative at whole-run granularity, not an
+invented stage-level mapping. No recorded file change is not current applicability
+or acceptance; native checks, review freshness and environment changes still
+require independent readers.
+
+Plans never authorize deletion. Reparse points, unreadable/malformed records,
+scan races and unsupported formats are explicit blockers. A grace interval
+protects recent output but does not prove inactivity. Byte totals are logical
+lengths, not guaranteed reclaimed space or hard-link identity proofs.
+
+On Windows, existing recorded input paths may pass through links only when an
+opened read handle supplies their final native path and the bytes hashed through
+that same handle. Physical store-relative identities supply retention edges;
+recorded spellings remain provenance/display identities. Resolved targets are
+rechecked and pinned in plans/apply. Managed outputs, catalogs and deletion
+ancestors still reject reparse points. Missing linked inputs and unsupported
+host resolution remain explicit blockers, not assumed-distinct files.
+
+Explicit application uses `gc --apply <full-plan> --exclusive true --output
+<new-receipt>`. It never accepts a summary or overrides pins/grace. Application
+is initially Windows-only: retained native directory handles deny ancestor
+rename/replacement, and each directory is checked for reparse attributes through
+its handle. Unsupported platforms fail explicitly rather than substituting
+weaker path-only deletion. The caller must first stop all writers; the exclusive
+assertion is a trust boundary, not authentication or automatic process discovery.
+A sibling exclusive GC lease prevents competing applications.
+
+The full plan includes observed filesystem metadata. Apply recomputes the whole
+graph, compares snapshots, decision-document hashes, changed inputs and candidate
+sets, and verifies candidate artifact/input bytes before deleting anything.
+Deletion uses only the enumerated candidate files and nonrecursive empty-directory
+removal, never a recursive delete or a rescan that would include new files.
+Unknown scope still blocks all candidates; it cannot be ignored or narrowed away
+to force collection. A new schema-4 `gc-apply-result` is reserved and flushed as
+incomplete before mutation. Errors stop application, retain explicit partial
+progress and return incomplete; interrupted final receipt writes can be
+incomplete/malformed, never evidence of transactional completion. There is no
+rollback, forced deletion, physical-space guarantee or inference of proof
+acceptance. Catalog consumers themselves are never deletion candidates.
 
 ## Tool selection and test setup
 
@@ -435,10 +535,21 @@ declares expected outcomes, diagnostic-specific rejection controls, required
 bindings/cases and reviewed assumptions. Execution never weakens the policy.
 Preflight makes supported capability limits explicit but does not claim native
 proof/signature readiness. Low-level commands remain directly usable.
+Optional `check_obligations` map declared safety/deadlock/progress obligations
+to positive acceptance requirements in the same scenario. One shared coverage
+implementation feeds preflight and acceptance. Empty or backend-incompatible
+mappings remain missing and prevent a new run, not silently successful defaults.
+The initial profile covers TLC and Apalache's distinct capabilities; it neither
+invents temporal requirements for safety-only projects nor interprets TLC
+configuration semantics. Mapped checks are a plan, not evidence or a theorem.
 
 Each stage keeps its native evidence meaning. Native TLC runs use a fresh JVM,
 fixed bounded resources and the exact pinned configuration; process deadlines
-are incomplete. Oracle/trace runs retain actual compiler/binary receipts.
+are incomplete. A completed native deadlock (`TLC2114`) is a rejection and may
+satisfy only a requirement selecting that rejection/diagnostic, not a positive
+safety obligation. TLC diagnostics surface bounded native error bodies and
+nested exception locations; full logs remain archived and classification still
+uses native diagnostic IDs. Oracle/trace runs retain actual compiler/binary receipts.
 No generic shell/plugin runner, replacement model interpreter or automatic
 source translation is introduced.
 

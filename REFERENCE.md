@@ -17,6 +17,8 @@ root-relative because this document lives beside the README.
 - [Apalache setup and analysis](#using-apalache-with-tla)
 - [P analysis workflow](#p-analysis-workflow)
 - [Project workflow and acceptance](#project-workflow)
+- [Evidence retention and recheck planning](#evidence-retention-and-recheck-planning)
+- [Human-readable evidence reports](#human-readable-evidence-reports)
 - [Integrated TLA+ and Dafny workflow](#integrated-tla-and-dafny-workflow)
 - [Review commands](#review-commands)
 - [Source annotation grammar](#one-maintained-markup-tla-2)
@@ -51,6 +53,80 @@ All maintained public JSON documents use **schema 4** and a document
 C# executions, atomicity, general refinement or liveness. Dafny verification
 proves the supplied Dafny program, not the linked C#.** See [DESIGN.md](DESIGN.md) for the
 precise evidence boundary and [AGENTS.md](AGENTS.md) for the agent workflow.
+
+## Human-readable evidence reports
+
+```powershell
+.\TlaLink.ps1 report --manifest .\evidence-report.json --output .\assurance.md --format summary
+```
+
+`report` generates one local Markdown document with Mermaid overview and
+complete dependency diagrams, grouped evidence tables, linked source-region
+dispositions, assumptions, gaps and current input applicability. The output
+must be new; existing files are never overwritten. Mermaid rendering is done
+by the reader's Markdown viewer, not by an online service or the report CLI.
+`--format json|text|summary` selects the CLI result presentation, not a second
+report format.
+
+The strict manifest uses schema 4 and kind `evidence-report`:
+
+```json
+{
+  "schema_version": 4,
+  "kind": "evidence-report",
+  "title": "Counter evidence",
+  "scope": "Selected counter tests and source coverage, not general refinement.",
+  "fingerprints": {
+    "Counter.cs": "<64-hex SHA256 of the approved source bytes>",
+    "checks\\result.json": "<64-hex SHA256 of the selected evidence bytes>"
+  },
+  "nodes": [{
+    "id": "counter-tests",
+    "kind": "test",
+    "title": "Selected counter cases",
+    "claim": "Recorded selected test cases; not all executions.",
+    "recorded_status": "passed",
+    "expected_status": "passed",
+    "depends_on": [],
+    "evidence": ["Counter.cs", "checks\\result.json"],
+    "assumptions": ["The producing test host is trusted."],
+    "gaps": ["Concurrent operations remain outside this test scope."]
+  }],
+  "code_regions": [{
+    "file": "Counter.cs", "line": 3, "end_line": 7,
+    "symbol": "Counter.Value", "profile": "selected source",
+    "disposition": "selected-test-coverage",
+    "contracts": ["Counter test cases"],
+    "reason": "Authored coverage assignment, not a per-method proof."
+  }],
+  "assumptions": [],
+  "gaps": ["Source/model correspondence remains a separate review."]
+}
+```
+
+Replace the illustrative hash placeholders with the independently approved
+hashes, not whatever hashes happen to clear a stale check. All declared
+evidence/source paths must be pinned. Paths are manifest-relative; CLI paths
+are caller-relative. IDs follow the shared stable-ID rules. Dependencies must
+resolve, be unique and form an acyclic graph. Supported node kinds are `code`,
+`check`, `proof`, `test`, `trace`, `review`, `requirement`, `milestone`, `audit`.
+`expected_status` may be null for historical or coverage-only statements.
+Recorded/expected comparisons are ordinal and exact, not a shared proof flag.
+
+Exit 0 means a structurally valid report of a byte-current snapshot was
+published, **not that its claims passed or its milestones were accepted**.
+Changed/missing pinned inputs produce an explicitly stale report and exit 2
+(`RP002`); no node receives a current green match. Invalid manifests are
+`RP001`; a snapshot change during generation is `RP003` and prevents
+publication. The CLI emits schema-4 `report-result` with node/region/input
+counts. Unknown/duplicate JSON properties are rejected.
+
+Adapters must retain native guarantee boundaries and explicit review status;
+the generic renderer does not independently validate backend semantics.
+Expected rejection controls stay rejected even when matching expectations.
+Historical claims and assigned code coverage are not new acceptance.
+Reports/manifests are not automatic GC roots: retain required underlying
+evidence through the separate explicit retention/recheck workflow.
 
 ## Requirements and build
 
@@ -143,6 +219,17 @@ Missing prerequisites fail explicitly. For backend-independent tests:
 ```powershell
 dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --core
 ```
+
+Focused selections can also save the same full JSON report as the complete
+suite, without running unrelated backends:
+
+```powershell
+dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . .\Results\workflow-tests-new.json --workflow
+```
+
+The report path and selector may appear in either order after the repository
+root. Unknown or repeated selectors fail with exit 2 rather than silently
+starting the full suite. Report files are exclusive new outputs.
 
 Automatic backend installation is a planned toolchain-lifecycle feature.
 The explicit Java setup script above is not automatic backend installation.
@@ -327,6 +414,17 @@ simulation, temporal properties, or Apalache trace matching. SANY-resolved
 `ASSUME` declarations, including imports, are rejected rather than silently
 reinterpreted. Encode executable constraints in the selected predicates;
 the manifest's assumption descriptions are review context, not solver input.
+Project `doctor`, `plan` and `run` preflight use the same SANY compatibility
+checks as native execution: fresh parsing, imported assumptions, selected
+nullary predicate levels and unambiguous module basenames. Assumption errors
+identify the declaring modules. Preflight pins the transitive model closure,
+but does not run Snowcat or establish safety; use a typecheck stage for native
+typing. Apalache-only readiness still makes no deadlock or progress claim;
+required deadlock/temporal obligations need explicitly selected TLC checks.
+For those TLC stages, a completed native deadlock (`TLC2114`) is a rejection,
+not an incomplete tool run; negative requirements can pin that exact diagnostic.
+TLC stage diagnostics include bounded excerpts of native error messages and
+locations, including nested exception messages; complete output remains in `tlc.log`.
 Apalache itself does not check deadlock freedom. A successful safety query must
 also produce a
 native example with exactly `length + 1` states (including its initial state);
@@ -335,6 +433,9 @@ executions all terminate before the requested bound are conservatively
 incomplete; explicitly model intended terminal stuttering or use TLC when
 finite exhaustion is the obligation. This feasibility check also applies to
 each induction query, so vacuous preservation is not accepted.
+Native failure summaries retain the query, last native pass, process exit/deadline
+and recognized native error text (including source locations); complete stdout,
+stderr and counterexamples remain archived. Summaries do not change classification.
 Unknown output, empty initialization, timeouts and unsupported evaluation
 remain incomplete, even if native exit is zero. A property rejection requires
 native error completion and a nonempty ITF violation trace, not an example
@@ -463,6 +564,9 @@ errors and `new Issue(ErrorCode.WorkflowStageFailed, message)` for reports.
 Exception messages retain their existing ID prefix. Public JSON still emits
 string IDs such as `WF001` and lowercase severity strings, not enum names or
 ordinals. Native backend codes remain strings at the evidence boundary.
+Top-level command errors preserve a typed input exception's diagnostic ID in
+both full and summary output; untyped input/I/O errors retain generic `TL900`.
+The incomplete command status and exit 2 do not change.
 
 Run the focused metadata/serialization controls with:
 
@@ -531,7 +635,71 @@ The compiler profile is explicit: net10.0/C#14, nullable enabled, unchecked,
 unsafe enabled, explicit references and optional replacement defines.
 Unsupported settings fail rather than approximate another build.
 
+### Declared check coverage
+
+Unused tool pins may be omitted from `tools`; selected stage kinds still require
+their own pinned tools. Optional compiler `defines` may be omitted (no additional
+symbols); compiler `references` and the supported compiler profile remain explicit.
+
+Projects may declare `check_obligations` separately from human review obligations:
+
+```json
+"check_obligations": [
+  {"id": "ingress-safety", "kind": "safety", "scenario": "ingress", "requirements": ["inductive-safety"]},
+  {"id": "ingress-progress", "kind": "progress", "scenario": "ingress", "requirements": ["conditional-progress"]}
+]
+```
+
+Each declaration names `safety`, `deadlock` or `progress`, one scenario and
+acceptance requirement IDs in that scenario. This single representation is used
+by preflight and acceptance; obligations are never inferred from stage names.
+An empty requirement list explicitly records an unmapped obligation.
+`doctor`/`plan` report `check_coverage` as `mapped` or `missing`; missing mappings
+return 2 and block `run` before its output directory is created. Acceptance also
+rejects missing mappings. Scenario selection limits reporting to that scenario.
+Projects without declarations acquire no implicit temporal/deadlock obligations.
+
+The initial coverage profile maps positive TLC requirements to all three kinds
+and positive Apalache bounded/inductive requirements to safety only. Typechecking,
+trace matching and rejection controls cannot discharge those positive obligations;
+other native backends retain their separate claims rather than being guessed
+equivalent. `mapped` means a compatible required check is selected, **not** that
+the property is proved. Review the pinned TLC configuration's exact properties,
+deadlock setting, bounds and fairness: this report does not infer their semantics
+or compose a theorem across checks. Acceptance still requires their actual evidence.
+
 ### Execution is not acceptance
+
+Acceptance rejects undeclared or duplicate run stages with structured workflow
+diagnostics, including when a receipt is paired with the wrong project. A
+project mismatch is not permission to reinterpret its stages or accept its
+results.
+
+Use `--format summary` for the common agent/operator status view without filtering
+large provenance objects. It emits schema-4 `command-summary` JSON with the
+original `result_kind`, distinct readiness/execution/archive/applicability/
+acceptance statuses, native claims, stage outcomes and timings, required-check
+coverage, requirement results, diagnostics and receipt locations. TLC run stages
+include native state counts, search depth and the optimistic fingerprint omission
+estimate when reported; missing native statistics stay null, never invented zeros.
+Statistics do not establish exhaustion or collision freedom.
+
+TLC `doctor`/`plan` and `run` preflight use the same authoritative SANY
+parse/freshness gate, pin transitive imports, and reject invalid models before
+creating a run directory. A ready plan does not execute TLC or prove that native
+configuration evaluation will succeed.
+
+```powershell
+.\TlaLink.ps1 plan --project .\examples\Workflow\project.json --scenario lanes --format summary
+.\TlaLink.ps1 run --project .\examples\Workflow\project.json --scenario lanes --output .\Results\lanes-new --format summary
+.\TlaLink.ps1 accept --project .\examples\Workflow\project.json --run .\Results\lanes-new --format summary
+```
+
+This is presentation only, not an evidence document: `run.json`, native results
+and any explicit `--output` receipt retain their full formats. Independent readers
+do not accept a summary in place of evidence. Exit codes and classification are
+unchanged, including errors. Full JSON remains the default for automation needing
+fingerprints, inventories, invocations or complete recorded packets.
 
 `run` exit 0 means all declared stages **completed**, including any completed
 rejections; it never means the requirements were accepted. Incomplete/blocked
@@ -544,11 +712,30 @@ approved properties, bounds, fairness selection and reductions. Removing a
 property or weakening a bound cannot silently become acceptable on a new run;
 it requires an explicit policy change.
 
+Negative requirements can additionally set `diagnostic_text` to a nonempty
+literal, case-sensitive message fragment, for example
+`"diagnostic": "TLC2110", "diagnostic_text": "Invariant Ownership is violated."`.
+The code and text must match the **same** diagnostic. This distinguishes a
+targeted mutant from an unrelated invariant failure with the same native code.
+It does not parse model expressions or replace approved configuration pins.
+Text selectors are valid only for rejected outcomes with an explicit code.
+Use the actual native diagnostic: a named temporal rejection can report
+`TLC2116` and `Temporal property Settles was violated.`, rather than the grouped
+`TLC2114` temporal message. Do not substitute a generic rejection or change
+properties/configuration pins to make a negative control pass.
+Summary acceptance output includes current review status separately from the
+recorded disposition/reviewer/rationale; a stale accepted decision stays stale.
+
 Acceptance exit 0 means the declared requirements are satisfied, 1 means
 rejected/inconsistent evidence or unsatisfied requirements, and 2 means stale
 or incomplete evidence. Expected build failures and timeouts cannot satisfy
 rejection controls. Archive consistency, current applicability, execution,
 individual outcomes and acceptance remain separate fields.
+Here `current_applicability` describes the run inputs. A pending, rejected or
+stale required review is separately reported in the review status and leaves a
+requirement unsatisfied (`WF015`, exit 1) even when run inputs are current.
+If run inputs also changed, their stale-evidence diagnostic instead makes the
+exit 2. Do not infer review approval from current run applicability.
 
 ### Persistent review decisions
 
@@ -580,6 +767,178 @@ retain their upstream formats.
 Maintained examples/producers/readers/tests are updated together. There are no
 legacy JSON acceptance branches. Frozen source/model profiles and historical
 evidence remain untouched and are not relabeled as current evidence.
+
+## Evidence retention and recheck planning
+
+`gc` defaults to a **read-only planner**. It reports which completed
+workflow archives are retained, protected or unreferenced within an explicitly
+declared store. The same dependency graph identifies recorded file inputs that
+changed or disappeared and runs/reviews that conservatively need rechecking.
+No backend tools are required.
+
+Create an explicit retention manifest, for example:
+
+```json
+{
+  "schema_version": 4,
+  "kind": "evidence-retention",
+  "pins": [
+    { "path": "Results\\milestone-run", "reason": "Retained milestone and its dependencies" },
+    { "path": "Results\\defect-control", "reason": "Representative counterexample" }
+  ],
+  "review_projects": ["project.json"]
+}
+```
+
+Both arrays are required; use an empty array when intentionally selecting no
+roots of that type. Pin paths/reasons must be nonblank. Pins identify an existing
+immediate-child run directory, or a file/directory inside one, in the selected
+store. Selecting a file retains its entire owning run. Paths inside the manifest
+are relative to the manifest, while CLI paths are relative to the caller:
+
+```powershell
+.\TlaLink.ps1 gc --store .\Results --pins .\retention.json --format summary
+.\TlaLink.ps1 gc --store .\Results --pins .\retention.json --grace-hours 24 --output .\gc-plan-new.json --format summary
+```
+
+For native/historical archives or loose sidecars, an optional manifest
+`"catalog": "protected-consumers.json"` selects a schema-4
+`protected-consumer-catalog` **outside the store**. It has:
+
+- `store`: catalog-relative store path.
+- `producer_fingerprints`: catalog-relative producer-source paths and SHA-256
+  pins. Changed producer code requires a fresh export.
+- `consumers`: entries with catalog-relative `path`, nonblank `reason`, `files`
+  (all owned relative file paths and SHA-256 values), `inputs` (recorded absolute
+  `path`/`sha256` pairs), and absolute `references`.
+
+Each consumer is an immediate store child directory or root sidecar file.
+Directory file paths are consumer-relative; a sidecar's single file path is
+store-relative. The file set and every byte must still match. These consumers
+are **protected roots**, not native deletion candidates; their references retain
+ordinary workflow dependencies transitively. Extra files, changed bytes,
+missing consumers, unmapped loose JSON or unsupported archives still block
+collection. A catalog is not an ignore list and does not certify native proofs.
+
+The native exporter is trusted to interpret its recorded path fields and
+declaring bases. Historical formats stay at that explicit integration boundary,
+never accepted as current public evidence or rewritten. Exports must preserve
+original expected hashes, keep model symbols/URIs distinct from filepaths, and
+apply explicit relocation maps only to retention references, not silently
+relabel missing original inputs as current.
+
+`--format json|text|summary` controls presentation only. Saved output is always
+the full schema-4 `gc-plan`, written exclusively to a **new file outside the
+store**; its parent must already exist. Plans always state `read_only: true` and
+`deletion_authorized: false`. Deletion requires the separate explicit application
+below; there is no delete/force override.
+GC summaries preview at most ten entries per list and give exact per-list
+`omitted` counts. Per-run changes/dependencies and per-input consumers are counts,
+not unbounded provenance dumps. Use the full saved plan for all paths and reasons.
+
+### Retention decisions
+
+- Every immediate store child directory is a collection unit. Only structurally
+  recognized, completed schema-4 `analysis-run` archives are supported. Root
+  files are never candidates.
+- Explicit pins retain the whole transitive run dependency closure, including
+  dependencies referenced by recorded file fingerprints and embedded review
+  decisions. If the retention manifest itself is inside a unit, that unit is
+  retained too.
+- `review_projects` selects analysis-project documents as the path context for
+  their append-only review directories. **All review histories** and their
+  evidence dependencies are retained, not just the latest accepted decision.
+  Review evidence/fingerprint paths resolve against the original project, not
+  against the review file or acceptance receipt.
+- The grace interval defaults to 24 hours; integer values 0..87600 are accepted.
+  Recent output and future timestamps protect a unit and retain its dependencies.
+- Missing, malformed, legacy/private/unknown or unfinished archives, unresolved
+  references, unreadable scope, loose root JSON other than the manifest, reparse
+  points in managed output and observed scan changes block **all collection candidates**. An
+  `incomplete` plan includes diagnostics and exits 2. A structurally ready plan
+  exits 0, even when it reports changes requiring rechecks.
+
+An accepted run is not automatically a permanent root, and stale evidence is not
+automatically garbage. Pin evidence still relied upon, including useful defect
+controls. The planner cannot infer undeclared external consumers or arbitrary
+Markdown references; declare that retention explicitly. Do not suppress unknown
+archives just to produce candidates.
+
+### Recheck impact is separate from retention
+
+`changed_inputs` reports changed/missing/unreadable recorded file inputs, their
+actual hash when readable, and the consumers whose own expected hash no longer
+matches. `recheck` lists direct and transitively affected runs/reviews, with
+changed-input paths, immediate affected dependencies and recommended actions.
+Thus changing a model can flag its consuming run **and downstream runs even
+before that run's output bytes change**. Unrelated consumers remain unaffected.
+`entries[].recheck_required` exposes the same impact next to retention status.
+Retained stale evidence stays retained; an unreferenced unit may need a recheck
+without becoming a retention root.
+
+The impact scope is deliberately **whole-run conservative**, not an invented
+stage-level invalidation plan. A clear recheck list is not a proof, applicability
+or acceptance verdict: the planner does not evaluate nonfile runtime metadata,
+review obligations/dispositions or backend semantics. Re-run the affected
+analysis, review changed contracts/assumptions as appropriate, then use the
+independent `accept` command. Do not replace a baseline or alter acceptance pins
+merely to clear a change.
+SANY `library:` member identities remain opaque metadata, consistent with the
+frontend; the separately recorded JAR file participates in ordinary file-input
+tracking. Library identities are not normalized as Windows filepaths.
+
+Byte estimates are logical file lengths, not physical reclaimable space.
+Managed output links are not followed; hard-link identity and concurrent filesystem atomicity
+are not proven. Input document reads are capped at 16 MiB, the store at 10,000
+units and scanning at 100,000 entries. Metadata and read bytes are rechecked
+before reporting, but the report is **never deletion authorization**.
+
+On Windows, recorded input links are resolved through opened read handles and
+the same handles supply the hashed bytes. Resolved physical identities supply
+store dependency edges and are rechecked alongside original recorded paths.
+This permits a linked SDK input without assuming it is outside the store.
+Managed outputs, catalogs and deletion ancestors still prohibit links. Missing
+linked inputs and unsupported host resolution fail closed.
+
+### Explicit guarded application (Windows)
+
+Stop all writers to the store and selected review histories before applying a
+saved full plan. The assertion below means the caller has ensured exclusive
+maintenance; it does not automatically discover or stop processes:
+
+```powershell
+.\TlaLink.ps1 gc --apply .\gc-plan-new.json --exclusive true --output .\gc-apply-new.json --format summary
+```
+
+Apply uses the saved store, pins and grace interval; `--store`, `--pins` and
+`--grace-hours` overrides are rejected. A summary, incomplete plan, changed
+candidate set, changed filesystem snapshot or changed input/decision hashes
+cannot authorize deletion. Apply re-plans, verifies candidate artifact and
+archived-input bytes, and rechecks observed inputs before removing anything.
+The full plan's `snapshot` and `file_inputs` are intentionally omitted from
+presentation summaries.
+
+Initial application is **Windows-only** so native directory handles can prevent
+ancestor replacement. Links/reparse points are rejected through handle
+attributes; a sibling exclusive `.gc.lock` lease prevents competing applications.
+Other platforms still support planning and explicitly reject apply. Unknown
+native/private archives continue to block the entire store; preserving them is
+not an excuse to ignore their possible references to other runs.
+
+Only the saved, revalidated candidate files are removed, followed by
+nonrecursive empty-directory deletion. New files are never swept into a
+recursive delete. The default 24-hour protection remains unchanged, so today's
+runs normally remain protected even if unreferenced.
+
+`--output` is mandatory, must be a new file outside the store and scanned review
+directories, and is reserved/flushed as an incomplete schema-4 `gc-apply-result`
+before mutation. The final receipt records removed files, deleted/pending units,
+any partially removed unit, authorization and diagnostics. Completed application
+exits 0; failure exits 2 and stops further deletion. Deletion is not transactional
+and has no rollback: inspect an incomplete receipt before doing anything else.
+A process interrupted while rewriting its final receipt may leave malformed or
+incomplete JSON, not a completion claim. Do not rerun the same plan to force past
+a partial failure; reassess the remaining store first.
 
 ## Integrated TLA+ and Dafny workflow
 
@@ -712,7 +1071,7 @@ Common options:
 | `--step` | One step ID or `model:step:ID`, required for `review` |
 | `--baseline` | Conservative added/removed/changed-input detection |
 | `--snapshot` | Exclusive new report, never overwrite |
-| `--format` | `json` (default) or `text` |
+| `--format` | `json` (default), `text`, or `summary` |
 | `--timeout` | 1..7200 seconds; default 30, per subprocess stage |
 
 Default C# context is Debug, nullable-enabled C# 14/net10.0, with runtime

@@ -4,27 +4,36 @@ using System.Text.Json.Serialization;
 namespace TlaLink;
 
 public sealed record ToolPin(string Path, string Sha256);
-public sealed record ProjectTools(ToolPin? Dafny, ToolPin? Jar, ToolPin? P = null, ToolPin? Apalache = null);
+public sealed record ProjectTools(ToolPin? Dafny = null, ToolPin? Jar = null, ToolPin? P = null, ToolPin? Apalache = null);
 public sealed record CompilerProfile(string TargetFramework, string LanguageVersion, string Nullable,
-    bool Checked, bool AllowUnsafe, List<string>? Defines, List<string> References);
+    bool Checked, bool AllowUnsafe, List<string>? Defines, List<string> References)
+{
+    [JsonConstructor]
+    public CompilerProfile(string targetFramework, string languageVersion, string nullable,
+        bool @checked, bool allowUnsafe, List<string> references)
+        : this(targetFramework, languageVersion, nullable, @checked, allowUnsafe, null, references) { }
+}
 public sealed record AnalysisStage(string Id, string Kind, List<string> DependsOn, int TimeoutSeconds,
     string? Bindings = null, List<string>? Sources = null, List<string>? Models = null,
     string? Config = null, List<string>? Arguments = null);
 public sealed record AnalysisScenario(string Id, List<AnalysisStage> Stages);
 public sealed record ReviewObligation(string Id, string Claim, List<string> Assumptions, List<string> Inputs);
+public sealed record CheckObligation(string Id, string Kind, string Scenario, List<string> Requirements);
+public sealed record CheckCoverage(string Id, string Kind, string Scenario, string Status,
+    List<string> Requirements, List<string> Gaps);
 public sealed record ReviewDecision(int SchemaVersion, string Kind, string Obligation, string ObligationSha256,
     string Disposition, string Reviewer, string Rationale, DateTimeOffset RecordedAt,
     Dictionary<string, string> Fingerprints, List<string> Evidence);
 public sealed record AnalysisProject(int SchemaVersion, string Kind, string Id, ProjectTools Tools,
     CompilerProfile Compiler, string Requirements, List<AnalysisScenario> Scenarios,
-    List<ReviewObligation> Obligations, string ReviewDirectory);
+    List<ReviewObligation> Obligations, string ReviewDirectory, List<CheckObligation>? CheckObligations = null);
 public sealed record AnalysisRequirement(string Id, string Scenario, string Stage, string Expected,
     string? Diagnostic = null, List<string>? Bindings = null, List<string>? Cases = null,
-    List<string>? Reviews = null, string? ConfigSha256 = null, string? Claim = null);
+    List<string>? Reviews = null, string? ConfigSha256 = null, string? Claim = null, string? DiagnosticText = null);
 public sealed record AcceptancePolicy(int SchemaVersion, string Kind, string Project,
     List<AnalysisRequirement> Requirements);
 public sealed record WorkflowStageResult(string Id, string Kind, string ExecutionStatus, string Outcome,
-    string Evidence, string Sha256, List<string> Diagnostics, double DurationSeconds);
+    string Evidence, string Sha256, List<string> Diagnostics, double DurationSeconds, TlcStatistics? Statistics = null);
 public sealed class WorkflowRun
 {
     public int SchemaVersion => Schema.Version;
@@ -73,6 +82,16 @@ public static class ProjectInputs
         Unique(project.Scenarios.Select(s => s.Id), "scenarios");
         Unique(project.Obligations.Select(o => o.Id), "obligations");
         Unique(policy.Requirements.Select(r => r.Id), "requirements");
+        Unique((project.CheckObligations ?? []).Select(o => o.Id), "check obligations");
+        foreach (CheckObligation obligation in project.CheckObligations ?? [])
+        {
+            if (obligation.Kind is not ("safety" or "deadlock" or "progress") ||
+                !project.Scenarios.Any(s => s.Id == obligation.Scenario))
+                throw new InputException(ErrorCode.InvalidWorkflowInput, "Check obligations require safety/deadlock/progress and an existing scenario.");
+            Unique(obligation.Requirements, "check requirement references");
+            if (obligation.Requirements.Any(id => !policy.Requirements.Any(r => r.Id == id && r.Scenario == obligation.Scenario)))
+                throw new InputException(ErrorCode.InvalidWorkflowInput, "Check obligations must reference requirements in their own scenario.");
+        }
         if (project.Scenarios.Count is 0 or > 100 || policy.Requirements.Count is 0 or > 10000)
             throw new InputException(ErrorCode.InvalidWorkflowInput, "Projects and policies cannot be empty.");
         foreach (AnalysisScenario scenario in project.Scenarios)
@@ -163,6 +182,9 @@ public static class ProjectInputs
                 requirement.Expected is not ("passed" or "rejected") ||
                 requirement.Expected == "rejected" && string.IsNullOrWhiteSpace(requirement.Diagnostic))
                 throw new InputException(ErrorCode.InvalidWorkflowInput, "Requirements need existing stages and an explicit expected outcome; rejections need a diagnostic.");
+            if (requirement.DiagnosticText != null && (requirement.Expected != "rejected" ||
+                string.IsNullOrWhiteSpace(requirement.Diagnostic) || string.IsNullOrWhiteSpace(requirement.DiagnosticText)))
+                throw new InputException(ErrorCode.InvalidWorkflowInput, "Diagnostic text selectors require a rejected outcome, diagnostic code and nonempty literal text.");
             foreach (string review in requirement.Reviews ?? [])
                 if (!project.Obligations.Any(o => o.Id == review))
                     throw new InputException(ErrorCode.InvalidWorkflowInput, "Unknown required review: " + review);
@@ -198,6 +220,29 @@ public static class ProjectInputs
             }
         }
         return (project, policy);
+    }
+
+    public static List<CheckCoverage> Coverage(AnalysisProject project, AcceptancePolicy policy, IEnumerable<string> scenarios)
+    {
+        HashSet<string> selected = scenarios.ToHashSet(StringComparer.Ordinal);
+        return (project.CheckObligations ?? []).Where(o => selected.Contains(o.Scenario)).Select(obligation => {
+            List<string> gaps = [];
+            if (obligation.Requirements.Count == 0) gaps.Add("No required check is mapped.");
+            foreach (string id in obligation.Requirements)
+            {
+                AnalysisRequirement requirement = policy.Requirements.Single(r => r.Id == id);
+                AnalysisStage stage = project.Scenarios.Single(s => s.Id == obligation.Scenario)
+                    .Stages.Single(s => s.Id == requirement.Stage);
+                if (requirement.Expected != "passed")
+                    gaps.Add(id + ": a rejection control cannot discharge a positive obligation.");
+                else if (stage.Kind != "tlc" && !(obligation.Kind == "safety" &&
+                    stage.Kind is "apalache-check" or "apalache-inductive"))
+                    gaps.Add(id + ": " + stage.Kind + " does not supply the selected " + obligation.Kind +
+                        " check in this TLC/Apalache coverage profile.");
+            }
+            return new CheckCoverage(obligation.Id, obligation.Kind, obligation.Scenario,
+                gaps.Count == 0 ? "mapped" : "missing", obligation.Requirements, gaps);
+        }).ToList();
     }
 
     public static List<AnalysisStage> Order(AnalysisScenario scenario)

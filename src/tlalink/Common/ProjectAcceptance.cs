@@ -19,6 +19,10 @@ public static class ProjectAcceptance
             Error(ErrorCode.WorkflowProjectChanged, "Project or acceptance requirements differ from the run.");
         AnalysisScenario? scenario = project.Scenarios.SingleOrDefault(s => s.Id == run.Scenario);
         if (scenario == null) throw new InputException(ErrorCode.WorkflowProjectChanged, "Run scenario does not exist in this project.");
+        List<CheckCoverage> coverage = ProjectInputs.Coverage(project, policy, [run.Scenario]);
+        foreach (CheckCoverage obligation in coverage)
+            foreach (string gap in obligation.Gaps)
+                Error(ErrorCode.WorkflowPrerequisiteMissing, obligation.Id + ": " + gap);
         if (run.ExecutionStatus != "completed") Error(ErrorCode.WorkflowExecutionIncomplete, "Execution did not complete; a timeout/build failure cannot satisfy a negative control.");
         if (run.Stages.Select(s => s.Id).Distinct().Count() != run.Stages.Count ||
             !run.Stages.Select(s => s.Id).Order().SequenceEqual(scenario.Stages.Select(s => s.Id).Order()))
@@ -50,6 +54,12 @@ public static class ProjectAcceptance
         Dictionary<string, JsonElement> evidence = new(StringComparer.Ordinal);
         foreach (WorkflowStageResult stage in run.Stages)
         {
+            AnalysisStage? selectedStage = scenario.Stages.SingleOrDefault(s => s.Id == stage.Id);
+            if (selectedStage == null)
+            {
+                Error(ErrorCode.WorkflowStageInconsistent, "Run contains an undeclared stage: " + stage.Id);
+                continue;
+            }
             if (stage.ExecutionStatus != "completed" || string.IsNullOrEmpty(stage.Evidence))
             {
                 Error(ErrorCode.WorkflowExecutionIncomplete, "Stage incomplete or blocked: " + stage.Id);
@@ -66,7 +76,7 @@ public static class ProjectAcceptance
             JsonElement result = Read(file);
             if (result.GetProperty("schema_version").GetInt32() != Schema.Version ||
                 ProjectWorkflow.Outcome(stage.Kind, result) != stage.Outcome ||
-                scenario.Stages.Single(s => s.Id == stage.Id).Kind != stage.Kind)
+                selectedStage.Kind != stage.Kind)
                 Error(ErrorCode.WorkflowStageInconsistent, "Stage outcome/schema/kind contradicts its evidence: " + stage.Id);
             if (stage.Kind is "inspect" or "verify" or "oracle")
                 issues.AddRange(IntegratedEvidence.Validate(result));
@@ -74,13 +84,12 @@ public static class ProjectAcceptance
             {
                 issues.AddRange(PEvidence.Validate(result, Path.Combine(directory, stage.Id, "engine")));
                 if (!result.TryGetProperty("timeout_seconds", out JsonElement timeout) ||
-                    timeout.GetInt32() != scenario.Stages.Single(s => s.Id == stage.Id).TimeoutSeconds)
+                    timeout.GetInt32() != selectedStage.TimeoutSeconds)
                     Error(ErrorCode.WorkflowStageInconsistent, "P stage deadline differs from the declared stage.");
             }
             if (ApalacheInputs.IsStage(stage.Kind))
             {
                 issues.AddRange(ApalacheEvidence.Validate(result, Path.Combine(directory, stage.Id, "engine")));
-                AnalysisStage selectedStage = scenario.Stages.Single(s => s.Id == stage.Id);
                 ApalacheAnalysis analysis = ApalacheInputs.Load(ProjectInputs.Resolve(path, selectedStage.Config!), new(FilePaths.Comparer));
                 if (!result.TryGetProperty("timeout_seconds", out JsonElement timeout) || timeout.GetInt32() != selectedStage.TimeoutSeconds ||
                     !result.TryGetProperty("mode", out JsonElement mode) || mode.GetString() != analysis.Mode ||
@@ -96,7 +105,7 @@ public static class ProjectAcceptance
         foreach (AnalysisRequirement requirement in policy.Requirements.Where(r => r.Scenario == run.Scenario))
         {
             List<string> missing = [];
-            WorkflowStageResult? stage = run.Stages.SingleOrDefault(s => s.Id == requirement.Stage);
+            WorkflowStageResult? stage = run.Stages.FirstOrDefault(s => s.Id == requirement.Stage);
             AnalysisStage selected = scenario.Stages.Single(s => s.Id == requirement.Stage);
             if (selected.Config != null)
             {
@@ -118,6 +127,11 @@ public static class ProjectAcceptance
                     ? found.EnumerateArray().Select(d => d.GetProperty("code").GetString()!).ToList() : [];
                 if (requirement.Diagnostic != null && !diagnostics.Contains(requirement.Diagnostic))
                     missing.Add("diagnostic " + requirement.Diagnostic);
+                if (requirement.DiagnosticText != null && (!result.TryGetProperty("diagnostics", out JsonElement messages) ||
+                    !messages.EnumerateArray().Any(d => d.GetProperty("code").GetString() == requirement.Diagnostic &&
+                        d.TryGetProperty("message", out JsonElement message) && message.ValueKind == JsonValueKind.String &&
+                        message.GetString()!.Contains(requirement.DiagnosticText, StringComparison.Ordinal))))
+                    missing.Add("diagnostic " + requirement.Diagnostic + " containing literal text " + requirement.DiagnosticText);
                 HashSet<string> tested = [];
                 HashSet<string> cases = [];
                 if (PInputs.IsStage(selected.Kind) && result.TryGetProperty("links", out JsonElement links))
@@ -149,8 +163,10 @@ public static class ProjectAcceptance
             ExecutionStatus = run.ExecutionStatus, ArchiveStatus = issues.Any(i => i.Code == ErrorCode.WorkflowProvenanceInconsistent.Id()) ? "inconsistent" : "consistent",
             CurrentApplicability = issues.Any(i => i.Is(ErrorCode.WorkflowProjectChanged, ErrorCode.WorkflowEvidenceStale)) ? "stale" : "current",
             AcceptanceStatus = accepted ? "accepted" : "not-accepted", Requirements = requirements, Diagnostics = issues,
+            CheckCoverage = coverage,
             Reviews = policy.Requirements.Where(r => r.Scenario == run.Scenario).SelectMany(r => r.Reviews ?? [])
-                .Distinct().Select(id => new { Obligation = id, Decision = LatestReview(path, project, id) }),
+                .Distinct().Select(id => new { Obligation = id, Status = ReviewStatus(path, project, id),
+                    Decision = LatestReview(path, project, id) }),
             NextActions = issues.Select(i => i.Message).Distinct().ToList(),
             Boundary = "Acceptance of declared bounded evidence and explicit reviews, not general C# refinement or host authentication."
         };
