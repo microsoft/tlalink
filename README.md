@@ -22,6 +22,23 @@ workflow; TlaLink is not a language-agnostic implementation verifier.
 TlaLink itself does not upload your code; your coding agent's data handling
 depends on its own configuration.
 
+## Supported tools at a glance
+
+| Tool | Main strengths in TlaLink |
+|---|---|
+| [**Roslyn**](https://github.com/dotnet/roslyn) | Resolve C# symbols and source/model bindings; validate capture sites and compilation context. |
+| [**SANY / PlusCal**](https://github.com/tlaplus/tlaplus) | Parse and resolve TLA+ models; support labeled algorithms and check translation freshness. |
+| [**TLC**](https://github.com/tlaplus/tlaplus) | Explore configured finite models for safety, deadlocks and temporal properties; match recorded C# executions against TLA+. |
+| [**Apalache**](https://apalache-mc.org/) | Use SMT-based TLA+ typechecking, bounded safety checks and supplied-invariant induction. |
+| [**Dafny**](https://dafny.org/) | Verify algorithmic contracts and invariants; generate executable oracles for selected C# comparisons. |
+| [**P: PChecker, PEx, PSym, PVerifier**](https://p-org.github.io/P/) | Model asynchronous state machines; select schedule exploration, finite/symbolic exhaustion or invariant proofs. |
+| [**PObserve**](https://p-org.github.io/P/advanced/pobserve/pobserve/) | Check observed execution logs against P monitors. |
+
+Each backend retains its own scope and guarantees. The native P suite exercises
+PChecker; the other P engines have adapter/evidence controls, not end-to-end
+native coverage. See the [selection guide](REFERENCE.md#choosing-tools-and-checkers)
+for prerequisites, limits and test coverage.
+
 ## What can I use it for?
 
 | Your question | TlaLink's approach |
