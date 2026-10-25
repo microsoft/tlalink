@@ -217,6 +217,8 @@ public static partial class TlaBackend
         {
             switch (String(row, "kind"))
             {
+                case "assumptions" or "operator-level":
+                    break;
                 case "dependency":
                     AddDependency(dependencies, String(row, "path"), String(row, "sha256"));
                     break;
@@ -297,8 +299,7 @@ public static partial class TlaBackend
         }
     }
 
-    private static string Digest(string path) =>
-        Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path)));
+    private static string Digest(string path) => Files.Hash(path);
 
     private static string FindAdapter()
     {

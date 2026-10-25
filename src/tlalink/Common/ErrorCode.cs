@@ -105,6 +105,21 @@ public enum ErrorCode
     [DiagnosticInfo("PL900", IssueSeverity.Error)]
     PToolFailure,
 
+    [DiagnosticInfo("AP001", IssueSeverity.Error)]
+    InvalidApalacheInput,
+    [DiagnosticInfo("AP010", IssueSeverity.Error)]
+    ApalachePrerequisiteMissing,
+    [DiagnosticInfo("AP100", IssueSeverity.Error)]
+    ApalachePropertyRejected,
+    [DiagnosticInfo("AP101", IssueSeverity.Error)]
+    ApalacheInductionRejected,
+    [DiagnosticInfo("AP300", IssueSeverity.Error)]
+    InvalidApalacheEvidence,
+    [DiagnosticInfo("AP301", IssueSeverity.Warning)]
+    ApalacheEvidenceStale,
+    [DiagnosticInfo("AP900", IssueSeverity.Error)]
+    ApalacheToolFailure,
+
     [DiagnosticInfo("WF001", IssueSeverity.Error)]
     InvalidWorkflowInput,
     [DiagnosticInfo("WF002", IssueSeverity.Error)]

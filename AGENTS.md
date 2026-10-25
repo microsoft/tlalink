@@ -6,7 +6,8 @@ evidence.
 
 Keep shared workflow/C# infrastructure in `Common`, P in `PLang`, SANY and
 TLA bindings in `Tla`, TLC execution/trace matching in `Tlc`, PlusCal-specific
-frontend helpers in `PlusCal`, and Dafny in `Dafny`. Preserve the public
+frontend helpers in `PlusCal`, symbolic safety in `Apalache`, and Dafny in
+`Dafny`. Preserve the public
 namespace and flat deployed bridge-asset names when moving implementation.
 
 ## Workflow
@@ -23,13 +24,14 @@ dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj
   under that Git-ignored directory. Follow each package's own instructions.
   Never publish it or force-add it. Use the allowlisted source export script.
 - Tool distributions belong in the ignored root `.tools` cache. Public tests
-  accept `TLALINK_TLA_JAR`, `TLALINK_DAFNY` and `TLALINK_P_COMPILER` overrides;
+  accept `TLALINK_TLA_JAR`, `TLALINK_DAFNY`, `TLALINK_P_COMPILER` and
+  `TLALINK_APALACHE_JAR` overrides;
   `--core` runs without external backend tools. Tool lifecycle management is
   planned separately; do not imply automatic installation already exists.
 - Java selection uses the single `java-toolchain.json` version pin: Temurin JDK 25
   with explicit Windows/Linux x64 distributions, provisioned with
   `scripts\Initialize-Java.ps1` under PowerShell 7.
-  SANY/PlusCal, TLC and their tests use `JavaToolchain`, never PATH or
+  SANY/PlusCal, TLC, Apalache and their tests use `JavaToolchain`, never PATH or
   `JAVA_HOME`. `TLALINK_JAVA_HOME` may relocate only the same pinned JDK.
   Keep native P manifests' explicitly selected Java dependencies independent.
   Setup verifies the distribution archive; selection checks the pinned release
@@ -52,9 +54,35 @@ dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj
   and bounds; do not update those pins merely to clear an acceptance failure.
   Pinned fixture inputs must declare any required checkout line endings in
   `.gitattributes`, so host defaults cannot change their approved bytes.
+  Workflow and Apalache examples pin CRLF configuration bytes; preserve those
+  bytes on either host rather than changing requirements after checkout.
 
 ## Maintenance safeguards
 
+- Select tools by the obligation, modeling fit and evidence required, using
+  the advantages/limits in README's checker selection guide. Describe
+  capabilities and constraints, not status or a fixed tool priority.
+  Frontend resolution, TLC exploration/trace matching, Apalache typing/safety,
+  Dafny verification/oracles and the individual P checker claims are not
+  interchangeable. State adapter availability and native test coverage
+  separately; missing dependencies never justify weakening requirements.
+- Tests cache exact selected immutable tool paths once per session, including
+  workflow children through an explicit test host. Hold read leases; on Unix
+  recheck bytes before reporting success. Keep source/configuration/generated
+  inputs, archives and mutation fixtures uncached. Mutate copied tools, not
+  selected installations. Do not add production cache switches, environment
+  bypasses or timestamp-only fingerprint reuse.
+- Apalache is an explicitly selected TLA+ engine, not an automatic TLC
+  fallback. Its strict `apalache-analysis` manifests select typechecking,
+  bounded safety or complete initiation/preservation/implication induction.
+  Keep these claims distinct from TLC exhaustion and causal trace matching.
+  Use native Snowcat types alongside, not instead of, `@tla 2` bindings.
+  Initially use named nullary predicates and explicit constant initialization,
+  not TLC configuration translation, temporal properties or simulation.
+  Reject SANY-resolved ASSUME declarations rather than depend on differing
+  upstream interpretations; encode required constraints in the selected
+  predicates. Pin the complete local distribution, isolate native JSON
+  configuration/environment and telemetry, and never provision during analysis.
 - P uses explicit `p-analysis` manifests and native backend-specific evidence,
   not TLA annotations or a shared "proof passed" flag. PChecker exploration,
   PEx/PSym exhaustion, PVerifier induction and PObserve log monitoring retain

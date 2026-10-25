@@ -2,6 +2,35 @@ namespace TlaLink.Tests;
 
 public static class TestTools
 {
+    public static IEnumerable<string> ImmutableAssets(string root, string? selection)
+    {
+        yield return typeof(TlaLink.Program).Assembly.Location;
+        yield return typeof(Microsoft.CodeAnalysis.Compilation).Assembly.Location;
+        yield return typeof(Microsoft.CodeAnalysis.CSharp.CSharpCompilation).Assembly.Location;
+        string[] tools = selection switch
+        {
+            "--core" or "--diagnostics" => [],
+            "--apalache" => [Jar(root), Apalache(root)],
+            "--p" => [PCompiler(root)],
+            "--integrated" or "--workflow" => [Jar(root), Dafny(root)],
+            null => [Jar(root), Apalache(root), Dafny(root), PCompiler(root)],
+            _ => throw new ArgumentException("Unknown test selection: " + selection)
+        };
+        EnumerationOptions options = new() { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false };
+        foreach (string tool in tools)
+        {
+            yield return tool;
+            if (!Path.GetExtension(tool).Equals(".jar", StringComparison.OrdinalIgnoreCase))
+                foreach (string file in Directory.EnumerateFiles(Path.GetDirectoryName(tool)!, "*", options))
+                    yield return file;
+        }
+        if (selection is not ("--core" or "--diagnostics" or "--p"))
+            foreach (string file in JavaToolchain.Resolve().Fingerprints.Keys) yield return file;
+    }
+
+    public static string Apalache(string root) =>
+        Resolve(root, "TLALINK_APALACHE_JAR", @".tools\apalache\0.62.4\lib\apalache.jar");
+
     public static string Jar(string root) =>
         Resolve(root, "TLALINK_TLA_JAR", @".tools\tla\v1.8.0\tla2tools.jar");
 

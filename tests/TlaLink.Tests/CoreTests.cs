@@ -7,6 +7,20 @@ public static class CoreTests
 {
     public static void Register(Action<string, Action> test, string work)
     {
+        test("streamed fingerprints preserve exact bytes without whole-file allocations", () =>
+        {
+            string path = Path.Combine(work, "streamed-hash.bin");
+            byte[] bytes = new byte[1024 * 1024];
+            new Random(42).NextBytes(bytes);
+            File.WriteAllBytes(path, bytes);
+            string expected = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+            _ = Files.Hash(path);
+            long allocated = GC.GetAllocatedBytesForCurrentThread();
+            Equal(expected, Files.Hash(path));
+            True(GC.GetAllocatedBytesForCurrentThread() - allocated < bytes.Length / 4);
+            File.WriteAllBytes(path, []);
+            Equal("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", Files.Hash(path));
+        });
         test("path inputs normalize either separator and remove dot segments and trailing separators", () =>
         {
             Equal(Path.Combine(work, "target"), FilePaths.Full(@"child\..\target\", work));

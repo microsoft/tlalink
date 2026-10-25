@@ -1,0 +1,13 @@
+{
+  "schema_version": 4,
+  "kind": "apalache-analysis",
+  "name": "credit-rejection",
+  "mode": "bounded",
+  "model": "Credit.tla",
+  "init": "Init",
+  "next": "Next",
+  "properties": ["TooSmall"],
+  "assumptions": ["Deliberate negative control: credit can reach 2."],
+  "length": 3,
+  "const_init": "ConstInit"
+}

@@ -1,0 +1,49 @@
+{
+  "schema_version": 4,
+  "kind": "acceptance-policy",
+  "project": "apalache-credit",
+  "requirements": [
+    {
+      "id": "typed",
+      "scenario": "credit",
+      "stage": "types",
+      "expected": "passed",
+      "claim": "well-typed-model",
+      "config_sha256": "3277EACBA129A5211CC6E9F7D0F0798DAF5BA65BD05E50F97E8DAA3C3AE09CE5"
+    },
+    {
+      "id": "bounded",
+      "scenario": "credit",
+      "stage": "bounded",
+      "expected": "passed",
+      "claim": "bounded-safety",
+      "config_sha256": "47140E53551F7D263D256097F7BEC318CD7C26B589534426995056C0BE4218D6"
+    },
+    {
+      "id": "inductive",
+      "scenario": "credit",
+      "stage": "inductive",
+      "expected": "passed",
+      "claim": "inductive-invariants",
+      "config_sha256": "39FF0738631A5F50DD7E0701E46DBD52E5D4C41D0580A2E58BB331254DBDDBAC"
+    },
+    {
+      "id": "counterexample",
+      "scenario": "credit",
+      "stage": "counterexample",
+      "expected": "rejected",
+      "claim": "not-established",
+      "diagnostic": "AP100",
+      "config_sha256": "1BF079227C226035528947A6BAD8DC9BF52160D810DAADE3A1FC9A6277F73DFC"
+    },
+    {
+      "id": "noninductive",
+      "scenario": "credit",
+      "stage": "noninductive",
+      "expected": "rejected",
+      "claim": "not-established",
+      "diagnostic": "AP101",
+      "config_sha256": "7EF060B7CCF2A676C50D394CF4D02758CE7ACD89CA4851D59EC3DF6596DC7C29"
+    }
+  ]
+}

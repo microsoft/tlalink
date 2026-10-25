@@ -1,0 +1,13 @@
+{
+  "schema_version": 4,
+  "kind": "apalache-analysis",
+  "name": "credit-bounded",
+  "mode": "bounded",
+  "model": "Credit.tla",
+  "init": "Init",
+  "next": "Next",
+  "properties": ["TypeOK", "Safety"],
+  "assumptions": ["Capacity is explicitly initialized to 3; this model does not execute C#."],
+  "length": 5,
+  "const_init": "ConstInit"
+}

@@ -1,0 +1,13 @@
+{
+  "schema_version": 4,
+  "kind": "apalache-analysis",
+  "name": "credit-noninductive",
+  "mode": "inductive",
+  "model": "Credit.tla",
+  "init": "Init",
+  "next": "Next",
+  "properties": ["Safety"],
+  "assumptions": ["Deliberate negative control: WeakInvariant excludes the reachable state credit = 3."],
+  "invariant": "WeakInvariant",
+  "const_init": "ConstInit"
+}

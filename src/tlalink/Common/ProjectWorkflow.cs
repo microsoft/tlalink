@@ -6,6 +6,8 @@ namespace TlaLink;
 
 public static partial class ProjectWorkflow
 {
+    internal static IReadOnlyList<string>? CliHost { get; set; }
+
     public static int Run(CliOptions options)
     {
         string path = FilePaths.Full(options.Required("project"));
@@ -26,6 +28,7 @@ public static partial class ProjectWorkflow
                     s.Id, Stages = ProjectInputs.Order(s).Select(stage => new {
                         stage.Id, stage.Kind, stage.DependsOn, stage.TimeoutSeconds,
                         Capability = stage.Kind == "oracle" ? "synchronous-int-bool-adapter; native signature resolution required" :
+                            ApalacheInputs.IsStage(stage.Kind) ? "native Apalache " + stage.Kind + "; explicit typed safety scope; no TLC exhaustion, liveness or trace-matching claim" :
                             PInputs.IsStage(stage.Kind) ? "native P " + stage.Kind[2..] + "; explicit claim and approved configuration; no automatic C# refinement" :
                             stage.Kind == "trace" ? "guarded-scalar-entity-observations; explicit handoffs; finite trace only" :
                             stage.Kind == "tlc" ? "finite configured model; fresh JVM; no checkpoint recovery" : "native-resolution",
@@ -91,11 +94,18 @@ public static partial class ProjectWorkflow
         Pin(path);
         Pin(ProjectInputs.Resolve(path, project.Requirements));
         Program.PinTool(pins);
-        bool needDafny = false, needJar = false, needP = false;
+        bool needDafny = false, needJar = false, needP = false, needApalache = false;
         foreach (string reference in project.Compiler.References) Pin(ProjectInputs.Resolve(path, reference));
         foreach (var entry in scenarios.SelectMany(s => s.Stages.Select(stage => (Scenario: s.Id, Stage: stage))))
         {
             AnalysisStage stage = entry.Stage;
+            if (ApalacheInputs.IsStage(stage.Kind))
+            {
+                needApalache = true;
+                needJar = true;
+                _ = ApalacheInputs.Load(ProjectInputs.Resolve(path, stage.Config!), pins);
+                ApalacheInputs.PinDistribution(ProjectInputs.Resolve(path, project.Tools.Apalache!.Path), pins);
+            }
             if (PInputs.IsStage(stage.Kind))
             {
                 needP = true;
@@ -132,7 +142,7 @@ public static partial class ProjectWorkflow
         foreach (ReviewObligation obligation in project.Obligations.Where(o => requiredReviews.Contains(o.Id)))
             foreach (string file in obligation.Inputs) Pin(ProjectInputs.Resolve(path, file));
         foreach (ToolPin tool in new[] { needDafny ? project.Tools.Dafny : null, needJar ? project.Tools.Jar : null,
-            needP ? project.Tools.P : null }.OfType<ToolPin>())
+            needP ? project.Tools.P : null, needApalache ? project.Tools.Apalache : null }.OfType<ToolPin>())
         {
             string file = ProjectInputs.Resolve(path, tool.Path);
             if (tool.Sha256.Length != 64 || tool.Sha256.Any(c => !char.IsAsciiHexDigit(c)) ||
@@ -175,7 +185,15 @@ public static partial class ProjectWorkflow
             foreach (string define in project.Compiler.Defines ?? []) arguments.AddRange(["--define", define]);
         }
         void Jar() => arguments.AddRange(["--jar", ProjectInputs.Resolve(path, project.Tools.Jar!.Path)]);
-        if (PInputs.IsStage(stage.Kind))
+        if (ApalacheInputs.IsStage(stage.Kind))
+        {
+            arguments.Add("check-apalache");
+            arguments.AddRange(["--config", ProjectInputs.Resolve(path, stage.Config!),
+                "--apalache", ProjectInputs.Resolve(path, project.Tools.Apalache!.Path),
+                "--output", Path.Combine(output, "engine")]);
+            Jar();
+        }
+        else if (PInputs.IsStage(stage.Kind))
         {
             arguments.Add(stage.Kind == "p-inspect" ? "inspect-p" : "check-p");
             arguments.AddRange(["--config", ProjectInputs.Resolve(path, stage.Config!),
@@ -251,6 +269,8 @@ public static partial class ProjectWorkflow
 
     internal static string Outcome(string kind, JsonElement result)
     {
+        if (ApalacheInputs.IsStage(kind) && (!result.TryGetProperty("kind", out JsonElement apalacheKind) ||
+            apalacheKind.GetString() != "apalache-result")) return "incomplete";
         if (PInputs.IsStage(kind) && (!result.TryGetProperty("kind", out JsonElement documentKind) ||
             documentKind.GetString() != "p-result")) return "incomplete";
         string? status = result.TryGetProperty("status", out JsonElement value) ? value.GetString() : null;
@@ -265,7 +285,7 @@ public static partial class ProjectWorkflow
 
     private static JsonElement InvokeCli(List<string> arguments, string output, int timeout)
     {
-        arguments.Insert(0, typeof(Program).Assembly.Location);
+        arguments.InsertRange(0, CliHost ?? [typeof(Program).Assembly.Location]);
         var execution = Invoke(Executable("dotnet"), arguments, output, timeout, "command", allowFailure: true);
         try
         {

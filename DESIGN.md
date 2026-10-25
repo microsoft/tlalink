@@ -6,8 +6,8 @@ maintenance instructions. All work remains outside the product tree.
 ## Architecture
 
 Sources are physically grouped into `Common`, `PLang`, `Tla`, `Tlc`,
-`PlusCal` and `Dafny` under `src\tlalink`. This is a responsibility split in
-one executable, not six independently versioned plugins. Public namespaces
+`Apalache`, `PlusCal` and `Dafny` under `src\tlalink`. This is a responsibility split in
+one executable, not independently versioned plugins. Public namespaces
 and flat deployed bridge asset names remain stable. The upstream Java adapter
 is shared by SANY and PlusCal and remains under `Tla`; PlusCal-only discovery
 and freshness handling are in a separate partial frontend under `PlusCal`.
@@ -41,11 +41,13 @@ and freshness handling are in a separate partial frontend under `PlusCal`.
 | `PLang/PContracts.cs` | Strict explicit P scope, resolved source links, native claim dimensions |
 | `PLang/PBackend.cs` / `PLang/PProcess.cs` | PChecker/PEx/PSym/PVerifier/PObserve native processes and bounded logs |
 | `PLang/PResults.cs` / `PLang/PEvidence.cs` | Conservative backend-specific outcomes and independent immutable-evidence validation |
+| `Apalache/ApalacheContracts.cs` | Strict selected safety scopes, queries, tool-distribution pins and native receipts |
+| `Apalache/ApalacheBackend.cs` / `Apalache/ApalacheEvidence.cs` | Isolated native checks and independent mode/obligation/artifact validation |
 
-## Equal backends, distinct claims
+## P analysis and evidence claims
 
-P is a peer of TLA+/TLC and Dafny in project orchestration and acceptance,
-not an auxiliary Dafny command. Explicit `p-analysis` manifests select one
+P analysis uses project orchestration and independent acceptance.
+Explicit `p-analysis` manifests select one
 native engine and reviewed source bindings. The native compiler is pinned to
 P 3.1.0; the frontend bridge pins its exact API version and never parses P
 expressions itself. C# symbols reuse the existing Roslyn resolver.
@@ -73,6 +75,78 @@ monitoring remains separate from TLC's causal existential whole-trace matcher.
 P output archives are independent of the project run: the reader checks
 original inputs, generated artifacts and native outcome semantics, optionally
 checks current bytes, and never silently upgrades a historical result.
+
+## Apalache as a selected TLA+ engine
+
+Apalache stages are explicitly selected for typed TLA+ safety obligations,
+not automatic fallback from TLC.
+Native Snowcat types remain distinct from source binding annotations. SANY
+still establishes the local module closure, operator arities and PlusCal
+freshness. The adapter reports authoritative ASSUME declarations over loaded
+modules; Apalache's initial profile rejects them without changing TLC behavior.
+Only explicit nullary predicates and constant initialization are supported.
+TLC configuration translation, temporal checking and simulation are excluded.
+
+The backend pins the local 0.62.4 distribution and Java toolchain, stages the
+model closure, and invokes fresh local incremental Z3/oopsla19 processes.
+Native configuration is generated solely from the approved manifest and uses
+an explicit JSON file. Child environment/JVM home are isolated; user-wide
+configuration, JVM injection and telemetry opt-in are not inherited.
+No analysis installs tools or sends source code to a service.
+
+Successful typechecking, safety through `length` Next transitions, and supplied
+invariant induction have different claims. Induction requires three successful
+queries with identical constants: initiation (length 0), preservation from
+the candidate invariant (length 1), and implication of all selected safety
+properties (length 0). The candidate must include type/domain constraints.
+Counterexamples to inductiveness do not necessarily originate from a reachable
+model state. Unknowns, deadlines and empty initial searches are incomplete;
+native exit zero alone is never a completed safety claim. Each successful query
+also needs a native example of exactly length + 1 states, excluding vacuous
+NoError outcomes with no satisfying execution. This conservatively leaves
+short terminal searches and vacuous induction obligations incomplete; intended
+terminal stuttering must be modeled explicitly. Deadlocks are disabled and no
+deadlock-freedom claim is made.
+
+The independent reader rederives the obligation sequence, exact native
+configuration/invocations and outcomes from archived inputs and native logs,
+including nonempty ITF counterexamples for property rejections. Project
+acceptance checks the exact stage/mode/configuration/tool/deadline and independent
+claim requirement. A bounded pass cannot satisfy an induction or TLC requirement.
+Archived validity, optional current applicability and acceptance stay separate.
+Existing TLC causal trace witness/rejection semantics are unchanged; no
+bounded absence of an Apalache witness is promoted to trace rejection.
+
+## Tool selection and test setup
+
+Select by the obligation and evidence required, not by a backend hierarchy.
+The [selection guide](README.md#choosing-tools-and-checkers) covers useful cases
+and limitations for the frontends, TLC, Apalache, Dafny and each P checker.
+Parsing, sampled schedules, bounded safety, finite exhaustion, induction,
+concrete oracle comparisons and log monitoring retain different claims.
+Unsupported dependencies or incomplete searches do not justify substituting
+another checker or weakening an acceptance requirement. Native test coverage
+is stated separately from adapter availability.
+
+Production hashing streams original bytes without tool-sized allocations.
+The console harness installs an internal, test-session lookup only for exact
+canonical paths to its selected immutable tool distributions, pinned Java
+files and deployed tool/Roslyn assemblies. It hashes them at startup and holds
+read leases until teardown. Windows sharing denies writes/replacement; on
+Unix a final byte recheck fails the suite if a writer ignored sharing locks.
+No timestamp-only cache is used. The snapshot exists only under the temporary
+test directory. Workflow child commands run through the test executable and
+explicitly inherit that snapshot; ordinary CLI commands cannot enable it
+through arguments or ambient environment. The production process/deadline
+handling remains in use.
+
+All other paths, including sources, approved configurations, generated files,
+archived tool copies and mutation fixtures, are freshly hashed. Tool mutation
+controls copy the selected binaries rather than change a leased installation.
+Tests may share unchanged fixture setup and a completed bounded run for reader
+controls, but parsing/checking processes remain isolated. Cache startup cost,
+in-process hits and per-test/native-process durations expose setup versus
+solver cost; the cache does not remove JVM startup or archive-copy costs.
 
 ## Proposed shared backend contracts (assessment only)
 

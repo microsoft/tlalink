@@ -81,6 +81,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet tool install P --version 3.1.0 --tool-path (Join-Path $tools 'p') --configfile NuGet.Config
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $apalacheArchive = Join-Path $env:RUNNER_TEMP 'apalache-0.62.4.zip'
+          Get-PinnedArchive `
+            'https://github.com/apalache-mc/apalache/releases/download/v0.62.4/apalache-0.62.4.zip' `
+            $apalacheArchive `
+            '3B6B7EBF24E778535BF47E0CB3F0799C9AB9048DF41119C7D3091C6CA1760BC1'
+          $apalache = Join-Path $tools 'apalache'
+          $null = New-Item -ItemType Directory -Path $apalache -Force
+          unzip -q $apalacheArchive -d $apalache
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Move-Item -LiteralPath (Join-Path $apalache 'apalache-0.62.4') -Destination (Join-Path $apalache '0.62.4')
 
       - name: Run complete console suite
         run: |

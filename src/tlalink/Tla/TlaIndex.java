@@ -61,6 +61,12 @@ public final class TlaIndex {
             throw new IllegalArgumentException("SANY rejected " + path);
         }
         String module = specification.getRootModule().getName().toString();
+        for (tla2sany.semantic.ModuleNode loaded : specification.getExternalModuleTable().getModuleNodes()) {
+            if (loaded.getAssumptions().length > 0) {
+                entries.add("{\"kind\":\"assumptions\",\"module\":" + quote(loaded.getName().toString())
+                    + ",\"count\":" + loaded.getAssumptions().length + "}");
+            }
+        }
         for (OpDefNode operator : specification.getRootModule().getOpDefs()) {
             Location place = operator.getLocation();
             if (!place.source().equals(module)) {
@@ -68,6 +74,8 @@ public final class TlaIndex {
             }
             entries.add(entry("operator", operator.getName().toString(), module,
                 place.beginLine(), place.beginColumn(), place.endLine(), place.endColumn()));
+            entries.add("{\"kind\":\"operator-level\",\"name\":" + quote(operator.getName().toString())
+                + ",\"level\":" + operator.getLevel() + "}");
         }
         if (args.length > 1) {
             parsePlusCal(path, args, module);

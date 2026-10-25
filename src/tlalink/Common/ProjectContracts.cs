@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace TlaLink;
 
 public sealed record ToolPin(string Path, string Sha256);
-public sealed record ProjectTools(ToolPin? Dafny, ToolPin? Jar, ToolPin? P = null);
+public sealed record ProjectTools(ToolPin? Dafny, ToolPin? Jar, ToolPin? P = null, ToolPin? Apalache = null);
 public sealed record CompilerProfile(string TargetFramework, string LanguageVersion, string Nullable,
     bool Checked, bool AllowUnsafe, List<string>? Defines, List<string> References);
 public sealed record AnalysisStage(string Id, string Kind, List<string> DependsOn, int TimeoutSeconds,
@@ -81,13 +81,23 @@ public static class ProjectInputs
             if (scenario.Stages.Count is 0 or > 1000) throw new InputException(ErrorCode.InvalidWorkflowInput, "Scenario needs 1..1000 stages: " + scenario.Id);
             foreach (AnalysisStage stage in scenario.Stages)
             {
-                if (stage.Kind is not ("inspect" or "verify" or "oracle" or "inputs" or "tlc" or "trace") && !PInputs.IsStage(stage.Kind) ||
+                if (stage.Kind is not ("inspect" or "verify" or "oracle" or "inputs" or "tlc" or "trace") &&
+                    !PInputs.IsStage(stage.Kind) && !ApalacheInputs.IsStage(stage.Kind) ||
                     stage.TimeoutSeconds is < 1 or > 7200)
                     throw new InputException(ErrorCode.WorkflowPrerequisiteMissing, "Unsupported stage kind or timeout: " + stage.Id);
                 Unique(stage.DependsOn, "dependencies");
                 if (stage.DependsOn.Any(d => !scenario.Stages.Any(s => s.Id == d) || d == stage.Id))
                     throw new InputException(ErrorCode.InvalidWorkflowInput, "Missing/self stage dependency: " + stage.Id);
-                if (PInputs.IsStage(stage.Kind))
+                if (ApalacheInputs.IsStage(stage.Kind))
+                {
+                    if (project.Tools.Apalache == null || project.Tools.Jar == null || stage.Config == null ||
+                        stage.Bindings != null || stage.Models != null || stage.Sources != null || stage.Arguments != null)
+                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Apalache stages require pinned Apalache/SANY tools and one explicit analysis config.");
+                    ApalacheAnalysis analysis = ApalacheInputs.Load(Resolve(path, stage.Config), new(FilePaths.Comparer));
+                    if (stage.Kind != ApalacheInputs.Stage(analysis.Mode))
+                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Apalache stage kind must match its configured mode.");
+                }
+                else if (PInputs.IsStage(stage.Kind))
                 {
                     if (project.Tools.P == null || stage.Config == null || stage.Bindings != null ||
                         stage.Models != null || stage.Sources != null || stage.Arguments != null)
@@ -157,9 +167,18 @@ public static class ProjectInputs
                 if (!project.Obligations.Any(o => o.Id == review))
                     throw new InputException(ErrorCode.InvalidWorkflowInput, "Unknown required review: " + review);
             AnalysisStage selected = scenario.Stages.Single(s => s.Id == requirement.Stage);
-            if (PInputs.IsStage(selected.Kind) && string.IsNullOrWhiteSpace(requirement.Claim) ||
-                !PInputs.IsStage(selected.Kind) && requirement.Claim != null)
-                throw new InputException(ErrorCode.InvalidWorkflowInput, "P requirements must select an explicit evidence claim; other backends retain their own contracts.");
+            bool nativeClaim = PInputs.IsStage(selected.Kind) || ApalacheInputs.IsStage(selected.Kind);
+            if (nativeClaim && string.IsNullOrWhiteSpace(requirement.Claim) ||
+                !nativeClaim && requirement.Claim != null)
+                throw new InputException(ErrorCode.InvalidWorkflowInput, "P/Apalache requirements must select an explicit evidence claim; other backends retain their own contracts.");
+            if (ApalacheInputs.IsStage(selected.Kind))
+            {
+                ApalacheAnalysis analysis = ApalacheInputs.Load(Resolve(path, selected.Config!), new(FilePaths.Comparer));
+                if (requirement.Claim != (requirement.Expected == "passed" ? ApalacheInputs.Claim(analysis.Mode) : "not-established") ||
+                    requirement.Expected == "rejected" && (analysis.Mode == "typecheck" ||
+                        requirement.Diagnostic != ApalacheBackend.RejectionCode(analysis.Mode).Id()))
+                    throw new InputException(ErrorCode.InvalidWorkflowInput, "Apalache requirements must name the exact mode claim or its property-specific rejection.");
+            }
             if (selected.Config != null && (requirement.ConfigSha256 is not { Length: 64 } ||
                 requirement.ConfigSha256.Any(c => !char.IsAsciiHexDigit(c))))
                 throw new InputException(ErrorCode.InvalidWorkflowInput, "Configured stages must pin the independently approved configuration, including bounds and properties.");

@@ -4,6 +4,14 @@ public static class Program
 {
     public static int Main(string[] args)
     {
+        if (args.Length >= 2 && args[0] is "--cli" or "--hash-cache-probe")
+        {
+            using ToolHashSession inherited = ToolHashSession.Inherit(args[1]);
+            if (args[0] == "--cli") return TlaLink.Program.Main(args[2..]);
+            if (args.Length != 3) throw new ArgumentException("Hash cache probe requires a snapshot and file.");
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { Hash = Files.Hash(args[2]), inherited.Hits }, Files.Json));
+            return 0;
+        }
         if (args.Length == 1 && args[0] == "--timeout-probe")
         {
             Thread.Sleep(TimeSpan.FromSeconds(5));
@@ -13,51 +21,74 @@ public static class Program
         string work = Directory.CreateTempSubdirectory("tlalink-dotnet-tests-").FullName;
         List<object> results = [];
         int failed = 0;
+        ToolHashSession? hashes = null;
         void Test(string name, Action action)
         {
-            try { action(); Console.WriteLine("PASS " + name); results.Add(new { Name = name, Status = "passed" }); }
+            System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+            try { action(); Console.WriteLine($"PASS {name} ({clock.Elapsed.TotalSeconds:F2}s)"); results.Add(new { Name = name, Status = "passed", DurationSeconds = clock.Elapsed.TotalSeconds }); }
             catch (Exception error)
             {
                 failed++; Console.WriteLine("FAIL " + name + "\n" + error);
-                results.Add(new { Name = name, Status = "failed", Error = error.ToString() });
+                results.Add(new { Name = name, Status = "failed", Error = error.ToString(), DurationSeconds = clock.Elapsed.TotalSeconds });
             }
+        }
+        int Finish()
+        {
+            if (hashes is not null)
+            {
+                Test("immutable tool files retain their startup bytes", hashes.Verify);
+                Console.WriteLine($"Immutable tool hashes: {hashes.Count} files, {hashes.Hits} in-process cache hits; startup {hashes.StartupSeconds:F2}s.");
+            }
+            Console.WriteLine($"{results.Count - failed}/{results.Count} passed.");
+            if (args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal))
+                TlaLink.Files.WriteNew(args[1], new { SchemaVersion = Schema.Version, Kind = "test-results", Results = results, Root = root, Failed = failed, Runtime = Environment.Version.ToString() });
+            return failed == 0 ? 0 : 1;
         }
         try
         {
+            string? selection = args.Length == 2 && args[1].StartsWith("--", StringComparison.Ordinal) ? args[1] : null;
+            using ToolHashSession session = new(TestTools.ImmutableAssets(root, selection), Path.Combine(work, "tool-hashes.json"));
+            hashes = session;
+            ToolHashTests.Register(Test, work);
+            if (selection is null or "--core" or "--apalache") ApalacheTests.RegisterExample(Test, root);
             DiagnosticTests.Register(Test);
+            if (args.Length == 2 && args[1] == "--apalache")
+            {
+                ApalacheTests.RegisterCore(Test, work);
+                ApalacheTests.RegisterNative(Test, root, work);
+                return Finish();
+            }
             if (args.Length == 2 && args[1] == "--p")
             {
                 PTests.Register(Test, root, work);
-                Console.WriteLine($"{results.Count - failed}/{results.Count} passed.");
-                return failed == 0 ? 0 : 1;
+                return Finish();
             }
             if (args.Length == 2 && args[1] == "--diagnostics")
             {
-                Console.WriteLine($"{results.Count - failed}/{results.Count} passed.");
-                return failed == 0 ? 0 : 1;
+                return Finish();
             }
             if (args.Length == 2 && args[1] == "--core")
             {
+                ApalacheTests.RegisterCore(Test, work);
                 JavaToolchainTests.RegisterCore(Test, work);
                 CoreTests.Register(Test, work);
-                Console.WriteLine($"{results.Count - failed}/{results.Count} passed.");
-                return failed == 0 ? 0 : 1;
+                return Finish();
             }
             if (args.Length == 2 && args[1] == "--integrated")
             {
                 IntegratedTests.Register(Test, root, work);
-                Console.WriteLine($"{results.Count - failed}/{results.Count} passed.");
-                return failed == 0 ? 0 : 1;
+                return Finish();
             }
             if (args.Length == 2 && args[1] == "--workflow")
             {
                 ProjectWorkflowTests.Register(Test, root, work);
                 EvidenceHardeningTests.Register(Test, root, work);
                 EntityTraceTests.Register(Test, root, work);
-                Console.WriteLine($"{results.Count - failed}/{results.Count} passed.");
-                return failed == 0 ? 0 : 1;
+                return Finish();
             }
             CoreTests.Register(Test, work);
+            ApalacheTests.RegisterCore(Test, work);
+            ApalacheTests.RegisterNative(Test, root, work);
             JavaToolchainTests.RegisterCore(Test, work);
             JavaToolchainTests.RegisterNative(Test, work);
             PTests.Register(Test, root, work);
@@ -70,10 +101,7 @@ public static class Program
                 TlaBackendTests.Run(TestTools.Jar(root),
                     (condition, message) => { if (!condition) throw new InvalidOperationException(message); }));
             TraceTests.Register(Test, root, work);
-            Console.WriteLine($"{results.Count - failed}/{results.Count} passed.");
-            if (args.Length > 1)
-                TlaLink.Files.WriteNew(args[1], new { SchemaVersion = Schema.Version, Kind = "test-results", Results = results, Root = root, Failed = failed, Runtime = Environment.Version.ToString() });
-            return failed == 0 ? 0 : 1;
+            return Finish();
         }
         finally
         {

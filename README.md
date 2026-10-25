@@ -10,6 +10,8 @@ explicitly rejected, not silently upgraded.
 - The upstream Java SANY/PlusCal parsers remain authoritative for TLA+,
   explicit labels, imports and translation freshness.
 - TLC, not a new interpreter, checks a whole finite recorded execution.
+- Explicitly selected Apalache 0.62.4 checks typed TLA+ safety models, through a
+  stated transition bound or all three supplied-invariant induction obligations.
 - The selected local Dafny 4.11.0 frontend resolves Dafny declarations/includes;
   its verifier, assumption auditor and C# compiler remain authoritative.
 - The selected local P 3.1.0 frontend resolves P declarations. PChecker, PEx,
@@ -93,7 +95,8 @@ source bundle, not legal approval or a binary release.
 
 The current example/cache convention is `.tools\tla\v1.8.0\tla2tools.jar`,
 `.tools\dafny\Dafny.exe` and the P local-tool installation below. Tests accept
-`TLALINK_TLA_JAR`, `TLALINK_DAFNY` and `TLALINK_P_COMPILER` overrides.
+`TLALINK_TLA_JAR`, `TLALINK_DAFNY`, `TLALINK_P_COMPILER` and
+`TLALINK_APALACHE_JAR` overrides.
 On Linux the Dafny launcher is `.tools\dafny\dafny`; P's .NET 8 runtime
 must also be installed for native P tests.
 Missing prerequisites fail explicitly. For backend-independent tests:
@@ -112,6 +115,7 @@ The explicit Java setup script above is not automatic backend installation.
 .NET SDK selected by `global.json`, runs backend-independent controls, then
 explicitly provisions the pinned Java, TLC 1.8.0, Dafny 4.11.0 and P 3.1.0 tools
 before running the complete console suite. The .NET 8 SDK supplies P's runtime.
+Apalache 0.62.4 is also explicitly provisioned for native safety/induction controls.
 Archive downloads are checksum-verified; third-party actions use commit pins.
 Missing tools, build errors and failed controls fail the job rather than skip
 native tests. Console logs and the full suite's JSON report are retained for
@@ -165,6 +169,7 @@ Sources under `src\tlalink` are grouped by responsibility:
 | `PLang` | Native P frontend, bindings, backend execution, result classification and evidence reader |
 | `Tla` | SANY model scope, source annotations, structural review and shared upstream Java adapter |
 | `Tlc` | Native TLC workflow and causal whole-execution matching |
+| `Apalache` | Native typechecking, bounded/inductive safety and independent evidence reading |
 | `PlusCal` | Algorithm discovery and translation-freshness diagnostics in the shared TLA frontend |
 | `Dafny` | Native Dafny frontend, contracts, verification/audit and executable oracles |
 
@@ -175,10 +180,155 @@ namespaces, historical evidence or generated capture contracts.
 Shared stage/preflight/evidence contracts are assessed in
 [the design proposal](DESIGN.md#proposed-shared-backend-contracts-assessment-only).
 They are not implemented interfaces or a universal proof result.
-Tool selection follows each obligation, including P-first candidates, rather
-than requiring reuse of prior TLA+/Dafny work.
+Tool selection follows the obligation, modeling fit, available dependencies and
+required evidence, rather than a fixed tool priority or reuse of an existing model.
 
-## First-class P workflow
+## Choosing tools and checkers
+
+Select the engine explicitly for the obligation; the framework never silently
+switches engines or weakens requirements when a tool is missing or slow. Start
+with the question and the smallest suitable model, not a preferred language.
+The following describes the integrations available here, not every upstream
+capability:
+
+| Tool / checker | Useful when | Limits and evidence boundary |
+|---|---|---|
+| Roslyn | Resolve C# symbols, accesses, bindings and capture sites | Requires explicit sources/references/defines. Structural resolution does not establish atomicity or behavior. |
+| SANY / PlusCal | Resolve TLA+ modules/operators and author labeled algorithms translated to TLA+ | Authoritative parsing and translation freshness, not a behavioral proof. PlusCal still needs a checker for the generated model. |
+| TLC exploration | Explore a configured finite state graph, check invariants, deadlocks and selected temporal properties | Explicit states make debugging concrete but can cause state explosion. Exhaustion is scoped to the configuration and subject to TLC fingerprint omission risk; bounded or incomplete searches are not exhaustion. |
+| TLC trace matching | Check whether one instrumented C# execution has a causal whole-model witness | Requires executable bindings, an execution receipt and explicit hidden-step assumptions. A finite observed prefix does not prove all C# executions or liveness. |
+| Apalache typechecking | Catch inconsistent model data types before behavioral analysis | Requires native type annotations where inference is insufficient. Successful typing is not safety. |
+| Apalache bounded safety | Search typed TLA+ safety models through an explicit transition bound, without enumerating every concrete state | SMT encodings can help with data combinations but solver cost is model-dependent. A pass is only bounded safety; this integration excludes temporal checking, simulation and trace matching. |
+| Apalache induction | Establish initiation, preservation and safety implication for a supplied invariant | Can establish safety beyond a search bound, but requires a sufficiently strong typed/domain-constrained invariant and all three feasible obligations. Limited to the selected constants and supported profile, not arbitrary parameters or C# refinement. |
+| Dafny verification / assumption audit | Verify supplied algorithmic contracts, loop invariants and lemmas, and inspect trusted assumptions | Deductive reasoning can avoid state enumeration but needs proof annotations and solver support. Verification establishes the scoped Dafny program under its assumptions, not linked C#. |
+| Dafny executable oracle comparisons | Compare concrete C# adapter calls with upstream-compiled, verified Dafny behavior | Useful executable examples, but only for selected cases and supported synchronous int/bool adapters. Passing comparisons are not C# verification or exhaustive testing. |
+| P frontend | Resolve state machines, events and qualified P/C# correspondence bindings | Native declarations and structural links only; no schedule exploration or automatic execution of the linked C#. |
+| PChecker | Explore explicitly budgeted schedules of an asynchronous P model, with reproducible seeds | Often useful for finding interleaving bugs. Schedule sampling is not finite exhaustion; step limits and deadlines leave checks incomplete. |
+| PEx | Exhaust a finite P model using an explicitly reviewed compiled JAR | Can establish finite-model exhaustion, but has state-space/resource costs and needs pinned Java/build dependencies. The unpinned upstream Maven update path is not run here. |
+| PSym | Exhaust a supported symbolic P model with a compatible legacy runtime/artifact | Symbolic representation can reduce enumeration, but this integration targets the PSym 2.4.0 runtime. P 3.1.0 cannot compile that legacy artifact; an externally reviewed pinned build is required. |
+| PVerifier | Establish supplied P invariants by induction with native proof obligations | Avoids a finite schedule sample, but needs UCLID5, a pinned solver/runtime closure and suitable invariants. Unresolved goals are incomplete. |
+| PObserve | Check selected properties against an explicit nonempty log using reviewed monitor/parser artifacts | Useful for observations of real executions, but depends on log coverage, parsing and ordering assumptions. Monitoring is not exhaustive exploration or TLC causal trace inclusion. |
+
+Maintained native tests exercise SANY/PlusCal, TLC, Apalache, Dafny and
+PChecker. PEx, PSym, PVerifier and PObserve have result-classification and
+evidence controls; their external solver/monitor distributions and end-to-end
+native runs are not provisioned by the suite or CI. A configured adapter is
+not a claim that every native dependency has been exercised.
+
+Compare runtime and modeling/proof effort on the actual obligation when more
+than one checker fits. Typechecking, sampled schedules, bounded safety, finite
+exhaustion, induction, oracle comparisons and log monitoring are distinct
+claims. Keep the selected configuration, assumptions, bounds and independent
+acceptance requirements explicit; one claim cannot silently substitute for another.
+
+### Using Apalache with TLA+
+
+Apalache uses the same TLA+ language, not a simpler replacement language.
+Variables/constants need upstream `@type:` comments; many operator types are
+inferred by Snowcat. These are independent of `@tla 2` source correspondence.
+A bounded pass is not TLC exhaustion or an inductive proof. Inductive success
+is scoped to the selected constants/domains, assumptions and supported native
+encoding, not all C# executions or arbitrary model parameters.
+
+### Local Apalache prerequisite
+
+Provision the complete trusted [Apalache 0.62.4 distribution](https://github.com/apalache-mc/apalache/releases/tag/v0.62.4)
+explicitly under `.tools\apalache\0.62.4`, containing `lib\apalache.jar`.
+The versioned ZIP SHA256 is
+`3B6B7EBF24E778535BF47E0CB3F0799C9AB9048DF41119C7D3091C6CA1760BC1`;
+the JAR SHA256 is
+`E5223915507B65CC5F1638BD037EDE60F8A4FC1644AFF46355779F9B05DF9262`.
+Analysis never downloads or updates tools. The backend uses the existing
+pinned Java 25 toolchain directly, not the distribution's shell launcher.
+It fingerprints/archives the distribution and selected inputs, isolates native
+JSON configuration and child environment, and uses an isolated JVM home so a
+user's telemetry opt-in and global configuration are not inherited.
+SANY indexing and PlusCal freshness still require the pinned TLA tools JAR.
+Tests accept `TLALINK_APALACHE_JAR` for an alternative absolute local
+`lib\apalache.jar` location.
+
+```powershell
+$apalache = ".\.tools\apalache\0.62.4\lib\apalache.jar"
+$tla = ".\.tools\tla\v1.8.0\tla2tools.jar"
+.\TlaLink.ps1 check-apalache --config .\examples\Apalache\inductive.json --apalache $apalache --jar $tla --output .\Results\apalache-induction --timeout 60
+.\TlaLink.ps1 read-apalache --result .\Results\apalache-induction\result.json --current true
+.\TlaLink.ps1 doctor --project .\examples\Apalache\project.json
+.\TlaLink.ps1 plan --project .\examples\Apalache\project.json --scenario credit
+.\TlaLink.ps1 run --project .\examples\Apalache\project.json --scenario credit --output .\Results\apalache-credit
+.\TlaLink.ps1 accept --project .\examples\Apalache\project.json --run .\Results\apalache-credit
+dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --apalache
+```
+
+### Manifest, claims and limits
+
+The strict schema-4 `apalache-analysis` manifest selects `model`, named nullary
+`init`/`next` predicates, `properties`, explicit review `assumptions`, optional
+`const_init`, and exactly one mode:
+
+| Manifest mode / project stage | Additional fields | Successful claim |
+|---|---|---|
+| `typecheck` / `apalache-typecheck` | Empty properties, no length/invariant/constant initializer | `well-typed-model` |
+| `bounded` / `apalache-check` | Explicit `length` (0..10000), nonempty properties | `bounded-safety` |
+| `inductive` / `apalache-inductive` | Named `invariant`, nonempty properties, no length | `inductive-invariants` |
+
+Induction checks `Init => Inv`, `Inv /\ Next => Inv'`, and `Inv => Safety`,
+with the same selected constant initializer in each fresh native process.
+Include the necessary type/domain constraints in `Inv`. Failed induction may
+show an unreachable state outside an insufficiently strong invariant; it is
+not automatically a reachable safety bug.
+
+The initial integration fixes the local incremental Z3/oopsla19 encoding and
+accepts state-level safety/candidate predicates only (SANY checks their levels).
+It does not accept arbitrary native arguments, TLC configuration files,
+simulation, temporal properties, or Apalache trace matching. SANY-resolved
+`ASSUME` declarations, including imports, are rejected rather than silently
+reinterpreted. Encode executable constraints in the selected predicates;
+the manifest's assumption descriptions are review context, not solver input.
+Deadlock freedom is not checked. A successful safety query must also produce a
+native example with exactly `length + 1` states (including its initial state);
+this blocks vacuous success from unsatisfiable initialization. Models whose
+executions all terminate before the requested bound are conservatively
+incomplete; explicitly model intended terminal stuttering or use TLC when
+finite exhaustion is the obligation. This feasibility check also applies to
+each induction query, so vacuous preservation is not accepted.
+Unknown output, empty initialization, timeouts and unsupported evaluation
+remain incomplete, even if native exit is zero. A property rejection requires
+native error completion and a nonempty ITF violation trace, not an example
+trace; type errors cannot satisfy a negative property control.
+
+Project stages use `tools.apalache` and `tools.jar`, take their scope only
+from `config`, and pin its approved bytes through `config_sha256` requirements.
+Requirements select the exact successful claim, or `not-established` plus
+`AP100` (safety counterexample) / `AP101` (failed induction) for a deliberate
+negative control. Archive consistency, current applicability and independent
+acceptance remain separate; `read-apalache` reports the native analysis status
+without treating archive validity as a property pass.
+
+The focused native suite shares synthetic model setup and reuses its successful
+bounded run for reader controls, not for changed-input analyses. Console tests
+report per-test elapsed times; Apalache receipts also retain per-process times.
+Native checks remain fresh processes. Large tool fingerprints are streamed
+without allocating a tool-sized byte array.
+
+All test selections share one startup hash cache for explicitly selected,
+unchanged tool distributions, Java pins and deployed tool/Roslyn assemblies.
+Workflow subprocesses use an explicit test host to inherit that snapshot;
+the production CLI has no cache flag or environment-variable bypass.
+Read leases prevent ordinary writes/replacement on Windows. On Unix the
+harness additionally rehashes the originals before reporting success, because
+other writers need not honor sharing locks. Treat selected tool installations
+as immutable for the whole test session; tests that change tools must use copies.
+Sources, configurations, generated output, archived tool copies and other
+mutation/drift fixtures are not cached and still use current bytes.
+Logs report startup cost and in-process cache hits; this removes repeated
+hashing, not native JVM/solver startup or evidence archive copying.
+Use `--core` for quick backend-independent feedback; it needs no backend tools.
+Every native safety query already includes Snowcat typechecking, so a separate
+typecheck stage is optional rather than required setup for checking. Keep it
+when its fast, independently reported feedback is useful; omit redundant
+typecheck-only stages in a latency-sensitive workflow.
+
+## P analysis workflow
 
 Select the distribution's actual `p.dll`, not a global tool shim. The bridge
 checks the exact compiler/frontend version and runs parsing/typechecking in a
