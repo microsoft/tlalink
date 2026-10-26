@@ -394,12 +394,26 @@ public static partial class ProjectWorkflow
         ProcessStartInfo start = new(executable) { WorkingDirectory = output, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (string argument in arguments) start.ArgumentList.Add(argument);
         using Process process = Process.Start(start) ?? throw new InputException(ErrorCode.WorkflowStageFailed, "Could not start " + executable);
-        Task<string> stdout = process.StandardOutput.ReadToEndAsync(), stderr = process.StandardError.ReadToEndAsync();
+        // Long native searches stream their progress into the log while running.
+        using StreamWriter log = new(new FileStream(Path.Combine(output, label + ".log"), FileMode.Create, FileAccess.Write, FileShare.Read)) { AutoFlush = true };
+        System.Text.StringBuilder captured = new();
+        Task stdout = Task.Run(async () =>
+        {
+            char[] buffer = new char[8192];
+            int read;
+            while ((read = await process.StandardOutput.ReadAsync(buffer)) > 0)
+            {
+                captured.Append(buffer, 0, read);
+                log.Write(buffer, 0, read);
+            }
+        });
+        Task<string> stderr = process.StandardError.ReadToEndAsync();
         bool finished = process.WaitForExit(checked(timeout * 1000));
         if (!finished) { process.Kill(entireProcessTree: true); process.WaitForExit(); }
-        string text = stdout.GetAwaiter().GetResult();
+        stdout.GetAwaiter().GetResult();
+        string text = captured.ToString();
         string errors = stderr.GetAwaiter().GetResult();
-        File.WriteAllText(Path.Combine(output, label + ".log"), text + "\n" + errors);
+        log.Write("\n" + errors);
         if (!finished) throw new InputException(ErrorCode.InvalidArchivePath, "Process deadline exceeded; see " + label + ".log");
         if (process.ExitCode != 0 && !allowFailure)
             throw new InputException(ErrorCode.WorkflowStageFailed, "Process failed (" + process.ExitCode + "); see " + label + ".log");
