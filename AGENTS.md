@@ -39,6 +39,32 @@ namespace and flat deployed bridge-asset names when moving implementation.
   changes. TlaLink's local execution does not establish the agent's own data
   handling policy.
 
+## Model authoring and self-checks
+
+- Own model development and technical self-review; do not delegate reading
+  TLA+, Dafny or P to the user as the normal workflow. Follow the
+  [authoring procedure](REFERENCE.md#model-authoring-and-self-checks), then
+  explain the claim, assumptions, simplifications and gaps in plain English.
+- Revisit the C# independently of the drafted model. Map relevant operations,
+  competing accesses, awaits, cancellation, exceptions and cleanup to modeled
+  behavior; list omissions. Resolved bindings alone do not establish this map.
+  At an explicit interface boundary, use declared contract guarantees only,
+  not behavior from excluded concrete or native implementations. Surface
+  missing guarantees for a contract decision rather than inventing them.
+- Justify atomic steps and state reductions. Do not hide relevant interleavings
+  through serialization, invented snapshots or stronger environment assumptions.
+  Obtain an explicit decision when an assumption changes the requested claim.
+- Check reachability/non-vacuity and use defect-relevant positive and negative
+  controls. A parser error, missing dependency or timeout is not a successful
+  rejection control. Report untested controls and correspondence gaps.
+- Investigate counterexamples before changing code, models or properties;
+  rerun affected controls after changes. Do not tune independent requirements
+  or approved configuration pins to fit observed outcomes.
+- Keep agent self-review distinct from required human review. Never assert
+  a user's approval or record yourself as the human reviewer. Instructions
+  and self-checks are not an automatic guarantee of model adequacy or C#
+  correctness; leave unsupported claims and required reviews outstanding.
+
 ## Build and validation
 
 ```powershell

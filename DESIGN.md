@@ -16,10 +16,18 @@ service. The human-facing README explains the value and workflow;
 the reference documents the commands and formats; AGENTS.md gives operational
 and maintenance safeguards.
 
-The agent helps scope a concern, prepare models/bindings, run native tools and
-explain results. The user reviews the intended claim, abstraction, assumptions
-and acceptance requirements. Neither an agent explanation nor a successful
-backend run discharges missing correspondence or coverage obligations.
+The agent owns drafting models, properties, configurations and bindings,
+running native tools, and technically challenging the resulting abstraction.
+The [authoring workflow](REFERENCE.md#model-authoring-and-self-checks) requires
+source correspondence review, reachability/non-vacuity checks, meaningful
+controls and counterexample investigation rather than pass-chasing.
+The user clarifies intent and reviews a plain-English explanation of the
+claim, assumptions, limits and acceptance requirements; routine use does not
+require reading TLA+, Dafny or P. Existing human or specialist review gates
+remain explicit and cannot be discharged by agent self-review.
+Neither an agent explanation nor a successful backend run discharges missing
+correspondence or coverage obligations. The authoring instructions guide the
+agent; the CLI does not automatically establish abstraction adequacy.
 The project workflow separates planning, execution, evidence validation and
 acceptance so those distinctions remain inspectable beyond the conversation.
 

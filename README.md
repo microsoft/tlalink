@@ -9,14 +9,15 @@ explicit formal models, running checks, and keeping reproducible evidence.
 It brings source/model review, model checking, algorithm verification and
 selected C# execution checks into one workflow.
 
-Your coding agent can help reason about a concurrency bug, write a model or
-propose an invariant. TlaLink gives that work a checkable foundation: explicit
+Your coding agent writes the models and checks needed to investigate your
+question, then challenges its own work. TlaLink gives that work a checkable foundation: explicit
 links to your code, results from established formal-methods tools, and retained
 evidence of exactly what was checked.
 
 You work with the agent to define the question and review the assumptions.
 The agent operates TlaLink to prepare and run checks, investigate failures and
-explain the results. The goal is to move from **"the agent says this looks
+explain the results in plain English; you do not need to read TLA+, Dafny or P
+to use this workflow. The goal is to move from **"the agent says this looks
 correct"** to **"here is the evidence, its scope and what remains unproven."**
 
 You can also operate the CLI directly. TlaLink does not include a coding agent
@@ -84,10 +85,31 @@ agree on the smallest useful scope and the evidence needed.
 
 ## Usage
 
-First, prepare a project that identifies the source scope, models, checks,
-bounds and independent acceptance requirements. You and the agent review
-whether those choices address the intended behavior. Then use the project
-workflow:
+### Develop the models with your agent
+
+Start with the behavior you care about and the relevant C# code. The agent
+inspects that scope, recommends a suitable checker, and writes or adapts the
+models, properties, configurations, source bindings and project manifests.
+TlaLink does not generate a complete model automatically from arbitrary C#.
+
+The agent must then check more than whether its model passes. It should
+revisit the C# to justify the modeled steps and interleavings, check that
+important behavior is reachable, and use meaningful negative controls to
+show that the checks detect the failure being investigated. Selected C#
+execution checks can provide additional evidence where supported.
+
+You should receive a plain-English account of what is being checked, what
+was simplified, which interface guarantees are assumed, and what remains
+outside the model. Your role is to clarify the intended behavior and decide
+whether those assumptions and limits are acceptable, not to author the formal
+model. The [agent instructions](AGENTS.md#model-authoring-and-self-checks)
+and [authoring workflow](REFERENCE.md#model-authoring-and-self-checks) define
+the agent's responsibilities. When working from another repository, explicitly
+point the agent to this guidance; running the CLI does not load it.
+
+### Run and assess the checks
+
+Once the agent has prepared the models and project, it uses the project workflow:
 
 1. **`doctor`: check readiness.** Check the selected scenario's inputs,
    pinned tools and declared check coverage before attempting a run.
@@ -102,6 +124,12 @@ workflow:
 5. **`explain`: understand the assessment.** Inspect remaining work, such as
    incomplete checks, pending reviews, unmet requirements or stale inputs.
 
+Counterexamples start another development iteration: the agent investigates
+whether they expose an implementation defect, a model defect or an unsupported
+assumption. It must not weaken a property or hide an interleaving simply to
+make the checks pass. Where requirements call for human review, `record-review`
+records an actual reviewed decision; agent self-checks do not satisfy that gate.
+
 The [evidence-stage example](examples/Evidence/project.json) combines C#
 regressions and standalone Dafny proofs. Acceptance summaries group remaining
 work into incomplete stages, review gates, unmet requirements and validation
@@ -109,10 +137,6 @@ diagnostics; full receipts retain the complete evidence assessment.
 For larger projects, [component manifests](examples/Components/README.md) keep
 checks beside their code, share explicit input sets and execution budgets,
 and assemble into one project through a small root manifest.
-The agent handles the mechanics; you should expect an explanation of the
-claim, the evidence supporting it and its limitations. It must not weaken
-requirements or replace a baseline merely to get a pass.
-
 For example, after setting up the pinned TLA+ and Java tools:
 
 ```powershell

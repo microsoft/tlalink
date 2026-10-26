@@ -15,6 +15,7 @@ root-relative because this document lives beside the README.
 - [Continuous integration](#continuous-integration)
 - [Optional P prerequisites](#optional-p-prerequisites)
 - [Source organization](#source-organization)
+- [Model authoring and self-checks](#model-authoring-and-self-checks)
 - [Choosing tools and checkers](#choosing-tools-and-checkers)
 - [Apalache setup and analysis](#using-apalache-with-tla)
 - [P analysis workflow](#p-analysis-workflow)
@@ -316,6 +317,71 @@ flat names. See [the architecture](DESIGN.md#architecture) for component ownersh
 and evidence boundaries.
 Tool selection follows the obligation, modeling fit, available dependencies and
 required evidence, rather than a fixed tool priority or reuse of an existing model.
+
+## Model authoring and self-checks
+
+The agent authors the formal artifacts and performs the technical review.
+The user supplies intent and reviews an explanation of the assumptions, scope
+and remaining risks; routine use does not require reading the formal language.
+Use this procedure alongside the [agent safeguards](AGENTS.md). It is an
+authoring discipline, not an additional enforced CLI gate or an automatic
+source-to-model translation.
+
+1. **Define the question before writing the model.** Identify the C# source
+   scope, the safety/deadlock/progress obligation, the intended evidence and
+   independent acceptance requirements. Choose a checker by
+   [modeling fit and claim](#choosing-tools-and-checkers), not convenience.
+   Inspect existing models for applicability rather than assuming they apply.
+2. **Make the abstraction explicit.** Describe state, data domains, initial
+   conditions, transitions, environmental behavior and excluded effects.
+   Map these to the relevant C# operations, including competing calls, awaits,
+   cancellation, exceptions and cleanup. Justify atomic steps using actual
+   synchronization or explicit contract guarantees, not statement proximity.
+   If the scope ends at an interface, model its specified guarantees rather
+   than relying on the concrete/native implementation beneath it. Propose
+   clarification of an underspecified contract instead of assuming a guarantee.
+3. **Specify properties and limits independently of the result.** State
+   bounds, fairness and environmental assumptions, and distinguish safety,
+   deadlock and progress. Account for C# arithmetic, ordering and identity
+   semantics where relevant. Reduce domains, omit data or use symmetry only
+   with a justification that preserves the behavior relevant to the obligation;
+   explain what the reduction does not cover. Never eliminate a race by
+   serializing operations that can overlap in C#.
+4. **Challenge the model before trusting a pass.** Use authoritative native
+   frontends and supported checker profiles. Check that initialization is
+   feasible and intended operations and checked conditions are reachable;
+   a property guarded by an unreachable condition is not useful evidence.
+   Include expected-valid behavior and a negative control representing the
+   motivating defect, such as a copied model with a relevant guard removed.
+   Require the expected native behavioral rejection, not merely any nonzero
+   exit. Invalid syntax, unsupported inputs and incomplete searches do not
+   demonstrate defect detection. Record which controls actually ran.
+5. **Cross-check against the implementation.** Re-read the relevant C# with
+   the completed abstraction in view: what behavior does the model accidentally
+   forbid, and what required behavior or failure path is missing? Review the
+   source/model mapping separately from the passing property. Use supported
+   recorded-execution, oracle or regression checks when they address the
+   question, and disclose unobserved paths and causal edges. These checks
+   supplement correspondence reasoning; none automatically proves refinement.
+6. **Run, diagnose and iterate reproducibly.** Keep maintained models,
+   configurations, bindings and explicit project declarations under version
+   control, near their code where appropriate. Keep requirements independent
+   of execution. Use the [project workflow](#project-workflow) to retain exact
+   inputs and native outcomes. Classify counterexamples as possible C# defects,
+   abstraction/property defects or assumption gaps before making changes.
+   Recheck affected controls and correspondence after changes; changed bounds
+   or assumptions change the claim. Do not rewrite historical evidence or
+   weaken approved requirements just to obtain acceptance.
+
+Keep the abstraction rationale and control findings in existing model comments,
+project review material and evidence references, not a parallel manifest format.
+The agent's plain-English handoff must identify the claim, source coverage,
+assumptions, reductions, actual checker/control outcomes and outstanding gaps.
+Separate archive consistency, current applicability and acceptance. A second
+reading by an agent is still agent reasoning, not independent human approval;
+where requirements call for human or specialist review, leave those gates
+pending until the actual review occurs. TlaLink checks supported structures,
+pins and native evidence, not the completeness of the agent's abstraction.
 
 ## Choosing tools and checkers
 
