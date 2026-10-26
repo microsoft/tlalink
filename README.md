@@ -84,21 +84,24 @@ agree on the smallest useful scope and the evidence needed.
 
 ## Usage
 
-1. **Define the claim.** Identify the behavior, bounds and assumptions that
-   matter. The agent can recommend a model and checker; you review whether
-   that abstraction captures the real concern.
-2. **Prepare the checks.** The agent links source symbols to model declarations
-   and sets up the workflow. Missing context and coverage gaps stay explicit.
-   Instrumentation uses separate source copies, not edits to product code.
-3. **Run and investigate.** Native tools produce model results, trace witnesses,
-   counterexamples or oracle comparisons. The agent helps explain failures
-   without treating tool errors or incomplete searches as passes.
-4. **Review the evidence.** You get the result, the exact inputs and tools,
-   remaining assumptions and an assessment against independently declared
-   requirements. Changing code can make earlier evidence inapplicable.
+First, prepare a project that identifies the source scope, models, checks,
+bounds and independent acceptance requirements. You and the agent review
+whether those choices address the intended behavior. Then use the project
+workflow:
 
-For repeatable work, the project workflow is
-**`doctor` -> `plan` -> `run` -> `accept` -> `explain`**.
+1. **`doctor`: check readiness.** Check the selected scenario's inputs,
+   pinned tools and declared check coverage before attempting a run.
+2. **`plan`: inspect the work.** Show the checks, their dependencies, execution
+   budgets and associated requirements. Review this plan before execution.
+3. **`run`: execute the checks.** Run the selected scenario and save its
+   results with the exact inputs and tools used. A completed run can include
+   expected rejections; it does not mean the requirements have been accepted.
+4. **`accept`: evaluate the evidence.** Assess the run against the independent
+   requirements and current human review decisions, keeping archive consistency
+   and current applicability separate from acceptance.
+5. **`explain`: understand the assessment.** Inspect remaining work, such as
+   incomplete checks, pending reviews, unmet requirements or stale inputs.
+
 The [evidence-stage example](examples/Evidence/project.json) combines C#
 regressions and standalone Dafny proofs. Acceptance summaries group remaining
 work into incomplete stages, review gates, unmet requirements and validation
