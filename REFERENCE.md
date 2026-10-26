@@ -170,11 +170,17 @@ the archive checksum establishes the distribution at provisioning time.
 These inputs are also retained in Java-backed analysis fingerprints.
 Explicit native P manifests continue to select their own Java dependencies.
 
-Download `tla2tools.jar` from the [TLA+ 1.8.0 release](https://github.com/tlaplus/tlaplus/releases/tag/v1.8.0)
-into `.tools\tla\v1.8.0` and verify its SHA256 before using it:
+Download the pinned `tla2tools.jar` into `.tools\tla\v1.8.0` and verify its SHA256 before using it:
 `D15655EEAFF4B3F7B3D65C46B838BC0F35D131B2EF4B1E473689B62C98D4726F`.
+It is the TLA+ 1.8.0 rolling build of upstream commit `2ef2af8`. Upstream replaces its
+[v1.8.0 release](https://github.com/tlaplus/tlaplus/releases/tag/v1.8.0) asset in place
+on each rolling build, so this repository keeps an unchanging
+[mirror of the pinned file](https://github.com/microsoft/tlalink/releases/tag/tla2tools-2ef2af8)
+with its MIT license. A different TLA+ build requires a new mirror tag and explicitly
+updated pins, never a replaced asset.
 
 ```powershell
+Invoke-WebRequest https://github.com/microsoft/tlalink/releases/download/tla2tools-2ef2af8/tla2tools.jar -OutFile .\.tools\tla\v1.8.0\tla2tools.jar
 Get-FileHash .\.tools\tla\v1.8.0\tla2tools.jar -Algorithm SHA256
 ```
 
@@ -256,6 +262,8 @@ explicitly provisions the pinned Java, TLC 1.8.0, Dafny 4.11.0 and P 3.1.0 tools
 before running the complete console suite. The .NET 8 SDK supplies P's runtime.
 Apalache 0.62.4 is also explicitly provisioned for native safety/induction controls.
 Archive downloads are checksum-verified; third-party actions use commit pins.
+The TLA+ tools JAR comes from this repository's pinned mirror release, because the
+upstream rolling release replaces its asset in place.
 Missing tools, build errors and failed controls fail the job rather than skip
 native tests. Console logs and the full suite's JSON report are retained for
 seven days, including on failure when available.
