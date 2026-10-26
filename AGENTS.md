@@ -194,6 +194,15 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   inputs, archives and mutation fixtures uncached. Mutate copied tools, not
   selected installations. Do not add production cache switches, environment
   bypasses or timestamp-only fingerprint reuse.
+- The declared TLC `result_store` is the only analysis-evidence reuse
+  mechanism. Keys cover every answer-determining byte (model closure,
+  configuration, JAR, JDK, options, fingerprint function, adapter version) and
+  exclude only workers, heap and deadline. Bump `TlcResultStore.AdapterVersion`
+  whenever TLC invocation, outcome classification or result fields change.
+  Never store incomplete outcomes, reuse by timestamps or partial keys, or
+  extend reuse to trace, regression or other backends without the same
+  answer-determining key and acceptance revalidation. Use `check-stage` for
+  expensive searches instead of raising routine budgets or weakening configs.
 - Apalache is an explicitly selected TLA+ engine, not an automatic TLC
   fallback. Its strict `apalache-analysis` manifests select typechecking,
   bounded safety or complete initiation/preservation/implication induction.

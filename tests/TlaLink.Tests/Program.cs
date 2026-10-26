@@ -90,6 +90,7 @@ public static class Program
                 Suite("apalache-core", directory => ApalacheTests.RegisterCore(Test, directory));
                 Suite("java-core", directory => JavaToolchainTests.RegisterCore(Test, directory));
                 Suite("core", directory => CoreTests.Register(Test, directory));
+                Suite("tlc-store-core", directory => TlcResultStoreTests.RegisterCore(Test, directory));
                 Suite("reports", directory => EvidenceReportTests.Register(Test, directory));
                 Suite("retention", directory => EvidenceRetentionTests.Register(Test, directory));
                 Suite("evidence-core", directory => StageEvidenceTests.RegisterCore(Test, root, directory));
@@ -103,11 +104,13 @@ public static class Program
             if (selection == "--workflow")
             {
                 Suite("workflow", directory => ProjectWorkflowTests.Register(Test, root, directory));
+                Suite("tlc-store", directory => TlcResultStoreTests.RegisterNative(Test, root, directory));
                 Suite("hardening", directory => EvidenceHardeningTests.Register(Test, root, directory));
                 Suite("entities", directory => EntityTraceTests.Register(Test, root, directory));
                 return Finish();
             }
             Suite("core", directory => CoreTests.Register(Test, directory));
+            Suite("tlc-store-core", directory => TlcResultStoreTests.RegisterCore(Test, directory));
             Suite("reports", directory => EvidenceReportTests.Register(Test, directory));
             Suite("retention", directory => EvidenceRetentionTests.Register(Test, directory));
             Suite("evidence-core", directory => StageEvidenceTests.RegisterCore(Test, root, directory));
@@ -120,6 +123,7 @@ public static class Program
             Suite("integration", directory => IntegrationTests.Register(Test, root, directory));
             Suite("integrated", directory => IntegratedTests.Register(Test, root, directory));
             Suite("workflow", directory => ProjectWorkflowTests.Register(Test, root, directory));
+            Suite("tlc-store", directory => TlcResultStoreTests.RegisterNative(Test, root, directory));
             Suite("hardening", directory => EvidenceHardeningTests.Register(Test, root, directory));
             Suite("entities", directory => EntityTraceTests.Register(Test, root, directory));
             Test("Java/SANY/PlusCal backend parity controls", () =>

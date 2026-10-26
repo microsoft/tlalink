@@ -535,6 +535,22 @@ uses native diagnostic IDs. Oracle/trace runs retain actual compiler/binary rece
 No generic shell/plugin runner, replacement model interpreter or automatic
 source translation is introduced.
 
+The declared TLC result store is the single reuse mechanism for analysis
+evidence. A completed exhaustive TLC outcome is a function of its model closure,
+configuration, tools, fingerprint function and adapter semantics, not of the
+workers, heap or deadline that let it finish. The key therefore covers exactly
+those answer-determining bytes, and a match reuses the same native evidence
+rather than inferring a new answer. Reused entries are copied into each run and
+independently revalidated by acceptance against the current declaration and the
+run's recorded inputs. Runs stay self-contained, and the store is a disposable
+cache, not a retention root or acceptance input. Only completed TLC outcomes are
+stored. Incomplete searches, trace matching, regressions and other backends
+always execute, and the recheck planner remains whole-run impact reporting,
+not a reuse decision. The adapter version, not the TlaLink binary hash, scopes
+entries, so it must change whenever TLC invocation or result interpretation
+changes. Requiring passes under several fingerprint functions reduces, but does
+not eliminate, fingerprint collision risk.
+
 Run metadata separates execution completion from stage outcomes and acceptance.
 Acceptance rechecks exact declared stages, semantic result consistency,
 artifacts, archived bytes, current inputs and required review dispositions.

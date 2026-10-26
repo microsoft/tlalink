@@ -7,12 +7,12 @@ public sealed record ProjectAuthoring(int SchemaVersion, string Kind, string Id,
     CompilerProfile Compiler, string Requirements, List<ScenarioAuthoring> Scenarios, string ReviewDirectory,
     List<ReviewAuthoring>? Obligations = null, List<CheckObligation>? CheckObligations = null,
     List<string>? Components = null, List<string>? InputSets = null, List<string>? ExecutionProfiles = null,
-    [property: JsonPropertyName("$schema")] string? EditorSchema = null);
+    [property: JsonPropertyName("$schema")] string? EditorSchema = null, string? ResultStore = null);
 public sealed record ScenarioAuthoring(string Id, List<StageAuthoring>? Stages = null, List<string>? Components = null);
 public sealed record StageAuthoring(string Id, string Kind, List<string>? DependsOn = null,
     int? TimeoutSeconds = null, string? Bindings = null, List<string>? Sources = null,
     List<string>? Models = null, string? Config = null, List<string>? Arguments = null,
-    TlcResources? Resources = null, string? Profile = null);
+    TlcResources? Resources = null, string? Profile = null, int? Fingerprint = null);
 public sealed record ReviewAuthoring(string Id, string Claim, List<string> Assumptions,
     List<string>? Inputs = null, List<string>? InputSets = null);
 public sealed record ProjectComponent(int SchemaVersion, string Kind, string Id, List<StageAuthoring> Stages,
@@ -210,7 +210,7 @@ public static class ProjectComposition
             Unique(scenarios.Select(s => s.Id), root, "scenario");
             return new AnalysisProject(source.SchemaVersion, source.Kind, source.Id, source.Tools,
                 source.Compiler, source.Requirements, scenarios, obligations, source.ReviewDirectory,
-                source.CheckObligations == null && components.Count == 0 ? null : checks) { Authoring = metadata };
+                source.CheckObligations == null && components.Count == 0 ? null : checks, source.ResultStore) { Authoring = metadata };
         }
 
         private void Component(string file, int depth)
@@ -262,7 +262,7 @@ public static class ProjectComposition
                 source.Bindings == null ? null : Rebase(file, source.Bindings),
                 source.Sources?.Select(p => Rebase(file, p)).ToList(),
                 source.Models?.Select(p => Rebase(file, p)).ToList(),
-                source.Config == null ? null : Rebase(file, source.Config), source.Arguments, resources);
+                source.Config == null ? null : Rebase(file, source.Config), source.Arguments, resources, source.Fingerprint);
         }
 
         private ReviewObligation Review(string file, ReviewAuthoring source)

@@ -68,8 +68,9 @@ jobs:
           $tools = Join-Path $PWD '.tools'
           $tla = Join-Path $tools 'tla\v1.8.0'
           $null = New-Item -ItemType Directory -Path $tla -Force
+          # Upstream replaces its rolling v1.8.0 asset in place; this repository mirrors the pinned build.
           Get-PinnedArchive `
-            'https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar' `
+            'https://github.com/microsoft/tlalink/releases/download/tla2tools-2ef2af8/tla2tools.jar' `
             (Join-Path $tla 'tla2tools.jar') `
             'D15655EEAFF4B3F7B3D65C46B838BC0F35D131B2EF4B1E473689B62C98D4726F'
           $dafny = Join-Path $env:RUNNER_TEMP 'dafny-4.11.0.zip'

@@ -97,10 +97,16 @@ public static class ProjectAcceptance
                 issues.AddRange(IntegratedEvidence.Validate(result));
             if (stage.Kind is "tlc" or "trace")
             {
-                issues.AddRange(TlcResources.ValidateEvidence(result, selectedStage, Path.Combine(directory, stage.Id)));
-                if (stage.RequestedResources != selectedStage.Resources || stage.Resources != TlcResources.Effective(stage.Kind, selectedStage.Resources))
+                AnalysisStage evidenceStage = selectedStage;
+                if (stage.Kind == "tlc")
+                    issues.AddRange(TlcResultStore.ValidateRunStage(path, project, selectedStage, stage,
+                        Path.Combine(directory, stage.Id), result, run.Fingerprints, out evidenceStage));
+                issues.AddRange(TlcResources.ValidateEvidence(result, evidenceStage, Path.Combine(directory, stage.Id)));
+                if (stage.RequestedResources != evidenceStage.Resources || stage.Resources != TlcResources.Effective(stage.Kind, evidenceStage.Resources))
                     Error(ErrorCode.WorkflowStageInconsistent, "Run-stage resource summary differs from its declaration.");
             }
+            if (stage.Kind != "tlc" && stage.StoredResults != null)
+                Error(ErrorCode.WorkflowStageInconsistent, "Only tlc stages can carry stored results: " + stage.Id);
             if (stage.Kind is "csharp-regression" or "dafny-verify")
             {
                 string engine = Path.Combine(directory, stage.Id, "engine");
@@ -178,6 +184,9 @@ public static class ProjectAcceptance
                     counted.EnumerateArray().Count(d => d.GetProperty("code").GetString() == requirement.Diagnostic &&
                         (requirement.DiagnosticText == null || d.GetProperty("message").GetString()!.Contains(requirement.DiagnosticText, StringComparison.Ordinal))) != count))
                     Missing("exactly " + count + " matching rejection diagnostics");
+                if (requirement.FingerprintFunctions is int required && stage != null &&
+                    TlcResultStore.PassedFingerprints(stage, result).Count is int passes && passes < required)
+                    Missing("passes under " + required + " distinct fingerprint functions (found " + passes + ")");
                 HashSet<string> tested = [];
                 HashSet<string> cases = [];
                 if (PInputs.IsStage(selected.Kind) && result.TryGetProperty("links", out JsonElement links))

@@ -94,6 +94,10 @@ TlaLink does not model a whole program at once. For a larger system:
   rather than relying on implementation details.
 - **Keep checks beside their code.** [Component manifests](examples/Components/README.md)
   let each part of the codebase own its checks, combined into one project.
+- **Only re-check what changed.** With a declared result store, completed
+  TLC searches are reused while their models and configurations are unchanged,
+  like an incremental build. Expensive searches can run once, separately,
+  with a larger budget. See [reusing results](REFERENCE.md#reusing-completed-tlc-results).
 
 Combining checks in one project is for organization and repeatability. It
 does not prove that the separate results add up to a system-wide guarantee.
