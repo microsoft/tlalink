@@ -1,74 +1,75 @@
 # TlaLink
 
-**Check difficult C# behavior, and keep a reproducible record of what you checked.**
+**An agent-first tool for connecting C# implementations to formal evidence.**
 
-A test can pass simply because it never encounters the wrong ordering of
-operations. That makes concurrency bugs hard to rule out: two workers claim
-the same job, cancellation arrives at the wrong time, or cleanup races with
-work still in progress.
+## Overview
 
-TlaLink helps you investigate those questions using **C# source code, explicit
-models of the behavior, and established model checkers and verifiers**. It
-connects the results to the selected source files, compiler inputs and tools,
-so you can see what a result supports and whether it still applies after a change.
-It is a local **C#/.NET 10 command-line tool**, not a replacement compiler,
-a bundled coding agent or a hosted AI service.
+TlaLink is a local .NET 10 command-line tool for reviewing C# code against
+explicit formal models, running checks, and keeping reproducible evidence.
+It brings source/model review, model checking, algorithm verification and
+selected C# execution checks into one workflow.
 
-## Why would I use it?
+Your coding agent can help reason about a concurrency bug, write a model or
+propose an invariant. TlaLink gives that work a checkable foundation: explicit
+links to your code, results from established formal-methods tools, and retained
+evidence of exactly what was checked.
 
-- **Investigate interleavings that tests may miss.** Build a small model of a
-  concurrency protocol and ask whether it can reach an unwanted state under
-  the stated bounds and assumptions.
-- **Check specific rules.** Verify a supplied algorithm's contracts, run selected
-  C# regression cases, or compare selected C# calls with a verified Dafny oracle.
-- **Connect a model to a real execution.** Record an instrumented copy of your
-  C# code and check whether the complete recorded execution fits a TLA+ model.
-- **Make results repeatable and reviewable.** Keep the exact inputs, tool versions,
-  outcomes, assumptions and open reviews together, then check whether the
-  evidence remains applicable when the code or configuration changes.
+You work with the agent to define the question and review the assumptions.
+The agent operates TlaLink to prepare and run checks, investigate failures and
+explain the results. The goal is to move from **"the agent says this looks
+correct"** to **"here is the evidence, its scope and what remains unproven."**
 
-TlaLink is most useful when you have a concrete behavioral risk, not just a
-request to "verify the codebase." It complements ordinary tests and code review;
-it does not replace them.
+You can also operate the CLI directly. TlaLink does not include a coding agent
+or hosted AI service. Its implementation-facing integrations are designed for
+the **C#/.NET toolchain**, with TLA+, Dafny and P as complementary formal backends.
 
-### A concrete example
+## Features
 
-Suppose a C# job queue promises that a job can be claimed by only one worker.
-You model two workers and the steps for finding and claiming a job, then ask
-whether both can claim it. A model checker can explore the modeled orderings
-and, if the property fails, show the sequence that breaks the rule.
+- **Source/model review:** resolve links between C# symbols and formal
+  declarations, and report gaps for review.
+- **Model and contract checks:** run established checkers against explicitly
+  selected models, properties, bounds and assumptions.
+- **Execution checks:** match recorded C# executions against TLA+ models,
+  compare selected C# calls with verified Dafny oracles, and run selected
+  console-harness regressions.
+- **Repeatable projects:** combine checks under independent requirements,
+  with component manifests that keep verification inputs beside their code.
+- **Reviewable results:** retain exact inputs and tool versions, generate
+  [human-readable reports](REFERENCE.md#human-readable-evidence-reports), and
+  check whether earlier evidence still applies after changes.
 
-TlaLink helps link those modeled steps to selected C# operations, run the
-check reproducibly, and retain the result for review. You still need to establish
-whether the model's steps and assumptions reflect the C# synchronization.
-**A correct model does not, by itself, prove that the implementation is correct.**
-
-## What do I get?
-
-A run can produce model counterexamples, proof results, selected C# test outcomes
-or a match for a recorded execution, depending on the check you choose. TlaLink
-records their scope and inputs rather than calling all of them "verified."
-You can generate a [human-readable report](REFERENCE.md#human-readable-evidence-reports)
-showing the claims, evidence, assumptions and remaining gaps.
-
-The tool is designed for a coding agent to handle the mechanics while you review
-the question and the result. You can also operate the CLI directly.
-The aim is to move from **"this looks correct"** to
-**"here is what was checked, the evidence, and what remains unproven."**
-
-TlaLink does not automatically translate arbitrary C# into a complete formal
-model. Source/model correspondence and coverage need review. A matching trace
-covers one finite observed execution; oracle comparisons cover selected cases,
-not all C# executions.
+TlaLink complements tests and code review; it does not replace them or
+automatically prove that a C# implementation is correct.
 
 ## Getting started
 
-Start with the supplied synthetic examples before applying the tool to your
-system. If you use a coding agent, open this repository alongside your code
-and give it access to the relevant sources and a shell. [AGENTS.md](AGENTS.md)
-contains its operating guidance; the [reference](REFERENCE.md) contains setup,
-commands and formats. You do not need to learn the CLI before asking the agent
-to help scope a question.
+### Prerequisites
+
+- Windows x64 or Linux x64.
+- The .NET 10 SDK selected by [global.json](global.json).
+- PowerShell 7 for repository scripts.
+
+### Build and test
+
+From the repository root:
+
+```powershell
+dotnet build .\TlaLink.sln
+dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --core
+```
+
+The build and core tests need no formal-methods backends. To run an analysis,
+follow the [setup instructions](REFERENCE.md#requirements-and-build) for the
+checkers it needs. Tools are pinned in the local `.tools` cache, including
+the JDK used by Java-backed commands. Setup is explicit: analysis commands
+do not automatically download or upgrade tools.
+
+### First steps
+
+If you use a coding agent, open this repository alongside your code and give
+it access to the relevant sources and a shell. [AGENTS.md](AGENTS.md) contains
+its operating guidance. You do not need to learn the CLI before asking the
+agent to help scope a question.
 
 For a first look, have the agent check setup and walk you through the
 [small C# example](examples/Demo.cs) and its [TLA+ model](examples/Demo.tla).
@@ -81,7 +82,7 @@ leak a credit?" is more useful than "Verify this subsystem." Share the relevant
 entry points, dependencies and any existing models. You and the agent can then
 agree on the smallest useful scope and the evidence needed.
 
-## How you work with it
+## Usage
 
 1. **Define the claim.** Identify the behavior, bounds and assumptions that
    matter. The agent can recommend a model and checker; you review whether
@@ -109,38 +110,30 @@ The agent handles the mechanics; you should expect an explanation of the
 claim, the evidence supporting it and its limitations. It must not weaken
 requirements or replace a baseline merely to get a pass.
 
-## What needs to be installed?
+For example, after setting up the pinned TLA+ and Java tools:
 
-The host needs **Windows x64 or Linux x64**, the **.NET 10 SDK** selected by
-[global.json](global.json), and **PowerShell 7** for repository scripts.
-Your agent should consult [setup instructions](REFERENCE.md#requirements-and-build)
-and install only the backends needed for the chosen workflow.
+```powershell
+.\TlaLink.ps1 doctor --project .\examples\Components\tlalink.project.json --scenario complete
+.\TlaLink.ps1 plan --project .\examples\Components\tlalink.project.json --scenario complete
+```
 
-Tools live in the ignored local `.tools` cache. Java-backed commands require
-the pinned JDK, not whichever Java is on `PATH`. Provisioning is an explicit
-setup step: analysis commands do not automatically download or upgrade tools.
-The [launcher](TlaLink.ps1) builds before invoking the CLI to avoid stale binaries.
+These commands check readiness and show the plan; they do not execute the
+checks or accept their results. See the [project workflow](REFERENCE.md#project-workflow)
+for execution, acceptance and reporting commands.
 
-An initial build and core test run need no formal-methods backends.
-The full test suite additionally requires the external backend distributions.
-Exact commands, versions and checksums are in the reference.
+## Examples
 
-## Workflow guide
-
-Use these references when choosing or asking your agent to extend a workflow.
-
-| Goal | Start with |
+| Example | Demonstrates |
 |---|---|
-| Check a complete C# execution against TLA+ | [Project workflow](REFERENCE.md#project-workflow), especially the `lanes` scenario in the [workflow example](examples/Workflow/project.json). |
-| Understand or customize capture and trace matching | [Instrument, execute, validate](REFERENCE.md#instrument-execute-validate) and the [annotation grammar](REFERENCE.md#one-maintained-markup-tla-2). |
-| Verify Dafny contracts and compare C# calls | [Integrated workflow](REFERENCE.md#integrated-tla-and-dafny-workflow) and the [binding example](examples/Integrated/bindings.json). Requires Dafny 4.11.0. |
-| Check typed TLA+ safety with SMT | [Apalache setup and analysis](REFERENCE.md#using-apalache-with-tla). Requires Apalache 0.62.4 plus the TLA+ and Java tools. |
-| Analyze an asynchronous P model or monitor logs | [P setup](REFERENCE.md#optional-p-prerequisites) and [P workflow](REFERENCE.md#p-analysis-workflow). Requires P 3.1.0 and engine-specific dependencies. |
-| Decide which checker fits your problem | [Tool selection guide](REFERENCE.md#choosing-tools-and-checkers), including limits and native test coverage. |
+| [Demo](examples/Demo.cs) and its [model](examples/Demo.tla) | Reviewing links between C# source and a TLA+ model. |
+| [Components](examples/Components/README.md) | A small root project with code-adjacent checks and shared execution profiles. |
+| [Workflow](examples/Workflow/project.json) | Repeatable checks, including a recorded-execution check in the `lanes` scenario. |
+| [Evidence stages](examples/Evidence/project.json) | C# console regressions and standalone Dafny proofs in one project. |
+| [Integrated bindings](examples/Integrated/bindings.json) | Comparing selected C# calls with verified Dafny oracles. |
 
 The examples are synthetic demonstrations, not acceptance policies for your system.
 
-## Which tools does it use?
+## Supported tools
 
 TlaLink coordinates existing tools; it does not replace their parsers, model
 checkers or verifiers. You only need the backends required for your chosen check.
@@ -158,7 +151,13 @@ The checkers have different guarantees and prerequisites. The native P suite
 exercises PChecker; other P engines have adapter/evidence controls, not
 end-to-end native coverage. See the [selection guide](REFERENCE.md#choosing-tools-and-checkers).
 
-## Understand the result
+## Limitations
+
+TlaLink does not automatically translate arbitrary C# into a complete formal
+model. A model or proof result applies to the supplied formal program; its
+correspondence to the C# implementation still needs review. A matching trace
+covers one finite observed execution, and oracle comparisons cover selected
+cases, not all possible C# executions.
 
 - **Readiness is not verification.** Resolved bindings and a valid plan only
   establish that the requested work is structurally ready.
@@ -175,7 +174,7 @@ everything into a "verified" badge. In particular, review uncaptured calls,
 Task/queue handoffs, cancellation and external effects before interpreting
 an execution trace. See [the evidence boundaries](DESIGN.md) for details.
 
-## Documentation and repository layout
+## Documentation
 
 - [Reference](REFERENCE.md): detailed setup, commands, annotations, JSON formats,
   evidence and testing.
@@ -194,3 +193,7 @@ of the working directory.
 TlaLink itself does not upload your code. If you use a coding agent, its data
 handling depends on its own configuration; local tool execution does not
 establish the agent's data handling policy.
+
+## License
+
+TlaLink is licensed under the [MIT License](LICENSE).
