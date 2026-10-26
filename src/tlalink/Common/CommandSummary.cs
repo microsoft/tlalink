@@ -55,15 +55,34 @@ public static class CommandSummary
         result["kind"] = "command-summary";
         result["result_kind"] = source["kind"]?.DeepClone();
         result["presentation_only"] = true;
-        string[] stageFields = ["id", "kind", "depends_on", "execution_status", "outcome", "duration_seconds", "evidence", "diagnostics", "statistics", "requested_resources", "resources"];
+        string[] stageFields = ["id", "kind", "depends_on", "execution_status", "outcome", "duration_seconds", "evidence", "diagnostics", "statistics", "requested_resources", "resources", "fingerprint", "stored"];
         if (source["scenarios"] is JsonArray scenarios)
             result["scenarios"] = new JsonArray(scenarios.Select(item => {
                 JsonObject scenario = Select(item!.AsObject(), ["id"]);
                 scenario["stages"] = Rows(item["stages"], stageFields);
                 return (JsonNode)scenario;
             }).ToArray());
-        if (source["stages"] is JsonArray stages) result["stages"] = Rows(stages, stageFields);
+        if (source["stages"] is JsonArray stages)
+        {
+            JsonArray rows = Rows(stages, stageFields);
+            if (source["kind"]?.GetValue<string>() == "analysis-run")
+            {
+                int reused = 0;
+                for (int i = 0; i < stages.Count; i++)
+                {
+                    bool primaryReused = stages[i]!["stored_results"] is JsonArray stored && stored.Any(s =>
+                        s!["primary"]!.GetValue<bool>() && s["origin"]!.GetValue<string>() == "reused");
+                    rows[i]!["reused"] = primaryReused;
+                    if (primaryReused) reused++;
+                }
+                result["reuse"] = new JsonObject { ["reused"] = reused, ["executed"] = stages.Count - reused };
+            }
+            result["stages"] = rows;
+        }
         else if (source["stages"] is JsonObject statuses) result["stages"] = statuses.DeepClone();
+        if (source["kind"]?.GetValue<string>() == "stage-check")
+            foreach (string field in new[] { "stage", "outcome", "fingerprint", "key", "family", "entry", "duration_seconds", "timeout_seconds" })
+                result[field] = source[field]?.DeepClone();
         if (source["requirements"] is JsonArray requirements)
             result["requirements"] = Rows(requirements, ["id", "status", "missing"]);
         if (source["check_coverage"] is JsonArray coverage)

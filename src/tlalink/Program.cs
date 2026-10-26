@@ -20,7 +20,7 @@ public static class Program
             if (options.Command is "check-regression" or "read-regression") return CSharpRegression.Run(options);
             if (options.Command is "check-apalache" or "read-apalache") return ApalacheBackend.Run(options);
             if (options.Command is "inspect-p" or "check-p" or "read-p") return PBackend.Run(options);
-            if (options.Command is "expand" or "doctor" or "plan" or "run" or "accept" or "explain" or "record-review") return ProjectWorkflow.Run(options);
+            if (options.Command is "expand" or "doctor" or "plan" or "run" or "check-stage" or "accept" or "explain" or "record-review") return ProjectWorkflow.Run(options);
             if (options.Command == "read-integrated") return IntegratedEvidence.Read(options);
             if (options.Command is "inspect-integrated" or "verify-integrated" or "test-integrated")
                 return IntegratedReview.Run(options);

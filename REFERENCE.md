@@ -784,6 +784,73 @@ fallback, arbitrary JVM flag forwarding or retry. Resource experiments use fresh
 runs and unchanged logical model/configuration requirements. Timed-out and
 resource-exhausted checks remain incomplete.
 
+### Reusing completed TLC results
+
+Every `tlc` stage runs with an explicit TLC fingerprint function, `-fp`, which
+selects how TLC hashes states. Stages may set `"fingerprint": 0..130`;
+omission means 0. Results and plans record it, and acceptance checks it against
+the native invocation.
+
+A project may declare `"result_store": "<directory>"`, relative to the root
+project file. `run` then reuses completed TLC outcomes automatically, much like
+an incremental build:
+
+- **Key.** Each stage's key covers the bytes of the model and every module it
+  imports (as resolved by SANY), the configuration, the TLA+ tools JAR, the
+  pinned JDK, the semantic TLC options, the fingerprint function and the
+  adapter version. It excludes workers, heap and deadline, which only decide
+  whether a search completes.
+- **Lookup.** Before running TLC, `run` looks up the key. A matching entry is
+  verified byte for byte and copied into the new run under
+  `<stage>/stored/fp-<n>`, so runs stay self-contained. Otherwise TLC runs, and
+  a completed `passed` or `rejected` outcome is stored.
+- **Never stored:** incomplete, timed-out or failed searches.
+- **Rejections take precedence.** A stored counterexample is used for any
+  fingerprint function, because an exhaustive rejection is definitive.
+- **Additional passes are attached.** Passes stored under other fingerprint
+  functions with the same inputs are copied in alongside the primary result.
+- **`--fresh true`** runs TLC again without lookup. It still stores new
+  outcomes; an existing entry is never replaced.
+
+Entries remain valid for as long as their inputs are byte-identical: changing
+an input and changing it back makes the old entry match again. Rebuilding
+TlaLink does not invalidate them; only an adapter-version change does.
+
+Run expensive searches separately, with their own budget, directly into the
+store. The project's routine budget and requirements stay unchanged:
+
+```powershell
+.\TlaLink.ps1 check-stage --project .\tlalink.project.json --stage <tlc-stage> --fingerprint 3 --workers 16 --max-heap-mib 16384 --timeout 14400
+```
+
+`check-stage` accepts deadlines up to 48 hours. It reports `stored`,
+`already-stored` or `incomplete` (exit 2) and never accepts requirements.
+`plan` lists the stored outcomes available for each TLC stage. In run
+summaries, each stage reports `reused` and the top-level `reuse` reports the
+counts.
+
+Acceptance revalidates every copied entry:
+
+- its files, key and location;
+- that its key material describes the current declaration;
+- that every key input matches the run's recorded inputs.
+
+Reused primary evidence is checked against its own recorded budget, not the
+routine one. A reused pass satisfies requirements exactly as a fresh one does,
+because it is the same native evidence.
+
+TLC exhaustion can miss states when two states share a fingerprint. Repeating a
+search with independent fingerprint functions reduces that risk. A passed
+`tlc` requirement may therefore set `"fingerprint_functions": N`, which requires
+passes under N distinct fingerprint functions for the same key. Expected
+rejections need only one counterexample.
+
+The store is a cache. Runs never depend on it, because reused evidence is copied
+into them, so deleting it only forces re-execution. Automatic pruning of entries
+whose inputs no longer match any current stage is not implemented yet. `gc` does
+not treat store entries as collectible run units, and stale entries remain until
+the store or the entry is removed.
+
 ### C# regressions and standalone Dafny proofs
 
 Regression `arguments` are opaque strings. Optional `path_arguments` lists

@@ -6,7 +6,7 @@ public sealed class CliOptions
     public string Command { get; }
     public CliOptions(string[] args)
     {
-        if (args.Length == 0) throw new InputException("Usage: TlaLink <report|gc|expand|project-schema|doctor|plan|run|accept|explain|inspect|check|review|inputs|instrument|execute|validate-trace|check-regression|read-regression|check-dafny|read-dafny|check-apalache|read-apalache|inspect-integrated|verify-integrated|test-integrated|read-integrated> [--option value ...]");
+        if (args.Length == 0) throw new InputException("Usage: TlaLink <report|gc|expand|project-schema|doctor|plan|run|check-stage|accept|explain|inspect|check|review|inputs|instrument|execute|validate-trace|check-regression|read-regression|check-dafny|read-dafny|check-apalache|read-apalache|inspect-integrated|verify-integrated|test-integrated|read-integrated> [--option value ...]");
         Command = args[0];
         Dictionary<string, string[]> allowed = new()
         {
@@ -25,7 +25,8 @@ public sealed class CliOptions
             ["project-schema"] = ["output", "format"],
             ["doctor"] = ["project", "scenario", "format"],
             ["plan"] = ["project", "scenario", "format"],
-            ["run"] = ["project", "scenario", "output", "format"],
+            ["run"] = ["project", "scenario", "output", "format", "fresh"],
+            ["check-stage"] = ["project", "scenario", "stage", "fingerprint", "workers", "max-heap-mib", "timeout", "format"],
             ["accept"] = ["project", "run", "output", "format"],
             ["explain"] = ["project", "run", "output", "format"],
             ["record-review"] = ["project", "obligation", "reviewer", "rationale", "disposition", "evidence", "format"],
@@ -54,7 +55,8 @@ public sealed class CliOptions
             list.Add(args[i + 1]);
         }
         if (Get("format", "json") is not ("json" or "text" or "summary")) throw new InputException("Format must be json, text or summary.");
-        if (!int.TryParse(Get("timeout", "30"), out int timeout) || timeout is < 1 or > 7200) throw new InputException("Timeout must be 1..7200 seconds.");
+        int maximum = Command == "check-stage" ? 172800 : 7200;
+        if (!int.TryParse(Get("timeout", "30"), out int timeout) || timeout < 1 || timeout > maximum) throw new InputException($"Timeout must be 1..{maximum} seconds.");
     }
 
     public string Get(string name, string fallback) => values.TryGetValue(name, out List<string>? list) ? list.Single() : fallback;

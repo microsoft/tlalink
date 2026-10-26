@@ -358,6 +358,13 @@
                         "null"
                       ],
                       "default": null
+                    },
+                    "fingerprint": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "default": null
                     }
                   },
                   "required": [
@@ -587,6 +594,13 @@
             "null"
           ],
           "default": null
+        },
+        "result_store": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
         }
       },
       "required": [
@@ -779,6 +793,13 @@
               "profile": {
                 "type": [
                   "string",
+                  "null"
+                ],
+                "default": null
+              },
+              "fingerprint": {
+                "type": [
+                  "integer",
                   "null"
                 ],
                 "default": null

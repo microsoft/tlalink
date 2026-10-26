@@ -15,7 +15,7 @@ public sealed record CompilerProfile(string TargetFramework, string LanguageVers
 }
 public sealed record AnalysisStage(string Id, string Kind, List<string> DependsOn, int TimeoutSeconds,
     string? Bindings = null, List<string>? Sources = null, List<string>? Models = null,
-    string? Config = null, List<string>? Arguments = null, TlcResources? Resources = null);
+    string? Config = null, List<string>? Arguments = null, TlcResources? Resources = null, int? Fingerprint = null);
 public sealed record AnalysisScenario(string Id, List<AnalysisStage> Stages);
 public sealed record ReviewObligation(string Id, string Claim, List<string> Assumptions, List<string> Inputs);
 public sealed record CheckObligation(string Id, string Kind, string Scenario, List<string> Requirements);
@@ -26,7 +26,8 @@ public sealed record ReviewDecision(int SchemaVersion, string Kind, string Oblig
     Dictionary<string, string> Fingerprints, List<string> Evidence);
 public sealed record AnalysisProject(int SchemaVersion, string Kind, string Id, ProjectTools Tools,
     CompilerProfile Compiler, string Requirements, List<AnalysisScenario> Scenarios,
-    List<ReviewObligation> Obligations, string ReviewDirectory, List<CheckObligation>? CheckObligations = null)
+    List<ReviewObligation> Obligations, string ReviewDirectory, List<CheckObligation>? CheckObligations = null,
+    string? ResultStore = null)
 {
     [JsonIgnore]
     internal ProjectAuthoringMetadata? Authoring { get; init; }
@@ -34,12 +35,14 @@ public sealed record AnalysisProject(int SchemaVersion, string Kind, string Id, 
 public sealed record AnalysisRequirement(string Id, string Scenario, string Stage, string Expected,
     string? Diagnostic = null, List<string>? Bindings = null, List<string>? Cases = null,
     List<string>? Reviews = null, string? ConfigSha256 = null, string? Claim = null, string? DiagnosticText = null,
-    List<string>? Tests = null, int? DiagnosticCount = null);
+    List<string>? Tests = null, int? DiagnosticCount = null, int? FingerprintFunctions = null);
 public sealed record AcceptancePolicy(int SchemaVersion, string Kind, string Project,
     List<AnalysisRequirement> Requirements);
 public sealed record WorkflowStageResult(string Id, string Kind, string ExecutionStatus, string Outcome,
     string Evidence, string Sha256, List<string> Diagnostics, double DurationSeconds, TlcStatistics? Statistics = null,
-    TlcResources? RequestedResources = null, TlcResources? Resources = null);
+    TlcResources? RequestedResources = null, TlcResources? Resources = null, List<StoredStageResult>? StoredResults = null);
+public sealed record StoredStageResult(int Fingerprint, string Key, string Family, string Outcome, string Origin,
+    bool Primary, string Directory, string EntrySha256);
 public sealed class WorkflowRun
 {
     public int SchemaVersion => Schema.Version;
@@ -115,6 +118,8 @@ public static class ProjectInputs
                 {
                     if (stage.Resources != null && stage.Kind is not ("tlc" or "trace"))
                         throw new InputException(ErrorCode.InvalidWorkflowInput, "TLC resources are supported only on tlc/trace stages.");
+                    if (stage.Fingerprint != null && (stage.Kind != "tlc" || stage.Fingerprint is < 0 or > TlcResultStore.MaxFingerprint))
+                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Fingerprint functions are supported only on tlc stages, as an index 0.." + TlcResultStore.MaxFingerprint + ": " + stage.Id);
                     if (stage.Kind is "tlc" or "trace") _ = TlcResources.Effective(stage.Kind, stage.Resources);
                     if (!StageKinds.Contains(stage.Kind, StringComparer.Ordinal) ||
                         stage.TimeoutSeconds is < 1 or > 7200)
@@ -209,6 +214,8 @@ public static class ProjectInputs
         }
         if (string.IsNullOrWhiteSpace(project.ReviewDirectory))
             throw new InputException(ErrorCode.InvalidWorkflowInput, "A review directory must be explicitly selected.");
+        if (project.ResultStore != null && string.IsNullOrWhiteSpace(project.ResultStore))
+            throw new InputException(ErrorCode.InvalidWorkflowInput, "A declared result store must name a directory.");
         foreach (AnalysisRequirement requirement in policy.Requirements)
         {
             AnalysisScenario? scenario = project.Scenarios.SingleOrDefault(s => s.Id == requirement.Scenario);
@@ -260,6 +267,9 @@ public static class ProjectInputs
                 throw new InputException(ErrorCode.InvalidWorkflowInput, "Configured stages must pin the independently approved configuration, including bounds and properties.");
             if (selected.Config == null && requirement.ConfigSha256 != null)
                 throw new InputException(ErrorCode.InvalidWorkflowInput, "Configuration pins require a configured TLC/trace stage.");
+            if (requirement.FingerprintFunctions != null && (selected.Kind != "tlc" || requirement.Expected != "passed" ||
+                requirement.FingerprintFunctions is < 1 or > TlcResultStore.MaxFingerprint + 1))
+                throw new InputException(ErrorCode.InvalidWorkflowInput, "Fingerprint-function counts require a passed tlc requirement and a count of 1.." + (TlcResultStore.MaxFingerprint + 1) + ".");
             if (requirement.Bindings != null || requirement.Cases != null)
                 if (selected.Kind != "oracle" && (!PInputs.IsStage(selected.Kind) || requirement.Cases != null))
                     throw new InputException(ErrorCode.InvalidWorkflowInput, "Binding coverage needs an oracle or P stage; case coverage needs an oracle stage.");

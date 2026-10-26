@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -8,16 +9,80 @@ public sealed record TlcStatistics(long? StatesGenerated, long? DistinctStates, 
 
 public static partial class ProjectWorkflow
 {
-    private static JsonElement Tlc(string path, AnalysisProject project, AnalysisStage stage, string output, Dictionary<string, string> pins)
+    internal sealed record TlcStageRun(JsonElement Result, List<StoredStageResult> Stored, TlcResources? Requested, TlcResources Effective);
+
+    private static (string Model, string Config, string Jar, TlaDocument Document) PrepareTlc(string path, AnalysisProject project,
+        AnalysisStage stage, Dictionary<string, string> pins, IReadOnlyDictionary<string, TlaDocument>? parsed)
     {
         string model = ProjectInputs.Resolve(path, stage.Models![0]);
         string jar = ProjectInputs.Resolve(path, project.Tools.Jar!.Path);
-        TlaDocument document = TlaBackend.Parse(model, jar, stage.TimeoutSeconds);
+        TlaDocument document = parsed != null && parsed.TryGetValue(model, out TlaDocument? known) ? known
+            : TlaBackend.Parse(model, jar, stage.TimeoutSeconds);
         foreach (var pin in document.DependencyFingerprints) Files.Pin(pins, pin.Key, pin.Value);
         RequireTlcModel(document);
+        // A preflight parse is reused only while its model closure still has the parsed bytes.
+        foreach (var pin in document.DependencyFingerprints.Where(p => !p.Key.StartsWith("library:", StringComparison.Ordinal) &&
+            p.Key.EndsWith(".tla", StringComparison.OrdinalIgnoreCase)))
+            if (Files.Hash(pin.Key) != pin.Value)
+                throw new InputException(ErrorCode.WorkflowInputChanged, "Model input changed after preflight: " + pin.Key);
+        return (model, ProjectInputs.Resolve(path, stage.Config!), jar, document);
+    }
+
+    private static TlcStageRun TlcStage(string path, AnalysisProject project, AnalysisStage stage, string output,
+        Dictionary<string, string> pins, bool reuse, IReadOnlyDictionary<string, TlaDocument>? parsed)
+    {
+        var (model, config, jar, document) = PrepareTlc(path, project, stage, pins, parsed);
+        int fingerprint = stage.Fingerprint ?? 0;
+        TlcResultKey key = TlcResultStore.Key(model, config, jar, document.DependencyFingerprints, fingerprint);
+        string? store = project.ResultStore == null ? null : ProjectInputs.Resolve(path, project.ResultStore);
+        List<(TlcStoredResult Entry, string Directory)> entries = store != null && reuse ? TlcResultStore.Find(store, key) : [];
+        List<StoredStageResult> stored = [];
+        void Attach(TlcStoredResult entry, string source, string origin, bool primary)
+        {
+            string relative = TlcResultStore.StoredDirectory(entry.Material.Fingerprint);
+            TlcResultStore.Copy(source, Path.Combine(output, relative));
+            stored.Add(new(entry.Material.Fingerprint, entry.Key, entry.Family, entry.Outcome, origin, primary, relative,
+                Files.Hash(Path.Combine(output, relative, "entry.json"))));
+        }
+        // An exhaustive counterexample is definitive under any fingerprint function, so it takes precedence.
+        var primary = entries.Where(e => e.Entry.Outcome == "rejected")
+            .OrderBy(e => e.Entry.Material.Fingerprint != fingerprint).ThenBy(e => e.Entry.Material.Fingerprint).FirstOrDefault();
+        if (primary.Entry == null) primary = entries.FirstOrDefault(e => e.Entry.Material.Fingerprint == fingerprint);
+        JsonElement result;
+        TlcResources? requested;
+        TlcResources effective;
+        if (primary.Entry != null)
+        {
+            foreach (string file in new[] { "tlc.log", "tlc.invocation.json" })
+                File.Copy(Path.Combine(primary.Directory, file), Path.Combine(output, file));
+            result = ProjectInputs.Read<JsonElement>(Path.Combine(primary.Directory, "result.json"));
+            requested = primary.Entry.RequestedResources;
+            effective = primary.Entry.Resources;
+            Attach(primary.Entry, primary.Directory, "reused", true);
+        }
+        else
+        {
+            Stopwatch clock = Stopwatch.StartNew();
+            result = ExecuteTlc(model, config, jar, stage, output, fingerprint);
+            requested = stage.Resources;
+            effective = TlcResources.Effective(stage.Kind, stage.Resources);
+            if (store != null && TlcResultStore.Store(store, key, stage.Id, "run", output, result, requested, effective,
+                stage.TimeoutSeconds, clock.Elapsed.TotalSeconds) is string created)
+                Attach(ProjectInputs.Read<TlcStoredResult>(Path.Combine(created, "entry.json")), created, "executed", true);
+        }
+        if (Outcome("tlc", result) == "passed")
+            foreach (var other in entries.Where(e => e.Entry.Outcome == "passed" &&
+                e.Entry.Material.Fingerprint != TlcResultStore.RecordedFingerprint(result)))
+                Attach(other.Entry, other.Directory, "reused", false);
+        return new(result, stored, requested, effective);
+    }
+
+    private static JsonElement ExecuteTlc(string model, string config, string jar, AnalysisStage stage, string output, int fingerprint)
+    {
         TlcResources resources = TlcResources.Effective(stage.Kind, stage.Resources);
-        var result = Invoke(Executable("java"), [resources.HeapArgument, "-cp", jar, "tlc2.TLC", "-tool", "-workers", resources.WorkerArgument,
-            "-metadir", Path.Combine(output, "states"), "-config", ProjectInputs.Resolve(path, stage.Config!), model],
+        var result = Invoke(Executable("java"), [resources.HeapArgument, "-cp", jar, "tlc2.TLC", .. TlcResultStore.Options,
+            "-fp", fingerprint.ToString(System.Globalization.CultureInfo.InvariantCulture), "-workers", resources.WorkerArgument,
+            "-metadir", Path.Combine(output, "states"), "-config", config, model],
             output, stage.TimeoutSeconds, "tlc", allowFailure: true);
         List<Issue> diagnostics = TlcDiagnostics(result.Text);
         List<string> codes = diagnostics.Select(d => d.Code).ToList();
@@ -26,12 +91,97 @@ public static partial class ProjectWorkflow
             SchemaVersion = Schema.Version, Kind = "tlc-result",
             Status = result.ExitCode == 0 ? "passed" : rejected ? "rejected" : "incomplete",
             Diagnostics = diagnostics,
-            Model = model, Config = ProjectInputs.Resolve(path, stage.Config!), ExitCode = result.ExitCode,
+            Model = model, Config = config, ExitCode = result.ExitCode, Fingerprint = fingerprint,
             RequestedResources = stage.Resources, Resources = resources,
             Invocation = ProjectInputs.Read<JsonElement>(Path.Combine(output, "tlc.invocation.json")),
             Statistics = ReadTlcStatistics(result.Text),
             Boundaries = new[] { "Only the configured finite model; source correspondence and fingerprint collision risk require review." }
         }, Files.Json);
+    }
+
+    private static object? StoredOutcomes(string path, AnalysisProject project, AnalysisStage stage, IReadOnlyDictionary<string, TlaDocument> parsed)
+    {
+        if (project.ResultStore == null) return null;
+        string model = ProjectInputs.Resolve(path, stage.Models![0]);
+        if (!parsed.TryGetValue(model, out TlaDocument? document)) return null;
+        TlcResultKey key = TlcResultStore.Key(model, ProjectInputs.Resolve(path, stage.Config!),
+            ProjectInputs.Resolve(path, project.Tools.Jar!.Path), document.DependencyFingerprints, stage.Fingerprint ?? 0);
+        return TlcResultStore.Find(ProjectInputs.Resolve(path, project.ResultStore), key)
+            .Select(e => new { e.Entry.Material.Fingerprint, e.Entry.Outcome, e.Entry.DurationSeconds, e.Entry.StoredAt }).ToList();
+    }
+
+    /// <summary>Runs one TLC stage with an explicit budget directly into the declared result store.</summary>
+    private static int CheckStage(string path, AnalysisProject project, AcceptancePolicy policy, CliOptions options)
+    {
+        string id = options.Required("stage");
+        if (project.ResultStore == null)
+            throw new InputException(ErrorCode.InvalidWorkflowInput, "check-stage requires the project to declare result_store.");
+        List<(AnalysisScenario Scenario, AnalysisStage Stage)> matches = project.Scenarios
+            .Where(s => options.Optional("scenario") is not string selected || s.Id == selected)
+            .SelectMany(s => s.Stages.Where(stage => stage.Id == id).Select(stage => (s, stage))).ToList();
+        if (matches.Count == 0) throw new InputException(ErrorCode.InvalidWorkflowInput, "Unknown stage: " + id);
+        if (matches.Select(m => Schema.Hash(m.Stage)).Distinct().Count() > 1)
+            throw new InputException(ErrorCode.InvalidWorkflowInput, "Stage declarations differ between scenarios; select --scenario.");
+        var (scenario, declared) = matches[0];
+        if (declared.Kind != "tlc") throw new InputException(ErrorCode.InvalidWorkflowInput, "check-stage supports tlc stages.");
+        int fingerprint = declared.Fingerprint ?? 0;
+        if (options.Optional("fingerprint") is string requested &&
+            (!int.TryParse(requested, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out fingerprint) ||
+             fingerprint > TlcResultStore.MaxFingerprint))
+            throw new InputException(ErrorCode.InvalidWorkflowInput, "--fingerprint must be 0.." + TlcResultStore.MaxFingerprint + ".");
+        TlcResources? resources = declared.Resources;
+        if (options.Has("workers") || options.Has("max-heap-mib"))
+        {
+            TlcResources current = TlcResources.Effective("tlc", declared.Resources);
+            if (!int.TryParse(options.Get("workers", current.WorkerArgument), System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out int workers) ||
+                !int.TryParse(options.Get("max-heap-mib", current.MaxHeapMib.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                    System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int heap))
+                throw new InputException(ErrorCode.InvalidWorkflowInput, "TLC workers and max-heap-mib must be positive integers.");
+            resources = TlcResources.Effective("tlc", new(workers, heap));
+        }
+        AnalysisStage stage = declared with {
+            Fingerprint = fingerprint, Resources = resources,
+            TimeoutSeconds = options.Has("timeout") ? options.Timeout : declared.TimeoutSeconds };
+        Dictionary<string, TlaDocument> parsed = new(FilePaths.Comparer);
+        Dictionary<string, string> pins = Pins(path, project, policy, [new AnalysisScenario(scenario.Id, [declared])], parsed);
+        var (model, config, jar, document) = PrepareTlc(path, project, stage, pins, parsed);
+        TlcResultKey key = TlcResultStore.Key(model, config, jar, document.DependencyFingerprints, fingerprint);
+        string store = ProjectInputs.Resolve(path, project.ResultStore);
+        object Report(string status, string outcome, string? entry, double duration, JsonElement? result) => new {
+            SchemaVersion = Schema.Version, Kind = "stage-check", Project = project.Id, Scenario = scenario.Id, Stage = id,
+            Status = status, Outcome = outcome, Fingerprint = fingerprint, Key = TlcResultStore.Hash(key),
+            Family = TlcResultStore.Family(key), Entry = entry, DurationSeconds = duration,
+            RequestedResources = stage.Resources, Resources = TlcResources.Effective("tlc", stage.Resources),
+            TimeoutSeconds = stage.TimeoutSeconds,
+            Statistics = result is JsonElement r && r.TryGetProperty("statistics", out JsonElement s) ? s : (JsonElement?)null,
+            Diagnostics = result is JsonElement d && d.TryGetProperty("diagnostics", out JsonElement list) ? list : (JsonElement?)null,
+            Boundary = "Stores one completed native TLC outcome for identical inputs; it does not accept requirements or reviews."
+        };
+        var existing = TlcResultStore.Find(store, key).FirstOrDefault(e => e.Entry.Material.Fingerprint == fingerprint);
+        if (existing.Entry != null)
+        {
+            Render(Report("already-stored", existing.Entry.Outcome, existing.Directory, existing.Entry.DurationSeconds, null), options);
+            return 0;
+        }
+        string work = Path.Combine(store, "tlc", ".work-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(work);
+        try
+        {
+            Stopwatch clock = Stopwatch.StartNew();
+            JsonElement result = ExecuteTlc(model, config, jar, stage, work, fingerprint);
+            string outcome = Outcome("tlc", result);
+            string? created = TlcResultStore.Store(store, key, id, "check-stage", work, result, stage.Resources,
+                TlcResources.Effective("tlc", stage.Resources), stage.TimeoutSeconds, clock.Elapsed.TotalSeconds);
+            created ??= outcome == "incomplete" ? null :
+                TlcResultStore.Find(store, key).FirstOrDefault(e => e.Entry.Material.Fingerprint == fingerprint).Directory;
+            Render(Report(created == null ? "incomplete" : "stored", outcome, created, clock.Elapsed.TotalSeconds, result), options);
+            return created == null ? 2 : 0;
+        }
+        finally
+        {
+            Directory.Delete(work, true);
+        }
     }
 
     private static void RequireTlcModel(TlaDocument document)

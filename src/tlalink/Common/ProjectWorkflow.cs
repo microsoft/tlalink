@@ -21,11 +21,13 @@ public static partial class ProjectWorkflow
         var (project, policy) = ProjectInputs.Load(path);
         if (options.Command == "record-review") return ProjectAcceptance.RecordReview(path, project, options);
         if (options.Command is "accept" or "explain") return ProjectAcceptance.Run(path, project, policy, options);
+        if (options.Command == "check-stage") return CheckStage(path, project, policy, options);
         List<AnalysisScenario> scenarios = options.Optional("scenario") is string selected
             ? [project.Scenarios.SingleOrDefault(s => s.Id == selected)
                 ?? throw new InputException(ErrorCode.InvalidWorkflowInput, "Unknown scenario: " + selected)]
             : project.Scenarios;
-        Dictionary<string, string> pins = Pins(path, project, policy, scenarios);
+        Dictionary<string, TlaDocument> parsed = new(FilePaths.Comparer);
+        Dictionary<string, string> pins = Pins(path, project, policy, scenarios, parsed);
         List<CheckCoverage> coverage = ProjectInputs.Coverage(project, policy, scenarios.Select(s => s.Id));
         List<Issue> coverageIssues = coverage.SelectMany(o => o.Gaps.Select(gap =>
             new Issue(ErrorCode.WorkflowPrerequisiteMissing, o.Id + ": " + gap))).ToList();
@@ -47,7 +49,9 @@ public static partial class ProjectWorkflow
                             PInputs.IsStage(stage.Kind) ? "native P " + stage.Kind[2..] + "; explicit claim and approved configuration; no automatic C# refinement" :
                             stage.Kind == "trace" ? "guarded-scalar-entity-observations; explicit handoffs; finite trace only" :
                             stage.Kind == "tlc" ? "finite configured model; fresh JVM; no checkpoint recovery" : "native-resolution",
-                        Requirements = policy.Requirements.Where(r => r.Scenario == s.Id && r.Stage == stage.Id)
+                            Fingerprint = stage.Kind == "tlc" ? stage.Fingerprint ?? 0 : (int?)null,
+                            Stored = stage.Kind == "tlc" ? StoredOutcomes(path, project, stage, parsed) : null,
+                            Requirements = policy.Requirements.Where(r => r.Scenario == s.Id && r.Stage == stage.Id)
                     })
                 }),
                 ReviewStatus = project.Obligations.Select(o => new {
@@ -62,6 +66,9 @@ public static partial class ProjectWorkflow
         if (scenarios.Count != 1) throw new InputException(ErrorCode.InvalidWorkflowInput, "run requires --scenario when the project has multiple scenarios.");
         string output = FilePaths.Full(options.Required("output"));
         if (File.Exists(output) || Directory.Exists(output)) throw new InputException(ErrorCode.InvalidWorkflowInput, "Run output must be a new directory.");
+        bool reuse = options.Get("fresh", "false") switch {
+            "false" => true, "true" => false,
+            _ => throw new InputException(ErrorCode.InvalidWorkflowInput, "--fresh must be true or false.") };
         Directory.CreateDirectory(output);
         WorkflowRun run = new() {
             Project = project.Id, ProjectDirectory = Path.GetDirectoryName(path)!, Scenario = scenarios[0].Id, Fingerprints = pins,
@@ -82,7 +89,17 @@ public static partial class ProjectWorkflow
             Directory.CreateDirectory(directory);
             try
             {
-                JsonElement result = Execute(path, project, stage, directory, run.Fingerprints);
+                JsonElement result;
+                List<StoredStageResult>? stored = null;
+                TlcResources? requested = stage.Resources;
+                TlcResources? effective = stage.Kind is "tlc" or "trace" ? TlcResources.Effective(stage.Kind, stage.Resources) : null;
+                if (stage.Kind == "tlc")
+                {
+                    TlcStageRun tlc = TlcStage(path, project, stage, directory, run.Fingerprints, reuse, parsed);
+                    (result, requested, effective) = (tlc.Result, tlc.Requested, tlc.Effective);
+                    stored = tlc.Stored.Count == 0 ? null : tlc.Stored;
+                }
+                else result = Execute(path, project, stage, directory, run.Fingerprints);
                 string evidence = Path.Combine(directory, "result.json");
                 Files.WriteNew(evidence, result);
                 string outcome = Outcome(stage.Kind, result);
@@ -92,7 +109,7 @@ public static partial class ProjectWorkflow
                     outcome, Path.GetRelativePath(output, evidence), Files.Hash(evidence), diagnostics, clock.Elapsed.TotalSeconds,
                     stage.Kind == "tlc" && result.TryGetProperty("statistics", out JsonElement statistics)
                         ? statistics.Deserialize<TlcStatistics>(ProjectInputs.Json) : null,
-                    stage.Resources, stage.Kind is "tlc" or "trace" ? TlcResources.Effective(stage.Kind, stage.Resources) : null));
+                    requested, effective, stored));
             }
             catch (Exception error) when (error is InputException or IOException or UnauthorizedAccessException or
                 JsonException or System.ComponentModel.Win32Exception or TimeoutException)
@@ -112,7 +129,8 @@ public static partial class ProjectWorkflow
         return run.ExecutionStatus == "completed" ? 0 : 2;
     }
 
-    private static Dictionary<string, string> Pins(string path, AnalysisProject project, AcceptancePolicy policy, List<AnalysisScenario> scenarios)
+    private static Dictionary<string, string> Pins(string path, AnalysisProject project, AcceptancePolicy policy, List<AnalysisScenario> scenarios,
+        Dictionary<string, TlaDocument>? parsed = null)
     {
         Dictionary<string, string> pins = new(FilePaths.Comparer);
         foreach (var pin in project.Authoring!.Fingerprints) Files.Pin(pins, pin.Key, pin.Value);
@@ -188,7 +206,7 @@ public static partial class ProjectWorkflow
         Pin(Executable("dotnet"));
         if (needJar)
             foreach (var pin in JavaToolchain.Resolve().Fingerprints) Files.Pin(pins, pin.Key, pin.Value);
-        Dictionary<string, TlaDocument> parsedModels = new(FilePaths.Comparer);
+        Dictionary<string, TlaDocument> parsedModels = parsed ?? new(FilePaths.Comparer);
         TlaDocument ParsedModel(string file, int timeout)
         {
             if (!parsedModels.TryGetValue(file, out TlaDocument? model))
@@ -266,7 +284,7 @@ public static partial class ProjectWorkflow
             if (project.Tools.Jar != null) Jar();
             Compiler();
         }
-        else if (stage.Kind == "tlc") return Tlc(path, project, stage, output, pins);
+        else if (stage.Kind == "tlc") throw new InvalidOperationException("TLC stages execute through the result-store path.");
         else if (stage.Kind == "trace") return Trace(path, project, stage, output, pins);
         else
         {
