@@ -1,20 +1,33 @@
 # TlaLink
 
-**Helps your coding agent check C# code against formal models, and keep the
-evidence.**
+**Keeps agent-written formal models in sync with your C# code.**
 
 ## Overview
 
-Concurrency bugs, lost updates and cleanup mistakes are hard to find by
-testing alone. Formal-methods tools such as TLA+, Dafny and P can explore
-every interleaving of a design, but writing models by hand is slow, and it is
-easy for a model to drift away from the code it describes.
+Formal methods such as TLA+, Dafny and P can catch concurrency bugs, lost
+updates and cleanup mistakes that testing misses. Until recently, writing
+those models took specialist skills and a lot of time. Coding agents have
+changed that: an agent can now draft a model of the behavior you care about
+in a fraction of the time.
 
-TlaLink is a local .NET 10 command-line tool that lets a coding agent do this
-work in a checkable way. The agent writes a focused model of the behavior you
-care about, links it to your C# code, and runs established checkers against
-it. TlaLink makes those links explicit, keeps exact records of what was
-checked, and reports what remains unproven.
+The harder problem is keeping a model connected to the code. Code keeps
+changing, and a model that passed last month may no longer describe what
+the code does today. Without an explicit link, a passing model can give false
+confidence.
+
+TlaLink is a local .NET 10 command-line tool that keeps that link explicit and
+checkable:
+
+- **Links live in your code.** The agent annotates the C# to show which code
+  each model step and variable represents. TlaLink checks that every link
+  still resolves to real code and model declarations.
+- **Executions are checked against the model.** Where supported, TlaLink runs
+  instrumented copies of your code and checks the recorded behavior against
+  the model.
+- **Evidence knows when it is stale.** TlaLink records exactly which code,
+  models and tool versions each result used, and reports when changes mean
+  earlier results no longer apply. The agent then updates the model and
+  reruns the affected checks.
 
 The goal is to move from **"the agent says this looks correct"** to **"here is
 the evidence, its scope and what remains unproven."** You do not need to read
