@@ -19,13 +19,13 @@ public static class Program
         }
         string root = FilePaths.Full(args.FirstOrDefault() ?? Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\.."));
         string[] testArguments = args.Skip(1).ToArray();
-        string[] selections = ["--core", "--apalache", "--p", "--diagnostics", "--integrated", "--workflow"];
+        string[] selections = ["--core", "--apalache", "--p", "--diagnostics", "--integrated", "--workflow", "--evidence"];
         if (testArguments.Length > 2 ||
             testArguments.Count(a => a.StartsWith("--", StringComparison.Ordinal)) > 1 ||
             testArguments.Count(a => !a.StartsWith("--", StringComparison.Ordinal)) > 1 ||
             testArguments.Any(a => a.StartsWith("--", StringComparison.Ordinal) && !selections.Contains(a)))
         {
-            Console.Error.WriteLine("Usage: TlaLink.Tests [root [report.json] [--core|--apalache|--p|--diagnostics|--integrated|--workflow]]");
+            Console.Error.WriteLine("Usage: TlaLink.Tests [root [report.json] [--core|--apalache|--p|--diagnostics|--integrated|--workflow|--evidence]]");
             return 2;
         }
         string? selection = testArguments.SingleOrDefault(a => a.StartsWith("--", StringComparison.Ordinal));
@@ -34,6 +34,7 @@ public static class Program
         List<object> results = [];
         int failed = 0;
         ToolHashSession? hashes = null;
+        void Suite(string name, Action<string> register) => RunSuite(work, name, register);
         void Test(string name, Action action)
         {
             System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
@@ -63,15 +64,21 @@ public static class Program
             ToolHashTests.Register(Test, work);
             if (selection is null or "--core" or "--apalache") ApalacheTests.RegisterExample(Test, root);
             DiagnosticTests.Register(Test);
+            if (selection == "--evidence")
+            {
+                Suite("evidence-core", directory => StageEvidenceTests.RegisterCore(Test, root, directory));
+                Suite("evidence-native", directory => StageEvidenceTests.RegisterNative(Test, root, directory));
+                return Finish();
+            }
             if (selection == "--apalache")
             {
-                ApalacheTests.RegisterCore(Test, work);
-                ApalacheTests.RegisterNative(Test, root, work);
+                Suite("apalache-core", directory => ApalacheTests.RegisterCore(Test, directory));
+                Suite("apalache-native", directory => ApalacheTests.RegisterNative(Test, root, directory));
                 return Finish();
             }
             if (selection == "--p")
             {
-                PTests.Register(Test, root, work);
+                Suite("p", directory => PTests.Register(Test, root, directory));
                 return Finish();
             }
             if (selection == "--diagnostics")
@@ -80,47 +87,68 @@ public static class Program
             }
             if (selection == "--core")
             {
-                ApalacheTests.RegisterCore(Test, work);
-                JavaToolchainTests.RegisterCore(Test, work);
-                CoreTests.Register(Test, work);
-                EvidenceReportTests.Register(Test, work);
-                EvidenceRetentionTests.Register(Test, work);
+                Suite("apalache-core", directory => ApalacheTests.RegisterCore(Test, directory));
+                Suite("java-core", directory => JavaToolchainTests.RegisterCore(Test, directory));
+                Suite("core", directory => CoreTests.Register(Test, directory));
+                Suite("reports", directory => EvidenceReportTests.Register(Test, directory));
+                Suite("retention", directory => EvidenceRetentionTests.Register(Test, directory));
+                Suite("evidence-core", directory => StageEvidenceTests.RegisterCore(Test, root, directory));
                 return Finish();
             }
             if (selection == "--integrated")
             {
-                IntegratedTests.Register(Test, root, work);
+                Suite("integrated", directory => IntegratedTests.Register(Test, root, directory));
                 return Finish();
             }
             if (selection == "--workflow")
             {
-                ProjectWorkflowTests.Register(Test, root, work);
-                EvidenceHardeningTests.Register(Test, root, work);
-                EntityTraceTests.Register(Test, root, work);
+                Suite("workflow", directory => ProjectWorkflowTests.Register(Test, root, directory));
+                Suite("hardening", directory => EvidenceHardeningTests.Register(Test, root, directory));
+                Suite("entities", directory => EntityTraceTests.Register(Test, root, directory));
                 return Finish();
             }
-            CoreTests.Register(Test, work);
-            EvidenceReportTests.Register(Test, work);
-            EvidenceRetentionTests.Register(Test, work);
-            ApalacheTests.RegisterCore(Test, work);
-            ApalacheTests.RegisterNative(Test, root, work);
-            JavaToolchainTests.RegisterCore(Test, work);
-            JavaToolchainTests.RegisterNative(Test, work);
-            PTests.Register(Test, root, work);
-            IntegrationTests.Register(Test, root, work);
-            IntegratedTests.Register(Test, root, work);
-            ProjectWorkflowTests.Register(Test, root, work);
-            EvidenceHardeningTests.Register(Test, root, work);
-            EntityTraceTests.Register(Test, root, work);
+            Suite("core", directory => CoreTests.Register(Test, directory));
+            Suite("reports", directory => EvidenceReportTests.Register(Test, directory));
+            Suite("retention", directory => EvidenceRetentionTests.Register(Test, directory));
+            Suite("evidence-core", directory => StageEvidenceTests.RegisterCore(Test, root, directory));
+            Suite("evidence-native", directory => StageEvidenceTests.RegisterNative(Test, root, directory));
+            Suite("apalache-core", directory => ApalacheTests.RegisterCore(Test, directory));
+            Suite("apalache-native", directory => ApalacheTests.RegisterNative(Test, root, directory));
+            Suite("java-core", directory => JavaToolchainTests.RegisterCore(Test, directory));
+            Suite("java-native", directory => JavaToolchainTests.RegisterNative(Test, directory));
+            Suite("p", directory => PTests.Register(Test, root, directory));
+            Suite("integration", directory => IntegrationTests.Register(Test, root, directory));
+            Suite("integrated", directory => IntegratedTests.Register(Test, root, directory));
+            Suite("workflow", directory => ProjectWorkflowTests.Register(Test, root, directory));
+            Suite("hardening", directory => EvidenceHardeningTests.Register(Test, root, directory));
+            Suite("entities", directory => EntityTraceTests.Register(Test, root, directory));
             Test("Java/SANY/PlusCal backend parity controls", () =>
                 TlaBackendTests.Run(TestTools.Jar(root),
                     (condition, message) => { if (!condition) throw new InvalidOperationException(message); }));
-            TraceTests.Register(Test, root, work);
+            Suite("traces", directory => TraceTests.Register(Test, root, directory));
             return Finish();
         }
         finally
         {
             Directory.Delete(work, recursive: true);
+        }
+    }
+
+    internal static void RunSuite(string work, string name, Action<string> register)
+    {
+        string directory = Directory.CreateDirectory(Path.Combine(work, name)).FullName;
+        try
+        {
+            register(directory);
+            EnumerationOptions options = new() {
+                RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false
+            };
+            long bytes = Directory.EnumerateFiles(directory, "*", options).Sum(file => new FileInfo(file).Length);
+            Console.WriteLine($"SUITE {name}: {bytes} fixture bytes released.");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
         }
     }
 }

@@ -27,6 +27,14 @@ public static class FilePaths
         HasDrive(path) && path.Length > 2 && path[2] is '\\' or '/' ||
         path.StartsWith(@"\\", StringComparison.Ordinal);
 
+    public static string Relative(string path, string directory)
+    {
+        string relative = Path.GetRelativePath(Full(directory), Full(path, directory));
+        if (IsAbsolute(relative))
+            throw new InputException("The path cannot be represented relative to the declaring directory: " + path);
+        return relative;
+    }
+
     public static string ExecutableName(string name) => name + (OperatingSystem.IsWindows() ? ".exe" : "");
 
     private static bool HasDrive(string path) => path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':';

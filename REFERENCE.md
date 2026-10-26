@@ -8,17 +8,19 @@ root-relative because this document lives beside the README.
 
 ## Contents
 
+- [Overview](#overview)
+- [Human-readable evidence reports](#human-readable-evidence-reports)
 - [Requirements and build](#requirements-and-build)
 - [Workspace and publication boundary](#workspace-and-publication-boundary)
 - [Continuous integration](#continuous-integration)
 - [Optional P prerequisites](#optional-p-prerequisites)
 - [Source organization](#source-organization)
+- [Model authoring and self-checks](#model-authoring-and-self-checks)
 - [Choosing tools and checkers](#choosing-tools-and-checkers)
 - [Apalache setup and analysis](#using-apalache-with-tla)
 - [P analysis workflow](#p-analysis-workflow)
 - [Project workflow and acceptance](#project-workflow)
 - [Evidence retention and recheck planning](#evidence-retention-and-recheck-planning)
-- [Human-readable evidence reports](#human-readable-evidence-reports)
 - [Integrated TLA+ and Dafny workflow](#integrated-tla-and-dafny-workflow)
 - [Review commands](#review-commands)
 - [Source annotation grammar](#one-maintained-markup-tla-2)
@@ -27,10 +29,12 @@ root-relative because this document lives beside the README.
 
 ## Overview
 
-TlaLink is an agent-first .NET 10 CLI for reviewing C#/TLA+/Dafny/P
-correspondence, checking selected executions against TLA+, and comparing C#
-adapters with verified Dafny oracles. It is not a bundled agent or hosted AI
-service. Its implementation-facing integrations target the C#/.NET toolchain:
+TlaLink is a C#/.NET 10 CLI for turning a scoped behavior question into repeatable
+checks and inspectable evidence. It combines source/model correspondence review,
+explicit native analyses, selected C# regressions, recorded-execution checks
+against TLA+, and C# adapter comparisons with verified Dafny oracles.
+You can run it directly or have a coding agent operate it; it is not a bundled
+agent or hosted AI service. Its implementation-facing integrations target the C#/.NET toolchain:
 Roslyn source resolution, explicit compiler context, compiled adapters and
 build/execution provenance. TLA+, Dafny and P are complementary formal backends,
 not support for arbitrary implementation languages.
@@ -185,6 +189,15 @@ agent or editor has its own data handling policy.
 
 ## Workspace and publication boundary
 
+Consumer repositories should separate maintained product sources, models, proofs,
+harness projects, requirements and append-only review decisions from ignored
+tool caches, scratch builds and immutable execution archives. Use document-relative
+references in maintained inputs; runtime receipts retain observed absolute
+identities. A root project manifest can contain source and verification scopes
+under one declaring directory. Restoring old archives does not by itself establish
+current applicability after relocation; do not rewrite their original provenance.
+The tool repository's ignored `local` remains private and is never exported.
+
 Open [TlaLink.sln](TlaLink.sln) for the public tool and standalone console tests,
 or [TlaLink.code-workspace](TlaLink.code-workspace) to browse the whole folder
 in VS Code, including ignored local work.
@@ -192,7 +205,7 @@ in VS Code, including ignored local work.
 - `src`, `tests` and `examples` contain maintained generic code and synthetic
   inputs. They have no dependency on private work packages.
 - `local` is a Git-ignored home for private consumer projects, copied sources,
-  milestones, proofs and evidence. It is not part of the public solution.
+  proofs and evidence. It is not part of the public solution.
 - `.tools` contains ignored local backend distributions, separate from work.
 - Historical implementations, generated evidence and local environments are
   not public source inputs.
@@ -231,8 +244,8 @@ The report path and selector may appear in either order after the repository
 root. Unknown or repeated selectors fail with exit 2 rather than silently
 starting the full suite. Report files are exclusive new outputs.
 
-Automatic backend installation is a planned toolchain-lifecycle feature.
-The explicit Java setup script above is not automatic backend installation.
+Backend provisioning is explicit; analysis commands do not install tools.
+The Java setup script provisions only the pinned Java distribution.
 
 ## Continuous integration
 
@@ -286,8 +299,8 @@ caller's directory. Alternatively, after a build, invoke the compiled DLL with
 
 ## Source organization
 
-The single executable and public `TlaLink` namespace remain unchanged.
-Sources under `src\tlalink` are grouped by responsibility:
+The single executable uses the public `TlaLink` namespace. Sources under
+`src\tlalink` are grouped by responsibility:
 
 | Directory | Responsibility |
 |---|---|
@@ -299,15 +312,76 @@ Sources under `src\tlalink` are grouped by responsibility:
 | `PlusCal` | Algorithm discovery and translation-freshness diagnostics in the shared TLA frontend |
 | `Dafny` | Native Dafny frontend, contracts, verification/audit and executable oracles |
 
-`Program.cs` remains the composition root. Native bridge source assets retain
-their flat deployed names; moving source files does not change CLI behavior,
-namespaces, historical evidence or generated capture contracts.
-
-Shared stage/preflight/evidence contracts are assessed in
-[the design proposal](DESIGN.md#proposed-shared-backend-contracts-assessment-only).
-They are not implemented interfaces or a universal proof result.
+`Program.cs` is the composition root. Native bridge source assets deploy under
+flat names. See [the architecture](DESIGN.md#architecture) for component ownership
+and evidence boundaries.
 Tool selection follows the obligation, modeling fit, available dependencies and
 required evidence, rather than a fixed tool priority or reuse of an existing model.
+
+## Model authoring and self-checks
+
+The agent authors the formal artifacts and performs the technical review.
+The user supplies intent and reviews an explanation of the assumptions, scope
+and remaining risks; routine use does not require reading the formal language.
+Use this procedure alongside the [agent safeguards](AGENTS.md). It is an
+authoring discipline, not an additional enforced CLI gate or an automatic
+source-to-model translation.
+
+1. **Define the question before writing the model.** Identify the C# source
+   scope, the safety/deadlock/progress obligation, the intended evidence and
+   independent acceptance requirements. Choose a checker by
+   [modeling fit and claim](#choosing-tools-and-checkers), not convenience.
+   Inspect existing models for applicability rather than assuming they apply.
+2. **Make the abstraction explicit.** Describe state, data domains, initial
+   conditions, transitions, environmental behavior and excluded effects.
+   Map these to the relevant C# operations, including competing calls, awaits,
+   cancellation, exceptions and cleanup. Justify atomic steps using actual
+   synchronization or explicit contract guarantees, not statement proximity.
+   If the scope ends at an interface, model its specified guarantees rather
+   than relying on the concrete/native implementation beneath it. Propose
+   clarification of an underspecified contract instead of assuming a guarantee.
+3. **Specify properties and limits independently of the result.** State
+   bounds, fairness and environmental assumptions, and distinguish safety,
+   deadlock and progress. Account for C# arithmetic, ordering and identity
+   semantics where relevant. Reduce domains, omit data or use symmetry only
+   with a justification that preserves the behavior relevant to the obligation;
+   explain what the reduction does not cover. Never eliminate a race by
+   serializing operations that can overlap in C#.
+4. **Challenge the model before trusting a pass.** Use authoritative native
+   frontends and supported checker profiles. Check that initialization is
+   feasible and intended operations and checked conditions are reachable;
+   a property guarded by an unreachable condition is not useful evidence.
+   Include expected-valid behavior and a negative control representing the
+   motivating defect, such as a copied model with a relevant guard removed.
+   Require the expected native behavioral rejection, not merely any nonzero
+   exit. Invalid syntax, unsupported inputs and incomplete searches do not
+   demonstrate defect detection. Record which controls actually ran.
+5. **Cross-check against the implementation.** Re-read the relevant C# with
+   the completed abstraction in view: what behavior does the model accidentally
+   forbid, and what required behavior or failure path is missing? Review the
+   source/model mapping separately from the passing property. Use supported
+   recorded-execution, oracle or regression checks when they address the
+   question, and disclose unobserved paths and causal edges. These checks
+   supplement correspondence reasoning; none automatically proves refinement.
+6. **Run, diagnose and iterate reproducibly.** Keep maintained models,
+   configurations, bindings and explicit project declarations under version
+   control, near their code where appropriate. Keep requirements independent
+   of execution. Use the [project workflow](#project-workflow) to retain exact
+   inputs and native outcomes. Classify counterexamples as possible C# defects,
+   abstraction/property defects or assumption gaps before making changes.
+   Recheck affected controls and correspondence after changes; changed bounds
+   or assumptions change the claim. Do not rewrite historical evidence or
+   weaken approved requirements just to obtain acceptance.
+
+Keep the abstraction rationale and control findings in existing model comments,
+project review material and evidence references, not a parallel manifest format.
+The agent's plain-English handoff must identify the claim, source coverage,
+assumptions, reductions, actual checker/control outcomes and outstanding gaps.
+Separate archive consistency, current applicability and acceptance. A second
+reading by an agent is still agent reasoning, not independent human approval;
+where requirements call for human or specialist review, leave those gates
+pending until the actual review occurs. TlaLink checks supported structures,
+pins and native evidence, not the completeness of the agent's abstraction.
 
 ## Choosing tools and checkers
 
@@ -407,7 +481,7 @@ native state generation. A bound on `Len(sequence)` alone does not assign the
 sequence; use an explicit finite sequence domain for a fixed tiny configuration.
 Snowcat typing does not establish that these initialization constraints execute.
 
-The initial integration fixes the local incremental Z3/oopsla19 encoding and
+The integration uses the local incremental Z3/oopsla19 encoding and
 accepts state-level safety/candidate predicates only (SANY checks their levels).
 It does not accept arbitrary native arguments, TLC configuration files,
 simulation, temporal properties, or Apalache trace matching. SANY-resolved
@@ -508,7 +582,7 @@ otherwise implicit prefix expansion.
 PEx's upstream compiler invokes Maven's latest-version update goal. This
 integration deliberately does **not** invoke that unpinned build path. Build
 the JAR separately using an approved pinned/offline toolchain and provide its
-hash as `artifact`. P 3.1.0 no longer exposes the legacy PSym compiler, so PSym
+hash as `artifact`. P 3.1.0 does not expose a PSym compiler, so PSym
 also consumes an explicitly reviewed externally generated JAR. PObserve
 consumes a separately built monitor/parser JAR rather than inventing a log
 parser or pretending timestamp ordering is causal trace inclusion.
@@ -576,6 +650,62 @@ dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --diagnosti
 
 ## Project workflow
 
+### Code-adjacent component authoring
+
+An `analysis-project` can declare inline stages or explicitly import component
+files. The [component example](examples/Components/README.md) demonstrates a small
+root project with verification declarations beside the C# code they describe.
+There is no directory scanning, arbitrary templating or implicit component selection.
+
+| Declaration | Meaning |
+|---|---|
+| Root `components` | Explicit component file paths, relative to the root document |
+| Scenario `components` | IDs of imported components whose stages belong to that scenario |
+| Root `input_sets` | Explicit `project-input-sets` document paths |
+| Root `execution_profiles` | Explicit `project-execution-profiles` document paths |
+| Component `components` | Optional explicit child-component file paths; selection still uses component IDs |
+
+All documents use schema 4 and their explicit kind. A `project-component` declares
+`id`, `stages`, optional `obligations` and `check_obligations`. Paths inside each
+component resolve relative to that component file, not the root or working directory.
+Requirements remain in the independently authored acceptance policy.
+Dependencies use the unchanged stage IDs across the assembled scenario.
+Reviews and check declarations are project-wide; importing a component does not
+grant acceptance or silently narrow its source scope.
+
+An input-set document declares `sets`, each with an `id` and explicit `inputs`.
+Reviews reference set IDs through `input_sets`, optionally adding inline `inputs`.
+Set paths resolve against the set document; equivalent review input identities are
+deduplicated using the host comparer. Input sets do not discover files with globs.
+
+An execution-profile document declares `profiles`, each with `id`, stage `kind`,
+`timeout_seconds` and optional TLC/trace `resources`. A stage selects `profile`
+instead of inline timeout/resources; mixing them or selecting a different kind is
+an error. Omitted `depends_on` means no dependencies. Profiles do not change native
+properties, bounds, configuration approvals or acceptance requirements.
+
+```powershell
+.\TlaLink.ps1 expand --project .\examples\Components\tlalink.project.json
+.\TlaLink.ps1 project-schema --output .\Results\project-schema-new.json
+```
+
+`expand` requires no backend installation. It emits a `project-expansion` containing
+the normalized `expanded_project`, its declaring `project_directory` and original-byte
+fingerprints of every imported authoring document. It is structural inspection,
+not checker readiness; use `doctor` and `plan` afterward. Optional `--output` saves
+the same expansion exclusively. The expansion is not another editable project format.
+
+`project-schema` generates JSON Schema 2020-12 from the typed authoring contracts.
+Use the optional standard `$schema` property to select that schema in an editor.
+This property affects editor support only; analyses do not load its URI.
+
+Every new run saves `expanded-project.json` and archives all imported authoring bytes,
+including explicitly imported but unselected components and unused shared declarations.
+Independent acceptance reconstructs the expansion from those archived bytes and detects
+changed, omitted or contradictory composition. Duplicate imports/IDs, missing selections,
+unknown references and import cycles fail explicitly. Composition is limited to 1,000
+documents, 32 child-import levels and 16 MiB per authoring document.
+
 Start with [the maintained project](examples/Workflow/project.json) and its
 separate [acceptance policy](examples/Workflow/requirements.json):
 
@@ -622,6 +752,8 @@ Supported stage kinds are:
 | Family | Stage kinds | Scope |
 |---|---|---|
 | Integrated C#/Dafny | `inspect`, `verify`, `oracle` | An explicit binding manifest, optionally including TLA+ links |
+| C# regression | `csharp-regression` | A `csharp-regression` config selecting one SDK console project and exact test IDs |
+| Native Dafny | `dafny-verify` | A `dafny-analysis` config selecting explicit `.dfy` roots and transitive includes |
 | TLA+ | `inputs`, `tlc`, `trace` | Explicit model inputs; TLC/trace require one root model and config |
 | Apalache | `apalache-typecheck`, `apalache-check`, `apalache-inductive` | An `apalache-analysis` config |
 | P | `p-inspect`, `p-pchecker`, `p-pex`, `p-psym`, `p-pverifier`, `p-pobserve` | A `p-analysis` config |
@@ -634,6 +766,108 @@ the stage's optional `arguments`. No arbitrary shell commands are accepted.
 The compiler profile is explicit: net10.0/C#14, nullable enabled, unchecked,
 unsafe enabled, explicit references and optional replacement defines.
 Unsupported settings fail rather than approximate another build.
+
+TLC and trace stages optionally select `"resources": {"workers": 2,
+"max_heap_mib": 2048}`. Workers must be 1..64 and heap 128..65536 MiB.
+Omission preserves one worker and 512 MiB for TLC, or one worker and 1024 MiB
+for trace matching. `validate-trace` exposes the equivalent `--workers` and
+`--max-heap-mib` options. Preflight/plan show requested and effective settings;
+run stage records retain those configured settings even when a deadline/failure
+interrupts execution or a dependency blocks it. Configuration is not evidence
+that a blocked stage launched; actual invocation evidence remains separate.
+results retain them and the native invocation, which acceptance cross-checks.
+The heap is a JVM allocation limit, not a total process-memory cap or reservation.
+Choose resources explicitly for the shared host; there is no automatic sizing,
+fallback, arbitrary JVM flag forwarding or retry. Resource experiments use fresh
+runs and unchanged logical model/configuration requirements. Timed-out and
+resource-exhausted checks remain incomplete.
+
+### C# regressions and standalone Dafny proofs
+
+Regression `arguments` are opaque strings. Optional `path_arguments` lists
+distinct zero-based argument indices that represent input files. Those arguments
+resolve relative to the regression configuration, are included in its pinned
+input closure, and are passed as absolute paths only at execution. For example,
+`"arguments": ["selection", "scope.json"], "path_arguments": [1]` leaves
+`selection` unchanged and pins the config-relative `scope.json`. The independent
+reader checks the same resolved invocation and file closure.
+
+[The evidence-stage project](examples/Evidence/project.json) is an independently
+authored arithmetic example. Its correspondence review deliberately starts
+pending: successful tests and a Dafny proof do not supply that review.
+
+```powershell
+dotnet restore .\examples\Evidence\Regression.csproj --configfile .\NuGet.Config
+.\TlaLink.ps1 doctor --project .\examples\Evidence\project.json --scenario arithmetic
+.\TlaLink.ps1 run --project .\examples\Evidence\project.json --scenario arithmetic --output .\Results\arithmetic-new
+.\TlaLink.ps1 accept --project .\examples\Evidence\project.json --run .\Results\arithmetic-new
+.\TlaLink.ps1 report --project .\examples\Evidence\project.json --run .\Results\arithmetic-new --output .\Results\arithmetic-report.md
+```
+
+Restore is a separate setup step. Regression execution builds with `--no-restore`
+and `--no-incremental`; it does not install packages or formal backends.
+A `csharp-regression` config declares `schema_version`, `kind`, `project`,
+explicit `sources`, `compiler`, exact `tests`, additional pinned `inputs`,
+entry-point `arguments`, and optional `configuration` (`Debug`, the default, or
+`Release`). Paths resolve from the config. The regression compiler profile is
+independent of the trace/Roslyn profile: net10.0 or net10.0-windows, C# 14,
+nullable enable/disable, explicit checked/unsafe flags, exact `defines`
+(including SDK/configuration symbols) and explicit additional references.
+Actual sources must match the declared sources plus SDK-generated assembly-info,
+framework-attributes and global-usings files. Single-target SDK console projects
+are supported; arbitrary shell commands and testhost/TRX guessing are not.
+
+The harness entry point receives `<new-observations.json> <selection.json>`
+followed by the config's arguments. Selection is schema-4
+`regression-selection` with an ordered `tests` array. The harness writes one
+schema-4 `regression-observations` document with:
+
+- `complete`: all selected cases completed.
+- `binary` and lowercase `binary_sha256`: the actual loaded entry assembly.
+- `selection`: the exact selection array.
+- `results`: one `{id, status, message}` per selected test. Status is `passed`
+  or `failed`; a failure requires a nonempty message.
+
+Complete passing observations require exit 0; complete assertion failures
+require exit 1 and emit `CS100`. Missing/duplicate/skipped/partial results,
+wrong binary, unknown output, deadlines and contradictory exits are incomplete.
+Requirements independently pin the config, exact `tests` and the claim
+`selected-csharp-regressions` (or `not-established` with `CS100` for controls).
+The build project, harness, compiler/source generators and OS/runtime are
+trusted. Compiler-time inputs, references, context, imports, analyzer/config
+files and the frozen ordinary runtime-output files are captured, not a full
+MSBuild workspace or authenticated loaded dependency closure. Absent optional
+configuration probes are retained as `missing_build_inputs`; later appearance
+is applicability drift. Retention uses a null `expected_sha256` for such
+expected absences rather than inventing an input hash.
+
+A `dafny-analysis` config contains current schema/kind and explicit `proofs`
+(`.dfy` files, not directories). Native `dafny-verify` stages use the selected
+Dafny 4.11.0 distribution, authoritative transitive-include resolution,
+verification with included files, and assumption audit. No C# binding or oracle
+is required. Requirements pin the config and claim `dafny-contracts` (or
+`not-established` with `DF100` for verifier controls). Audit findings, parser/tool
+failures and budgets cannot satisfy verification or assertion rejection.
+For compound controls, optional requirement `diagnostic_count` pins the exact
+number (1..1000) of matching code/text diagnostics. One failed assertion cannot
+stand in for several required negative controls.
+
+Direct commands are `check-regression --config ... --output ... --timeout ...`
+and `check-dafny --config ... --dafny ... --output ... --timeout ...`.
+`read-regression --result ... --current true|false` and
+`read-dafny --result ... --current true|false` independently reread the native
+evidence without rerunning it. They report archive consistency, semantic
+consistency and optional current applicability; acceptance remains separate.
+Artifact paths in these receipts are native, stage-relative paths.
+
+Project `report` accepts repeated explicit `--run` directories. It independently
+evaluates each against the selected project/policy and saves normal acceptance
+snapshots, one `evidence-report` manifest (`<output>.json`) and Markdown/Mermaid.
+No run is selected implicitly, merged into another, or treated as a theorem
+composition. Presentation freshness does not replace the separately recorded
+per-run archive/applicability/acceptance results. Source dispositions are not
+invented, and reports are not automatic retention roots. Custom source-region
+presentation continues to use the ordinary explicit report manifest.
 
 ### Declared check coverage
 
@@ -659,7 +893,7 @@ return 2 and block `run` before its output directory is created. Acceptance also
 rejects missing mappings. Scenario selection limits reporting to that scenario.
 Projects without declarations acquire no implicit temporal/deadlock obligations.
 
-The initial coverage profile maps positive TLC requirements to all three kinds
+The coverage profile maps positive TLC requirements to all three kinds
 and positive Apalache bounded/inductive requirements to safety only. Typechecking,
 trace matching and rejection controls cannot discharge those positive obligations;
 other native backends retain their separate claims rather than being guessed
@@ -683,6 +917,24 @@ coverage, requirement results, diagnostics and receipt locations. TLC run stages
 include native state counts, search depth and the optimistic fingerprint omission
 estimate when reported; missing native statistics stay null, never invented zeros.
 Statistics do not establish exhaustion or collision freedom.
+
+For `accept` and `explain`, summary `worklist.groups` separates incomplete/missing
+stage evidence, shared nonaccepted reviews, other unmet requirements and remaining
+diagnostics grouped by code/severity. Each group has a `next_action`, exact `count`,
+up to ten `items` and an exact `omitted` count. Review items count distinct affected
+stages and requirements; they never infer approval from passing checks.
+Remaining diagnostic groups include one original example per code/severity;
+warnings remain warnings and do not change an accepted verdict.
+Expected completed rejection controls are not work items merely because they
+rejected. Incomplete-stage items do not infer a timeout or its cause.
+
+Acceptance summaries preview at most three diagnostics, requirements, review
+statuses and check-coverage rows; top-level `counts`/`omitted` describe these lists.
+Nested missing-reason and check-reference previews also stop at three and report
+omissions. Requirement/review status counts and diagnostic severity counts retain
+the full totals. `next_actions` contains the grouped worklist actions, not one
+repetition per diagnostic. Use default full JSON or `--output` for every detail.
+These limits apply to acceptance summaries, not to the saved acceptance receipt.
 
 TLC `doctor`/`plan` and `run` preflight use the same authoritative SANY
 parse/freshness gate, pin transitive imports, and reject invalid models before
@@ -747,8 +999,14 @@ cleanup adapter and evidence:
 .\TlaLink.ps1 record-review --project .\examples\Workflow\project.json --obligation cleanup-adapter --reviewer "<alias>" --rationale "<review findings>" --evidence "..\..\Results\cancellation-new\cleanup\result.json"
 ```
 
-Evidence paths above are project-relative. Decisions are append-only under
-the configured review directory. The latest decision is authoritative; its
+Evidence paths above are project-relative. New decisions serialize evidence
+and fingerprint keys relative to the project, canonicalizing and deduplicating
+equivalent paths with the host path comparer. References on another Windows
+drive cannot be serialized relatively and are rejected. Existing absolute
+schema-4 records remain readable at their recorded identities; relocation
+does not rewrite those records or make them portable.
+Decisions are append-only under the configured review directory. The latest
+decision is authoritative; its
 claim/assumption/input identity and supporting evidence hashes must still
 match. Changed claims or inputs make reviews stale. Acceptance reports retain
 the decisions used. Reviewer names are explicit assertions, not authenticated
@@ -966,7 +1224,7 @@ bytes, not only source files. Keep shared-machine disk usage in mind.
 | `inspect-integrated` | Resolved C#/Dafny links, inventories, optional TLA links, explicit correspondence obligations; no proof or execution |
 | `verify-integrated` | The above plus Dafny verification and a clean assumption audit over the complete local include closure |
 | `test-integrated` | The above plus verified concrete call preconditions, generated Dafny C# oracle/runtime and actual C# adapter comparisons |
-| `read-integrated` | Archived byte consistency and optional current-file applicability, separately from recorded outcomes; no rerun or milestone acceptance |
+| `read-integrated` | Archived byte consistency and optional current-file applicability, separately from recorded outcomes; no rerun or project acceptance |
 
 Integrated commands accept `--reference`, `--define`, `--timeout`, `--format`
 and `--baseline` (a prior current-format result). A baseline detects changed, added or
@@ -1042,7 +1300,12 @@ They compare the synthetic integrated example with its Dafny oracle and include
 an extra-credit mutation rejected specifically for disagreement, false proofs,
 audited assumptions (including included files), invalid preconditions, unresolved
 bindings, adapter signatures and archive/current drift. Fixtures are created in
-temporary directories and removed after the suite.
+temporary directories and removed after their test group. The complete console
+run also releases each group's fixtures before starting the next group, so
+byte-complete native archives do not accumulate across the entire run. It logs
+each group's fixture bytes and retains all test outcomes in the final report.
+The session-wide immutable-tool hashes and read leases remain active until the
+whole run finishes; checker coverage and evidence validation are unchanged.
 
 ## Review commands
 
@@ -1080,7 +1343,8 @@ framework references and the standard Debug/TRACE/framework symbols.
 This is an explicit standalone compilation, **not** a product MSBuild workspace.
 Unresolved compilation produces TL202/incomplete and blocks instrumentation.
 Reflection, aliasing, external calls and accesses outside supplied files retain
-review obligations. Same-named unrelated fields are no longer lexical matches.
+review obligations. Interference analysis compares resolved field symbols,
+not field-name text.
 
 ## One maintained markup: `@tla 2`
 
@@ -1212,8 +1476,13 @@ that the compiler implements C# correctly.
 
 ## Tests and evidence
 
+`--evidence` selects focused native regression, standalone Dafny, TLC-resource,
+trace, acceptance/report and retention controls; it requires the selected
+Dafny, TLC and pinned Java tools. `--core` also exercises the console regression
+route without formal backends.
+
 Consumer checkers can invoke this tool and record .NET runtime metadata.
-Archive consistency, current-file applicability and milestone acceptance are
+Archive consistency, current-file applicability and project acceptance are
 separate results. Preserve frozen model/source/evidence archives and do not
 relabel prior runs as fresh.
 

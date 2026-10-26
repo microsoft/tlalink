@@ -6,24 +6,39 @@ public static class ProjectAcceptance
 {
     public static int Run(string path, AnalysisProject project, AcceptancePolicy policy, CliOptions options)
     {
-        string directory = FilePaths.Full(options.Required("run"));
+        var evaluation = Evaluate(path, project, policy, FilePaths.Full(options.Required("run")));
+        if (options.Optional("output") is string output) Files.WriteNew(FilePaths.Full(output), evaluation.Report);
+        ProjectWorkflow.Render(evaluation.Report, options, evaluation.Worklist);
+        return evaluation.ExitCode;
+    }
+
+    internal static (JsonElement Report, int ExitCode, AcceptanceWorklist Worklist) Evaluate(string path, AnalysisProject project, AcceptancePolicy policy, string directory)
+    {
         string runPath = Path.Combine(directory, "run.json");
         JsonElement document = Read(runPath);
         if (document.GetProperty("schema_version").GetInt32() != Schema.Version || document.GetProperty("kind").GetString() != "analysis-run")
             throw new InputException(ErrorCode.InvalidWorkflowInput, "Expected a current analysis-run document.");
         WorkflowRun run = ProjectInputs.Read<WorkflowRun>(runPath);
         List<Issue> issues = [];
-        void Error(ErrorCode code, string message) => issues.Add(new(code, message));
+        HashSet<Issue> groupedDiagnostics = new(ReferenceEqualityComparer.Instance);
+        void Error(ErrorCode code, string message, bool grouped = false)
+        {
+            Issue issue = new(code, message);
+            issues.Add(issue);
+            if (grouped) groupedDiagnostics.Add(issue);
+        }
         if (run.Project != project.Id || run.ProjectSha256 != Files.Hash(path) ||
             run.RequirementsSha256 != Files.Hash(ProjectInputs.Resolve(path, project.Requirements)))
             Error(ErrorCode.WorkflowProjectChanged, "Project or acceptance requirements differ from the run.");
+        issues.AddRange(ProjectComposition.ValidateArchive(path, project, run, directory));
         AnalysisScenario? scenario = project.Scenarios.SingleOrDefault(s => s.Id == run.Scenario);
         if (scenario == null) throw new InputException(ErrorCode.WorkflowProjectChanged, "Run scenario does not exist in this project.");
+        AcceptanceWorklist worklist = new(run, scenario, policy.Requirements.Where(r => r.Scenario == run.Scenario).ToList(), issues, groupedDiagnostics);
         List<CheckCoverage> coverage = ProjectInputs.Coverage(project, policy, [run.Scenario]);
         foreach (CheckCoverage obligation in coverage)
             foreach (string gap in obligation.Gaps)
                 Error(ErrorCode.WorkflowPrerequisiteMissing, obligation.Id + ": " + gap);
-        if (run.ExecutionStatus != "completed") Error(ErrorCode.WorkflowExecutionIncomplete, "Execution did not complete; a timeout/build failure cannot satisfy a negative control.");
+        if (run.ExecutionStatus != "completed") Error(ErrorCode.WorkflowExecutionIncomplete, "Execution did not complete; a timeout/build failure cannot satisfy a negative control.", worklist.HasIncompleteStages);
         if (run.Stages.Select(s => s.Id).Distinct().Count() != run.Stages.Count ||
             !run.Stages.Select(s => s.Id).Order().SequenceEqual(scenario.Stages.Select(s => s.Id).Order()))
             Error(ErrorCode.WorkflowExecutionIncomplete, "The run does not contain exactly the declared stages.");
@@ -62,7 +77,7 @@ public static class ProjectAcceptance
             }
             if (stage.ExecutionStatus != "completed" || string.IsNullOrEmpty(stage.Evidence))
             {
-                Error(ErrorCode.WorkflowExecutionIncomplete, "Stage incomplete or blocked: " + stage.Id);
+                Error(ErrorCode.WorkflowExecutionIncomplete, "Stage incomplete or blocked: " + stage.Id, true);
                 continue;
             }
             string file = SafePath(directory, stage.Evidence);
@@ -80,6 +95,27 @@ public static class ProjectAcceptance
                 Error(ErrorCode.WorkflowStageInconsistent, "Stage outcome/schema/kind contradicts its evidence: " + stage.Id);
             if (stage.Kind is "inspect" or "verify" or "oracle")
                 issues.AddRange(IntegratedEvidence.Validate(result));
+            if (stage.Kind is "tlc" or "trace")
+            {
+                issues.AddRange(TlcResources.ValidateEvidence(result, selectedStage, Path.Combine(directory, stage.Id)));
+                if (stage.RequestedResources != selectedStage.Resources || stage.Resources != TlcResources.Effective(stage.Kind, selectedStage.Resources))
+                    Error(ErrorCode.WorkflowStageInconsistent, "Run-stage resource summary differs from its declaration.");
+            }
+            if (stage.Kind is "csharp-regression" or "dafny-verify")
+            {
+                string engine = Path.Combine(directory, stage.Id, "engine");
+                List<Issue> snapshot = StageEvidence.Validate(result, engine, false);
+                issues.AddRange(snapshot);
+                if (snapshot.Count == 0)
+                    issues.AddRange(stage.Kind == "csharp-regression" ? CSharpRegression.Validate(result, engine, true) :
+                        DafnyAnalysisBackend.Validate(result, engine));
+                if (result.GetProperty("timeout_seconds").GetInt32() != selectedStage.TimeoutSeconds ||
+                    result.GetProperty("config_sha256").GetString() != Files.Hash(ProjectInputs.Resolve(path, selectedStage.Config!)) ||
+                    !FilePaths.Comparer.Equals(result.GetProperty("config").GetString(), ProjectInputs.Resolve(path, selectedStage.Config!)) ||
+                    stage.Kind == "dafny-verify" && !FilePaths.Comparer.Equals(result.GetProperty("dafny").GetString(),
+                        ProjectInputs.Resolve(path, project.Tools.Dafny!.Path)))
+                    Error(ErrorCode.WorkflowStageInconsistent, "Native regression/Dafny evidence differs from the declared config/tool/deadline.");
+            }
             if (PInputs.IsStage(stage.Kind))
             {
                 issues.AddRange(PEvidence.Validate(result, Path.Combine(directory, stage.Id, "engine")));
@@ -105,6 +141,12 @@ public static class ProjectAcceptance
         foreach (AnalysisRequirement requirement in policy.Requirements.Where(r => r.Scenario == run.Scenario))
         {
             List<string> missing = [];
+            List<string> actionable = [];
+            void Missing(string reason, bool grouped = false)
+            {
+                missing.Add(reason);
+                if (!grouped) actionable.Add(reason);
+            }
             WorkflowStageResult? stage = run.Stages.FirstOrDefault(s => s.Id == requirement.Stage);
             AnalysisStage selected = scenario.Stages.Single(s => s.Id == requirement.Stage);
             if (selected.Config != null)
@@ -112,26 +154,30 @@ public static class ProjectAcceptance
                 string recordedConfig = FilePaths.Full(selected.Config, run.ProjectDirectory);
                 if (!run.Fingerprints.TryGetValue(recordedConfig, out string? hash) ||
                     !hash.Equals(requirement.ConfigSha256, StringComparison.OrdinalIgnoreCase))
-                    missing.Add("independently approved configuration bounds/properties");
+                    Missing("independently approved configuration bounds/properties");
             }
             if (stage == null || stage.ExecutionStatus != "completed" || stage.Outcome != requirement.Expected)
-                missing.Add("expected completed outcome " + requirement.Expected);
+                Missing("expected completed outcome " + requirement.Expected, worklist.IsIncomplete(requirement.Stage));
             if (!evidence.TryGetValue(requirement.Stage, out JsonElement result))
-                missing.Add("validated stage evidence");
+                Missing("validated stage evidence", worklist.IsIncomplete(requirement.Stage));
             else
             {
-                if ((PInputs.IsStage(selected.Kind) || ApalacheInputs.IsStage(selected.Kind)) && (!result.TryGetProperty("claim", out JsonElement claim) ||
+                if ((PInputs.IsStage(selected.Kind) || ApalacheInputs.IsStage(selected.Kind) || selected.Kind is "csharp-regression" or "dafny-verify") && (!result.TryGetProperty("claim", out JsonElement claim) ||
                     claim.GetString() != requirement.Claim))
-                    missing.Add("evidence claim " + requirement.Claim);
+                    Missing("evidence claim " + requirement.Claim);
                 List<string> diagnostics = result.TryGetProperty("diagnostics", out JsonElement found)
                     ? found.EnumerateArray().Select(d => d.GetProperty("code").GetString()!).ToList() : [];
                 if (requirement.Diagnostic != null && !diagnostics.Contains(requirement.Diagnostic))
-                    missing.Add("diagnostic " + requirement.Diagnostic);
+                    Missing("diagnostic " + requirement.Diagnostic);
                 if (requirement.DiagnosticText != null && (!result.TryGetProperty("diagnostics", out JsonElement messages) ||
                     !messages.EnumerateArray().Any(d => d.GetProperty("code").GetString() == requirement.Diagnostic &&
                         d.TryGetProperty("message", out JsonElement message) && message.ValueKind == JsonValueKind.String &&
                         message.GetString()!.Contains(requirement.DiagnosticText, StringComparison.Ordinal))))
-                    missing.Add("diagnostic " + requirement.Diagnostic + " containing literal text " + requirement.DiagnosticText);
+                    Missing("diagnostic " + requirement.Diagnostic + " containing literal text " + requirement.DiagnosticText);
+                if (requirement.DiagnosticCount is int count && (!result.TryGetProperty("diagnostics", out JsonElement counted) ||
+                    counted.EnumerateArray().Count(d => d.GetProperty("code").GetString() == requirement.Diagnostic &&
+                        (requirement.DiagnosticText == null || d.GetProperty("message").GetString()!.Contains(requirement.DiagnosticText, StringComparison.Ordinal))) != count))
+                    Missing("exactly " + count + " matching rejection diagnostics");
                 HashSet<string> tested = [];
                 HashSet<string> cases = [];
                 if (PInputs.IsStage(selected.Kind) && result.TryGetProperty("links", out JsonElement links))
@@ -147,19 +193,34 @@ public static class ProjectAcceptance
                     }
                 }
                 foreach (string binding in requirement.Bindings ?? [])
-                    if (!tested.Contains(binding)) missing.Add("tested binding " + binding);
+                    if (!tested.Contains(binding)) Missing("tested binding " + binding);
                 foreach (string id in requirement.Cases ?? [])
-                    if (!cases.Contains(id)) missing.Add("case " + id);
+                    if (!cases.Contains(id)) Missing("case " + id);
+                if (requirement.Tests != null)
+                {
+                    List<string> ids = result.GetProperty("tests").EnumerateArray().Select(t => t.GetProperty("id").GetString()!).ToList();
+                    if (!ids.Order(StringComparer.Ordinal).SequenceEqual(requirement.Tests.Order(StringComparer.Ordinal)))
+                        Missing("exact selected test IDs");
+                }
             }
             foreach (string review in requirement.Reviews ?? [])
-                if (ReviewStatus(path, project, review) != "accepted") missing.Add("current accepted review " + review);
-            if (missing.Count > 0) Error(ErrorCode.WorkflowRequirementUnsatisfied, requirement.Id + ": missing " + string.Join(", ", missing));
+            {
+                string status = ReviewStatus(path, project, review);
+                if (status != "accepted")
+                {
+                    Missing("current accepted review " + review, true);
+                    worklist.Review(review, status, requirement);
+                }
+            }
+            worklist.Requirement(requirement, actionable);
+            if (missing.Count > 0) Error(ErrorCode.WorkflowRequirementUnsatisfied, requirement.Id + ": missing " + string.Join(", ", missing), true);
             requirements.Add(new { requirement.Id, Status = missing.Count == 0 ? "satisfied" : "unsatisfied", Missing = missing });
         }
         if (requirements.Count == 0) Error(ErrorCode.WorkflowRequirementUnsatisfied, "No requirements for this scenario.");
         bool accepted = issues.All(i => i.Severity != "error");
         object report = new {
             SchemaVersion = Schema.Version, Kind = "acceptance-result", Project = project.Id, run.Scenario,
+            Run = directory, RunSha256 = Files.Hash(runPath),
             ExecutionStatus = run.ExecutionStatus, ArchiveStatus = issues.Any(i => i.Code == ErrorCode.WorkflowProvenanceInconsistent.Id()) ? "inconsistent" : "consistent",
             CurrentApplicability = issues.Any(i => i.Is(ErrorCode.WorkflowProjectChanged, ErrorCode.WorkflowEvidenceStale)) ? "stale" : "current",
             AcceptanceStatus = accepted ? "accepted" : "not-accepted", Requirements = requirements, Diagnostics = issues,
@@ -170,9 +231,9 @@ public static class ProjectAcceptance
             NextActions = issues.Select(i => i.Message).Distinct().ToList(),
             Boundary = "Acceptance of declared bounded evidence and explicit reviews, not general C# refinement or host authentication."
         };
-        if (options.Optional("output") is string output) Files.WriteNew(FilePaths.Full(output), report);
-        ProjectWorkflow.Render(report, options);
-        return accepted ? 0 : issues.Any(i => i.Is(ErrorCode.WorkflowProjectChanged, ErrorCode.WorkflowExecutionIncomplete, ErrorCode.WorkflowEvidenceStale)) ? 2 : 1;
+        return (JsonSerializer.SerializeToElement(report, Files.Json),
+            accepted ? 0 : issues.Any(i => i.Is(ErrorCode.WorkflowProjectChanged, ErrorCode.WorkflowExecutionIncomplete, ErrorCode.WorkflowEvidenceStale)) ? 2 : 1,
+            worklist);
     }
 
     public static string ReviewStatus(string path, AnalysisProject project, string id)
@@ -181,11 +242,16 @@ public static class ProjectAcceptance
         ReviewDecision? review = LatestReview(path, project, id);
         if (review == null) return "pending";
         if (review.ObligationSha256 != Schema.Hash(obligation)) return "stale";
-        List<string> required = obligation.Inputs.Concat(review.Evidence).Distinct(StringComparer.Ordinal).ToList();
-        if (review.Fingerprints.Count != required.Count) return "stale";
+        List<string> required = obligation.Inputs.Concat(review.Evidence).Select(p => ProjectInputs.Resolve(path, p))
+            .Distinct(FilePaths.Comparer).ToList();
+        Dictionary<string, string> fingerprints = new(FilePaths.Comparer);
+        foreach (var pin in review.Fingerprints)
+            if (!fingerprints.TryAdd(ProjectInputs.Resolve(path, pin.Key), pin.Value))
+                throw new InputException(ErrorCode.InvalidWorkflowInput, "Review fingerprints contain aliased input paths.");
+        if (fingerprints.Count != required.Count) return "stale";
         foreach (string input in required)
-            if (!review.Fingerprints.TryGetValue(input, out string? hash) ||
-                !File.Exists(ProjectInputs.Resolve(path, input)) || Files.Hash(ProjectInputs.Resolve(path, input)) != hash)
+            if (!fingerprints.TryGetValue(input, out string? hash) ||
+                !File.Exists(input) || Files.Hash(input) != hash)
                 return "stale";
         return review.Disposition;
     }
@@ -201,12 +267,14 @@ public static class ProjectAcceptance
         if (string.IsNullOrWhiteSpace(reviewer) || string.IsNullOrWhiteSpace(rationale) ||
             disposition is not ("accepted" or "rejected" or "pending") || evidence.Count == 0)
             throw new InputException(ErrorCode.InvalidWorkflowInput, "Record an explicit reviewer, rationale, disposition and supporting evidence paths relative to the project.");
-        Dictionary<string, string> fingerprints = new(StringComparer.Ordinal);
-        foreach (string input in obligation.Inputs.Concat(evidence).Distinct(StringComparer.Ordinal))
+        string directory = Path.GetDirectoryName(path)!;
+        evidence = evidence.Select(p => FilePaths.Relative(p, directory)).Distinct(FilePaths.Comparer).ToList();
+        Dictionary<string, string> fingerprints = new(FilePaths.Comparer);
+        foreach (string input in obligation.Inputs.Concat(evidence).Select(p => FilePaths.Relative(p, directory)).Distinct(FilePaths.Comparer))
             fingerprints.Add(input, Files.Hash(ProjectInputs.Resolve(path, input)));
         ReviewDecision review = new(Schema.Version, "review-decision", id, Schema.Hash(obligation), disposition, reviewer,
             rationale, DateTimeOffset.UtcNow, fingerprints, evidence);
-        string directory = Path.Combine(ProjectInputs.Resolve(path, project.ReviewDirectory), id);
+        directory = Path.Combine(ProjectInputs.Resolve(path, project.ReviewDirectory), id);
         Directory.CreateDirectory(directory);
         string output = Path.Combine(directory, DateTimeOffset.UtcNow.ToString("yyyyMMddTHHmmssfffffff") + "-" + Guid.NewGuid().ToString("N") + ".json");
         Files.WriteNew(output, review);
@@ -232,7 +300,7 @@ public static class ProjectAcceptance
         return decisions.OrderByDescending(r => r.RecordedAt).FirstOrDefault();
     }
 
-    private static string SafePath(string root, string relative)
+    internal static string SafePath(string root, string relative)
     {
         string path = FilePaths.Full(relative, root);
         if (FilePaths.IsAbsolute(relative) || !path.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,

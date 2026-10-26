@@ -8,6 +8,7 @@ public static class ProjectWorkflowTests
 {
     public static void Register(Action<string, Action> test, string root, string work)
     {
+        ProjectCompositionTests.RegisterNative(test, root, work);
         string fixture = Path.Combine(work, "workflow-project");
         string example = Path.Combine(fixture, "Workflow");
         Directory.CreateDirectory(example);
@@ -323,6 +324,13 @@ public static class ProjectWorkflowTests
                 var rejected = TestCli.Run(["accept", "--project", path, "--run", output]);
                 CoreTests.True(rejected.Code != 0);
                 CoreTests.True(rejected.Json.Contains("credit-return/missing", StringComparison.Ordinal));
+                var summary = TestCli.Run(["accept", "--project", path, "--run", output, "--format", "summary"]);
+                CoreTests.Equal(rejected.Code, summary.Code);
+                using JsonDocument grouped = JsonDocument.Parse(summary.Json);
+                CoreTests.True(grouped.RootElement.GetProperty("worklist").GetProperty("groups").EnumerateArray()
+                    .Any(g => g.GetProperty("kind").GetString() == "requirements" &&
+                        g.GetProperty("items").EnumerateArray().Any(item => item.GetProperty("missing").EnumerateArray()
+                            .Any(reason => reason.GetString() == "case credit-return/missing"))));
             }
             finally { Save(policyPath, policy); }
         });

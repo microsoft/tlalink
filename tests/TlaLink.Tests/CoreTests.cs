@@ -7,6 +7,78 @@ public static class CoreTests
 {
     public static void Register(Action<string, Action> test, string work)
     {
+        AcceptanceSummaryTests.Register(test, work);
+        ProjectCompositionTests.RegisterCore(test, work);
+        test("suite fixtures are released after success and failure without removing shared assets", () =>
+        {
+            string parent = Directory.CreateDirectory(Path.Combine(work, "suite-cleanup")).FullName;
+            string shared = Path.Combine(parent, "shared-tool-manifest.json");
+            File.WriteAllText(shared, "{}");
+            for (int index = 0; index < 2; index++)
+            {
+                Program.RunSuite(parent, "fixture", directory =>
+                {
+                    Equal(0, Directory.GetFiles(directory).Length);
+                    File.WriteAllBytes(Path.Combine(directory, "archive-input"), new byte[1024]);
+                });
+                True(!Directory.Exists(Path.Combine(parent, "fixture")));
+                Equal(1, Directory.GetFiles(parent, "*", SearchOption.AllDirectories).Length);
+            }
+            ThrowsAny<InvalidOperationException>(() => Program.RunSuite(parent, "failed", directory =>
+            {
+                File.WriteAllText(Path.Combine(directory, "partial-output"), "incomplete");
+                throw new InvalidOperationException("Synthetic suite failure.");
+            }));
+            True(!Directory.Exists(Path.Combine(parent, "failed")));
+            Equal("{}", File.ReadAllText(shared));
+        });
+        test("review writers normalize absolute evidence and aliases into relocatable project-relative records", () =>
+        {
+            string root = Path.Combine(work, "relative-review"), moved = Path.Combine(work, "relative-review-moved");
+            Directory.CreateDirectory(root);
+            File.WriteAllText(Path.Combine(root, "input.cs"), "class Input {}");
+            File.WriteAllText(Path.Combine(root, "evidence.json"), "{}");
+            AnalysisProject project = new(Schema.Version, "analysis-project", "relative-review", new(),
+                new("net10.0", "14", "enable", false, true, []), "requirements.json", [],
+                [new("scope", "Synthetic scope review.", [], ["input.cs"])], "reviews");
+            string projectPath = Path.Combine(root, "project.json");
+            File.WriteAllText(projectPath, System.Text.Json.JsonSerializer.Serialize(project, Files.Json));
+            ProjectAcceptance.RecordReview(projectPath, project, new(["record-review", "--obligation", "scope",
+                "--reviewer", "test-only", "--rationale", "Synthetic relocation control.",
+                "--evidence", Path.Combine(root, "evidence.json"), "--evidence", @".\evidence.json",
+                "--evidence", Path.Combine(root, "input.cs")]));
+            string decision = Directory.GetFiles(Path.Combine(root, "reviews", "scope")).Single();
+            ReviewDecision review = ProjectInputs.Read<ReviewDecision>(decision);
+            Equal(2, review.Evidence.Count);
+            Equal(2, review.Fingerprints.Count);
+            True(review.Evidence.Concat(review.Fingerprints.Keys).All(p => !FilePaths.IsAbsolute(p)));
+            Equal("accepted", ProjectAcceptance.ReviewStatus(projectPath, project, "scope"));
+            Directory.Move(root, moved);
+            Equal("accepted", ProjectAcceptance.ReviewStatus(Path.Combine(moved, "project.json"), project, "scope"));
+            File.AppendAllText(Path.Combine(moved, "input.cs"), " ");
+            Equal("stale", ProjectAcceptance.ReviewStatus(Path.Combine(moved, "project.json"), project, "scope"));
+        });
+        test("review readers preserve absolute recorded identities and reject ambiguous fingerprint aliases", () =>
+        {
+            string root = Path.Combine(work, "review-identity");
+            Directory.CreateDirectory(Path.Combine(root, "reviews", "scope"));
+            string input = Path.Combine(root, "input.cs");
+            File.WriteAllText(input, "class Input {}");
+            ReviewObligation obligation = new("scope", "Synthetic review.", [], ["input.cs"]);
+            AnalysisProject project = new(Schema.Version, "analysis-project", "review-identity", new(),
+                new("net10.0", "14", "enable", false, true, []), "requirements.json", [], [obligation], "reviews");
+            string decision = Path.Combine(root, "reviews", "scope", "decision.json");
+            ReviewDecision review = new(Schema.Version, "review-decision", "scope", Schema.Hash(obligation),
+                "accepted", "test-only", "Synthetic original-path control.", DateTimeOffset.UtcNow,
+                new() { [input] = Files.Hash(input) }, [input]);
+            File.WriteAllText(decision, System.Text.Json.JsonSerializer.Serialize(review, Files.Json));
+            Equal("accepted", ProjectAcceptance.ReviewStatus(Path.Combine(root, "project.json"), project, "scope"));
+            review.Fingerprints.Add("input.cs", Files.Hash(input));
+            File.WriteAllText(decision, System.Text.Json.JsonSerializer.Serialize(review, Files.Json));
+            ThrowsAny<InputException>(() => ProjectAcceptance.ReviewStatus(Path.Combine(root, "project.json"), project, "scope"));
+            if (OperatingSystem.IsWindows())
+                ThrowsAny<InputException>(() => FilePaths.Relative(@"Z:\outside.txt", @"C:\project"));
+        });
         test("summary output retains outcomes coverage diagnostics and receipt locations without provenance bulk", () =>
         {
             var receipt = new {

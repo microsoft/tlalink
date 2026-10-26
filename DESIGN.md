@@ -2,20 +2,32 @@
 
 See [README.md](README.md) to get started, [REFERENCE.md](REFERENCE.md) for
 commands/schema and [AGENTS.md](AGENTS.md) for
-maintenance instructions. All work remains outside the product tree.
+maintenance instructions. Instrumentation operates on separate copied sources,
+never product files.
 
 ## Agent-first operating model
 
-TlaLink exposes deterministic CLI workflows and structured evidence for a coding
-agent to operate. It does not include an agent, language-model runtime or hosted
-analysis service. The human-facing README explains the value and workflow;
+TlaLink turns scoped C# behavior questions into repeatable checks and inspectable
+evidence. It records the inputs, tools, assumptions and results supporting a
+claim rather than inferring implementation correctness from a passing model.
+Its deterministic CLI workflows can be operated directly or by a coding agent.
+It does not include an agent, language-model runtime or hosted analysis
+service. The human-facing README explains the value and workflow;
 the reference documents the commands and formats; AGENTS.md gives operational
 and maintenance safeguards.
 
-The agent helps scope a concern, prepare models/bindings, run native tools and
-explain results. The user reviews the intended claim, abstraction, assumptions
-and acceptance requirements. Neither an agent explanation nor a successful
-backend run discharges missing correspondence or coverage obligations.
+The agent owns drafting models, properties, configurations and bindings,
+running native tools, and technically challenging the resulting abstraction.
+The [authoring workflow](REFERENCE.md#model-authoring-and-self-checks) requires
+source correspondence review, reachability/non-vacuity checks, meaningful
+controls and counterexample investigation rather than pass-chasing.
+The user clarifies intent and reviews a plain-English explanation of the
+claim, assumptions, limits and acceptance requirements; routine use does not
+require reading TLA+, Dafny or P. Existing human or specialist review gates
+remain explicit and cannot be discharged by agent self-review.
+Neither an agent explanation nor a successful backend run discharges missing
+correspondence or coverage obligations. The authoring instructions guide the
+agent; the CLI does not automatically establish abstraction adequacy.
 The project workflow separates planning, execution, evidence validation and
 acceptance so those distinctions remain inspectable beyond the conversation.
 
@@ -52,6 +64,9 @@ and freshness handling are in a separate partial frontend under `PlusCal`.
 | `Instrumentation.cs` | Validated, separately generated source captures and binding manifest |
 | `Runtime/TraceRuntime.cs` | Primitive events and actual operation/guard/thread ordering |
 | `Execution.cs` | Observed build/run closure and source-to-loaded-binary receipt |
+| `ObservedExecution.cs` | Shared compiler-time input/context capture and bounded .NET processes, without trace requirements |
+| `CSharpRegression.cs` / `StageEvidence.cs` | Explicit console-harness selections, frozen runtime snapshots and independent regression/native archive readers |
+| `DafnyAnalysis.cs` | Proof-only native Dafny roots, verification and assumption audit without artificial C# bindings |
 | `TraceValidation.cs` | TLC-backed existential whole-trace matching |
 | `DafnyContracts.cs` | Strict explicit bindings and independent evidence dimensions |
 | `DafnyIndex.source.cs` | Isolated bridge compiled against the selected Dafny frontend; resolved declarations and include closure |
@@ -64,7 +79,9 @@ and freshness handling are in a separate partial frontend under `PlusCal`.
 | `ProjectWorkflow.cs` | Preflight, dependency plan, bounded orchestration and immutable run provenance |
 | `ProjectAcceptance.cs` | Semantic acceptance, exact requirements, current review decisions and explanations |
 | `CommandSummary.cs` | Presentation-only status/diagnostic projections; full saved evidence and exit semantics remain unchanged |
+| `AcceptanceWorklist.cs` | Bounded acceptance work items from structured stage, review and requirement evaluation; no diagnostic-message parsing or changed verdicts |
 | `EvidenceReport.cs` | Backend-neutral schema-4 evidence-report validation and local Markdown/Mermaid presentation; recorded claims remain separate from byte applicability and acceptance |
+| `ProjectReport.cs` | Independently reread explicit project runs into the same presentation manifest; no theorem composition |
 | `Program.cs` / `CliOptions.cs` | Strict command surface, drift and exit semantics |
 | `PLang/PFrontend.cs` / `PLang/PIndex.source.cs` | Isolated authoritative P parse/typecheck and qualified declaration inventory |
 | `PLang/PContracts.cs` | Strict explicit P scope, resolved source links, native claim dimensions |
@@ -75,6 +92,44 @@ and freshness handling are in a separate partial frontend under `PlusCal`.
 
 ## Human-readable evidence reports
 
+Project report generation selects explicit immutable runs and invokes the same
+independent acceptance evaluator as `accept`. It saves those evaluations and
+one ordinary `evidence-report` manifest before rendering Markdown/Mermaid.
+Native outcomes, expected controls, pending reviews and per-run archive/current
+applicability remain separate. Multiple runs do not overwrite, merge or repair
+one another's verdicts. Generated projects do not invent source dispositions.
+The generic renderer's freshness describes its presentation snapshot; historical
+run applicability remains the separately recorded per-run assessment.
+
+Acceptance worklists are transient presentation metadata, not additional evidence
+or a saved acceptance format. Evaluation associates unmet reviews and incomplete
+stages with their requirements; other requirement gaps stay explicit. Unclassified
+diagnostics remain visible by code/severity, without inferring their root cause
+from message text. Summary previews have exact omitted counts; full receipts,
+diagnostic messages, review freshness and exit codes are unchanged.
+
+Console regressions use observed compiler-time sources, references, compiler
+settings and build inputs, followed by a byte-checked runtime-output copy.
+The harness reports its loaded entry assembly and the exact required test IDs.
+Missing, duplicate, skipped, partial or contradictory observations are incomplete,
+not successful executions or assertion counterexamples. A native assertion
+failure requires complete observations and exit 1. This is not test-framework
+integration, a causal trace or model conformance. Build projects, the harness,
+compiler/source-generator behavior and OS/runtime remain trusted. Inputs exposed
+at the MSBuild capture boundary are recorded; this is not a complete MSBuild
+workspace or authenticated compiler/runtime closure.
+
+Standalone Dafny uses the same authoritative frontend, distribution pinning,
+verification classifier and assumption audit as integrated bindings. Its native
+contracts do not become C# correspondence or executable-oracle evidence.
+
+TLC model/trace resource settings share one typed representation and conservative
+validation. Defaults remain command-specific; recorded effective resources and
+native invocations are independently cross-checked. Worker/heap changes do not
+alter logical properties, bounds, configuration approvals or incomplete outcomes.
+Heap is not hard process-memory isolation, and more resources do not remove
+combinatorial state growth.
+
 One explicit `evidence-report` manifest describes an acyclic graph of recorded
 claims, their pinned supporting files, code-region dispositions, assumptions
 and open gates. `report` renders it into Markdown with Mermaid role/dependency
@@ -84,7 +139,7 @@ backend tool or online diagram service.
 Native/private adapters perform independent backend rereads before producing
 this presentation manifest. The generic renderer does not decode private
 archives or infer source-to-proof edges from symbol or contract names.
-Historical milestone claims, expected negative controls and pending reviews
+Recorded claims, expected negative controls and pending reviews
 retain their own recorded statuses. Green denotes a declared expectation
 matched in a byte-current snapshot, not verified C#.
 
@@ -133,7 +188,7 @@ not automatic fallback from TLC.
 Native Snowcat types remain distinct from source binding annotations. SANY
 still establishes the local module closure, operator arities and PlusCal
 freshness. The adapter reports authoritative ASSUME declarations over loaded
-modules; Apalache's initial profile rejects them without changing TLC behavior.
+modules; Apalache manifests reject them without changing TLC behavior.
 Only explicit nullary predicates and constant initialization are supported.
 TLC configuration translation, temporal checking and simulation are excluded.
 Project preflight reuses native execution's SANY compatibility validator and
@@ -226,7 +281,7 @@ host resolution remain explicit blockers, not assumed-distinct files.
 
 Explicit application uses `gc --apply <full-plan> --exclusive true --output
 <new-receipt>`. It never accepts a summary or overrides pins/grace. Application
-is initially Windows-only: retained native directory handles deny ancestor
+is Windows-only: retained native directory handles deny ancestor
 rename/replacement, and each directory is checked for reparse attributes through
 its handle. Unsupported platforms fail explicitly rather than substituting
 weaker path-only deletion. The caller must first stop all writers; the exclusive
@@ -277,99 +332,9 @@ controls, but parsing/checking processes remain isolated. Cache startup cost,
 in-process hits and per-test/native-process durations expose setup versus
 solver cost; the cache does not remove JVM startup or archive-copy costs.
 
-## Proposed shared backend contracts (assessment only)
+## Authoritative frontends and paths
 
-**Decision, 2026-10-25:** shared operational contracts would help; a shared
-model language or universal proof result would not. This section is a design
-proposal, not an implemented interface, a new public schema, or a prerequisite
-for continuing verification. Keep the current directories and single executable.
-
-The existing seam is already visible: `ProjectContracts.cs` owns stages, tool
-pins, requirements and run receipts; `ProjectWorkflow.cs` branches on stage
-kinds to pin inputs and execute them; `ProjectAcceptance.cs` dispatches semantic
-validation. P has its own `PPacket`/`PEvidence`, while Dafny-backed integrated
-commands use `IntegratedPacket`/`IntegratedEvidence`. Reuse those contracts and
-readers rather than introduce a second workflow or replace native payloads with
-an untyped dictionary.
-
-### One narrow stage adapter, not one interface per directory
-
-A future internal `IAnalysisBackend` should describe and handle a family of
-supported stages. Its responsibilities would be:
-
-| Operation | Shared contract | Backend-owned behavior |
-|---|---|---|
-| Describe | Stable engine/capability IDs, supported stage kinds, prerequisite and claim metadata | Exact tool versions, supported native constructs and capability limits |
-| Prepare | Existing stage/compiler profile, canonical input identities, immutable output location, explicit resource budget and review obligations | Strict typed native manifest loading, dependency closure, source resolution and native option validation |
-| Execute | A prepared request, bounded execution completion, diagnostics and a reference/hash for native evidence | Native compiler/checker/prover invocation and result classification |
-| Validate evidence | Archived/current consistency assessment and supported claims, without rerunning the analysis | Native receipt/log interpretation, coverage, assumptions, proof goals and counterexample checks |
-
-Use a fixed built-in registry at the composition root. Resolve a stage to
-exactly one handler; reject unsupported or duplicate registrations explicitly.
-Do not add reflection discovery, arbitrary shell commands, dynamic plugins,
-dependency injection infrastructure or a backend for every folder. SANY and
-PlusCal are frontends/authoring support, not independent proof engines.
-Shared source-index interfaces should wait until two actual consumers need the
-same operation; native inventories must retain their authoritative declarations.
-
-Keep requests and native loaders typed. The common layer needs an evidence
-reference and validated summary, not permission to inspect arbitrary JSON fields
-or cast a universal `object` payload. Native configuration and evidence stay
-within their current backend ownership. A semantic validator must be usable by
-the independent reader, not only by the process that produced a result.
-
-### Shared metadata is not shared proof semantics
-
-The common summary must keep these independent dimensions:
-
-- Execution completion: completed, timed out, tool failure or blocked.
-- Property outcome: established for its stated scope, counterexample or
-  not-established; readiness is a separate structural claim.
-- Claim and scope: engine/property identity, assumptions, bounds, source/tool
-  fingerprints and coverage/completeness appropriate to that engine.
-- Evidence validity: archive consistency and current applicability.
-- Acceptance: evaluation against the independently pinned requirements/reviews.
-
-There must be no common `Verified = true` that lets a sampled PChecker run stand
-in for completed TLC exploration, a PVerifier invariant stand in for a Dafny
-oracle comparison, or a PObserve monitor stand in for causal trace inclusion.
-The existing public claim strings and diagnostics remain authoritative until
-an explicitly reviewed schema change; internal typed adapters can project them
-without rewriting historical evidence.
-
-### Contracts between models, not just between C# classes
-
-For each semantic handoff, record the source symbol/guard, native declaration
-references, preconditions, pre/post projections, allowed outcomes, ownership
-effects, publication and continuation boundaries, permitted stuttering, and
-progress/fairness assumptions. Keep predicates in their native language; a
-relation record links them but does not prove their equivalence.
-
-For example, a Dafny credit invariant can support a P or TLA+ action only when
-that action establishes the lemma's actual preconditions. P events do not
-automatically equal TLA+ actions. A PObserve log sequence does not supply the
-causal edges required by the TLC trace matcher. Discharged and outstanding
-handoff obligations must therefore be separate from individual backend passes.
-
-### Migration gate if implementation is later authorized
-
-Extract adapters from existing branches one family at a time, keeping CLI
-commands, native evidence, strict schemas and independent acceptance unchanged.
-Start with dispatch/preflight/validation, not a rewrite of every process runner.
-Share a process or archive helper only after its timeout, tree termination,
-pinning and exclusive-write behavior demonstrably matches both consumers.
-
-Require contract tests for exact stage ownership, unsupported capabilities,
-timeouts, tool errors versus property rejections, claim substitution, stale
-inputs, changed artifacts and offline reading. Run the existing backend and
-public workflow controls after each migrated family. Optional P engines still
-need real native positive/negative smoke tests: output-classifier unit tests
-alone cannot validate their integrations.
-
-Do not delay the best verification route merely to make all backend
-implementations look symmetrical.
-
-No TLA+ interpreter or replacement parser is introduced. The SANY companion
+TLA+ parsing uses SANY, not a local interpreter or replacement parser. The companion
 embedded in the C# bridge supplies declared variables/operator arities. The
 bridge creates fresh processes
 to isolate upstream static state and cleans its own temporary compiler outputs.
@@ -383,10 +348,11 @@ Release/launcher hashes are checked at selection and included in evidence;
 this does not attest every installed runtime file. Native P manifests retain
 their separately explicit Java dependency pins.
 `Common/FilePaths.cs` normalizes either input separator into canonical absolute
-native paths. File identity is ordinal case-insensitive on Windows and ordinal
+native paths. Path comparison is ordinal case-insensitive on Windows and ordinal
 on Linux. Foreign Windows drive/UNC roots are rejected for local resolution;
 historical absolute evidence keys remain recognizable for archive validation
 without pretending they are currently applicable on another host.
+Canonical paths do not establish physical file identity across links.
 JAR/adapter/tool binaries are pinned; local imports and standard-library contents
 remain fingerprinted. Imported annotations require explicit binding scope.
 PlusCal freshness regenerates the upstream translation in memory, never trusting
@@ -445,8 +411,8 @@ Every run keeps exclusive outputs, subprocess invocations/logs, tool bytes,
 source/reference bytes and generated artifacts under content-addressed pins.
 Maintained-input baseline drift is separate from per-run generated outputs.
 The reader checks semantic consistency and archive consistency independently
-of optional current source/tool applicability and never decides milestone acceptance. Historical runs
-remain historical when the working tree or producing tool changes.
+of optional current source/tool applicability. Only project acceptance evaluates
+the declared requirements and reviews.
 
 ## Binding versus execution
 
@@ -502,7 +468,7 @@ For events `1..N`, the wrapper adds a `seen` set to the base model variables.
 4. A stutter leaves all base variables unchanged and adds the event to `seen`.
 5. Internal base Next steps are allowed only through explicitly annotated,
    justified `visibility=hidden` actions. Hidden action arguments range over
-   the recorded actors/operations; this finite domain is a pilot limitation.
+   the recorded actors/operations; this is a finite-domain limitation.
 
 The state trajectory persists across every event. Independently reachable
 per-event observations do not suffice. Recorded operation, physical source-guard
@@ -524,10 +490,26 @@ fairness/liveness/general-refinement claim.
 
 Wrapper names are tool-reserved. Single-root declared variables, scalar
 observations, zero/one/two-argument actions, one connection, bounded trace size
-and conservative single-line configurations define the current supported pilot.
+and conservative single-line configurations define the supported trace scope.
 Do not silently extend a graph restriction or strip unsupported syntax.
 
 ## Project orchestration and acceptance
+
+User-authored projects may compose explicit code-adjacent `project-component`
+documents and shared input-set/execution-profile documents. One typed loader
+resolves paths against their declaring files, validates import identities and
+profile references, and produces the same normalized `AnalysisProject` used by
+inline projects. Scenario membership is explicit; no filesystem discovery,
+inheritance or backend semantics are introduced by composition.
+
+The loader retains original-byte authoring fingerprints and stage origins outside
+the serialized normalized project. Preflight/run pin those exact bytes. Each run
+stores a `project-expansion` snapshot; acceptance independently reconstructs it
+through archived authoring files rather than trusting the saved expansion.
+Review-root retention uses the same loader through its guarded scan reader.
+Expansion requires no native checker and does not establish readiness or acceptance.
+Editor schemas are generated from the typed contracts, not separately maintained
+validation rules or an alternative project language.
 
 Projects declare stable IDs, pinned tools, an explicit supported compiler
 profile, dependency-ordered stages and review obligations. A separate policy
@@ -539,12 +521,12 @@ Optional `check_obligations` map declared safety/deadlock/progress obligations
 to positive acceptance requirements in the same scenario. One shared coverage
 implementation feeds preflight and acceptance. Empty or backend-incompatible
 mappings remain missing and prevent a new run, not silently successful defaults.
-The initial profile covers TLC and Apalache's distinct capabilities; it neither
-invents temporal requirements for safety-only projects nor interprets TLC
+Coverage mappings support TLC and Apalache's distinct capabilities; they neither
+invent temporal requirements for safety-only projects nor interpret TLC
 configuration semantics. Mapped checks are a plan, not evidence or a theorem.
 
 Each stage keeps its native evidence meaning. Native TLC runs use a fresh JVM,
-fixed bounded resources and the exact pinned configuration; process deadlines
+validated worker/heap budgets and the exact pinned configuration; process deadlines
 are incomplete. A completed native deadlock (`TLC2114`) is a rejection and may
 satisfy only a requirement selecting that rejection/diagnostic, not a positive
 safety obligation. TLC diagnostics surface bounded native error bodies and
@@ -564,3 +546,10 @@ inputs. They pin the claim/assumptions, explicit source inputs and supporting
 evidence. Claim or input drift invalidates prior review. The newest decision
 is authoritative; acceptance reports retain decisions used. These are trusted
 review assertions, not authentication or composed refinement proofs.
+
+New review decisions serialize evidence and fingerprint keys relative to their
+declaring project. Readers resolve recorded spellings to native identities and
+reject aliased fingerprint keys; original absolute records are not rewritten.
+Cross-root paths that cannot be represented relatively fail before a decision
+is written. Regression file arguments use explicit `path_arguments` indices,
+not guessed path-looking strings; loading and independent reads use one resolver.

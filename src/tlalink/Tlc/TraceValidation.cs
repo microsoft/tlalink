@@ -10,8 +10,9 @@ public static class TraceValidation
 {
     public static object Validate(string manifestPath, string tracePath, string configPath, string modelPath,
         string module, List<string> variables, List<ModelBinding> models, Dictionary<string, string> modelPins,
-        string jar, string output, int timeout, string init, string next, string execution)
+        string jar, string output, int timeout, string init, string next, string execution, TlcResources? requestedResources = null)
     {
+        TlcResources resources = TlcResources.Effective("trace", requestedResources);
         if (variables.Count == 0) throw new InputException(ErrorCode.InvalidTrace, "Model has no state variables.");
         if (!Regex.IsMatch(init, @"^[A-Za-z_]\w*$") || !Regex.IsMatch(next, @"^[A-Za-z_]\w*$"))
             throw new InputException(ErrorCode.InvalidTrace, "Init/next must name model operators.");
@@ -198,8 +199,8 @@ public static class TraceValidation
         }
         File.WriteAllText(Path.Combine(output, "TlaLinkTraceCheck.tla"), code, new UTF8Encoding(false));
         File.WriteAllLines(Path.Combine(output, "trace.cfg"), lines);
-        string[] arguments = ["-XX:+UseParallelGC", "-Xmx1g", "-cp", Path.Combine(closure, archived[FilePaths.Full(jar)]), "tlc2.TLC",
-            "-workers", "1", "-seed", "42", "-fp", "0", "-config", "trace.cfg", "-metadir", "states", "TlaLinkTraceCheck"];
+        string[] arguments = ["-XX:+UseParallelGC", resources.HeapArgument, "-cp", Path.Combine(closure, archived[FilePaths.Full(jar)]), "tlc2.TLC",
+            "-workers", resources.WorkerArgument, "-seed", "42", "-fp", "0", "-config", "trace.cfg", "-metadir", "states", "TlaLinkTraceCheck"];
         ProcessStartInfo start = new(java.Java) { WorkingDirectory = output, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (string argument in arguments) start.ArgumentList.Add(argument);
         using Process process = Process.Start(start) ?? throw new InputException(ErrorCode.InvalidTrace, "Could not start TLC.");
@@ -217,6 +218,7 @@ public static class TraceValidation
         {
             SchemaVersion = Schema.Version, Kind = "trace-validation", Command = "validate-trace", Status = witness ? "conforms" : rejected ? "rejected" : "incomplete",
             EventCount = events.Length, BindingId = manifest.BindingId, ExitCode = process.ExitCode, TimedOut = timedOut,
+            RequestedResources = requestedResources, Resources = resources, TimeoutSeconds = timeout,
             Invocation = new { Executable = java.Java, Arguments = arguments, WorkingDirectory = output },
             Mapping = new { Init = init, Next = next, Hidden = hidden },
             WrapperSHA256 = Files.Hash(Path.Combine(output, "TlaLinkTraceCheck.tla")),

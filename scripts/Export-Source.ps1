@@ -15,7 +15,7 @@ $files = @(
     'README.md', 'REFERENCE.md', 'SECURITY.md', 'TlaLink.ps1', 'TlaLink.sln', 'TlaLink.code-workspace', 'java-toolchain.json'
 )
 $extensions = @('.cs', '.csproj', '.java', '.json', '.tla', '.cfg', '.dfy', '.p', '.ps1', '.md', '.yml', '.yaml')
-foreach ($directory in 'src', 'tests', 'examples', 'scripts', '.github') {
+foreach ($directory in 'src', 'tests', 'examples', 'schemas', 'scripts', '.github') {
     $base = Join-Path $root $directory
     $files += @(Get-ChildItem -LiteralPath $base -Recurse -File | Where-Object {
         $relative = $_.FullName.Substring($root.Length + 1)

@@ -1,3 +1,5 @@
 # Preserve the approved configuration bytes on every checkout.
 examples/Workflow/Lanes.cfg text eol=crlf
 examples/Apalache/*.json text eol=crlf
+examples/Evidence/*.json text eol=crlf
+examples/Components/**/*.cfg -text

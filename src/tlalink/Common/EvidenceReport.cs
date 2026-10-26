@@ -20,6 +20,7 @@ public static class EvidenceReport
 
     public static int Run(CliOptions options)
     {
+        if (options.Has("project") || options.Has("run")) return ProjectReport.Run(options);
         string manifestPath = FilePaths.Full(options.Required("manifest"));
         string output = FilePaths.Full(options.Required("output"));
         if (File.Exists(output) || Directory.Exists(output))

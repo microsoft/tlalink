@@ -42,6 +42,8 @@ public enum ErrorCode
     InvalidTrace,
     [DiagnosticInfo("TL520", IssueSeverity.Error)]
     InvalidExecution,
+    [DiagnosticInfo("CS100", IssueSeverity.Error)]
+    RegressionAssertionFailed,
     [DiagnosticInfo("TL900", IssueSeverity.Error)]
     ToolFailure,
 
