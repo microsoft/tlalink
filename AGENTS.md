@@ -55,7 +55,7 @@ for a changed backend and the full suite when appropriate after provisioning
 its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
 
 - The root solution, public tests and examples must not depend on `local`.
-  Private consumer work packages, copied sources, milestones and evidence belong
+  Private consumer work packages, copied sources, proofs and evidence belong
   under that Git-ignored directory. Follow each package's own instructions.
   Never commit or publish anything from `local`, and never force-add it.
   Never use its files or content as sample code, examples or documentation,
@@ -65,8 +65,8 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
 - Tool distributions belong in the ignored root `.tools` cache. Public tests
   accept `TLALINK_TLA_JAR`, `TLALINK_DAFNY`, `TLALINK_P_COMPILER` and
   `TLALINK_APALACHE_JAR` overrides;
-  `--core` runs without external backend tools. Tool lifecycle management is
-  planned separately; do not imply automatic installation already exists.
+  `--core` runs without external backend tools. Provisioning is explicit;
+  analysis commands must not install or upgrade tools.
 - Java selection uses the single `java-toolchain.json` version pin: Temurin JDK 25
   with explicit Windows/Linux x64 distributions, provisioned with
   `scripts\Initialize-Java.ps1` under PowerShell 7.
@@ -105,15 +105,51 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   and bounds; do not update those pins merely to clear an acceptance failure.
   Pinned fixture inputs must declare any required checkout line endings in
   `.gitattributes`, so host defaults cannot change their approved bytes.
-  Workflow and Apalache examples pin CRLF configuration bytes; preserve those
+  Workflow, evidence-stage and Apalache examples pin CRLF configuration bytes; preserve those
   bytes on either host rather than changing requirements after checkout.
 
 ## Maintenance safeguards
 
+- Project composition uses explicit schema-4 `analysis-project` roots and
+  `project-component`, `project-input-sets` and `project-execution-profiles`
+  documents. Resolve each path against its declaring file, select components
+  explicitly per scenario, and reject duplicate IDs/imports, cycles and mixed
+  inline/profile budgets. Input sets are explicit file lists, not globs.
+  Keep one normalized `AnalysisProject` for execution and save a
+  `project-expansion` snapshot with all authored-file pins. Independent readers
+  reconstruct that snapshot from archived authoring bytes. Editor schemas are
+  generated from the typed authoring contracts using JSON Schema 2020-12;
+  they are not another project language or an evidence-document format.
+- Maintained consumer inputs use document-relative file references. Review
+  writers emit project-relative evidence/fingerprint paths through `FilePaths`;
+  runtime receipts retain observed absolute identities. Regression arguments
+  are opaque strings except explicit zero-based `path_arguments` indices,
+  whose file inputs resolve against the declaring regression config and are
+  pinned. Never guess paths from argument text or rewrite historical receipts.
+- TLC resource settings use one typed `resources` object (`workers`,
+  `max_heap_mib`) on TLC/trace stages and the equivalent explicit trace CLI
+  options. Record requested/effective values and the native invocation; reject
+  unsupported settings rather than forwarding arbitrary arguments. JVM heap
+  is not a total process-memory limit. Resource experiments retain logical
+  configuration pins, requirements and prior incomplete runs.
+- Console regression evidence uses `csharp-regression` manifests and
+  `csharp-regression-result` receipts, with a `regression-observations` document
+  from the harness. Native proof-only Dafny evidence uses `dafny-analysis` and
+  `dafny-result`, reusing the integrated frontend/verifier/audit implementation.
+  These are stage evidence, not traces, oracle comparisons or C# refinement.
+  Share observed build provenance with `execute`; do not fabricate traces or
+  dummy C# bindings. Keep framework-specific testhost adapters explicit.
+  Record absent optional compiler configuration probes in
+  `missing_build_inputs`; their later appearance is drift. Retention represents
+  those expected absences with a null `expected_sha256`, not a fabricated hash.
+  Project reports reread explicit runs through ordinary acceptance and produce
+  the same `evidence-report` manifest; presentation freshness is not historical
+  run applicability or acceptance.
+
 - Whole-evidence human reports use one schema-4 `evidence-report` manifest and
   Markdown with embedded Mermaid, not competing diagram formats or a generic
   "proof passed" flag. Private adapters supply recorded native claims, source
-  coverage dispositions and milestone gaps; the public renderer checks pinned
+  coverage dispositions and outstanding obligations; the public renderer checks pinned
   bytes, not native proof semantics. Preserve recorded outcomes, expected
   controls, current applicability and pending correspondence separately.
   A source inventory/disposition is not validated code. Reports are presentation
@@ -137,7 +173,7 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   bounded safety or complete initiation/preservation/implication induction.
   Keep these claims distinct from TLC exhaustion and causal trace matching.
   Use native Snowcat types alongside, not instead of, `@tla 2` bindings.
-  Initially use named nullary predicates and explicit constant initialization,
+  Use the supported named nullary predicates and explicit constant initialization,
   not TLC configuration translation, temporal properties or simulation.
   Reject SANY-resolved ASSUME declarations rather than depend on differing
   upstream interpretations; encode required constraints in the selected

@@ -1,0 +1,25 @@
+{
+  "schema_version": 4,
+  "kind": "acceptance-policy",
+  "project": "component-counter",
+  "requirements": [
+    {
+      "id": "counter-safe",
+      "scenario": "complete",
+      "stage": "counter-safety",
+      "expected": "passed",
+      "config_sha256": "FCDDC50F7B0B8E552CA59AB2D98B3A8478CE2C8A46977C57A242FC230E4E3DBA",
+      "reviews": ["counter-correspondence"]
+    },
+    {
+      "id": "counter-rejection-control",
+      "scenario": "complete",
+      "stage": "counter-control",
+      "expected": "rejected",
+      "diagnostic": "TLC2110",
+      "diagnostic_text": "Invariant NeverOne is violated.",
+      "config_sha256": "8EFD51A38B886F883C66357458E170D3CD5FC67277DDF499F2D641C8C5B7D2DA",
+      "reviews": ["counter-correspondence"]
+    }
+  ]
+}

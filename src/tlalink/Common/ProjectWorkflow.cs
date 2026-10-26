@@ -11,6 +11,13 @@ public static partial class ProjectWorkflow
     public static int Run(CliOptions options)
     {
         string path = FilePaths.Full(options.Required("project"));
+        if (options.Command == "expand")
+        {
+            ProjectExpansion expansion = ProjectComposition.Expand(path);
+            if (options.Optional("output") is string destination) Files.WriteNew(FilePaths.Full(destination), expansion);
+            Render(expansion, options);
+            return 0;
+        }
         var (project, policy) = ProjectInputs.Load(path);
         if (options.Command == "record-review") return ProjectAcceptance.RecordReview(path, project, options);
         if (options.Command is "accept" or "explain") return ProjectAcceptance.Run(path, project, policy, options);
@@ -31,7 +38,11 @@ public static partial class ProjectWorkflow
                 Fingerprints = pins, Scenarios = scenarios.Select(s => new {
                     s.Id, Stages = ProjectInputs.Order(s).Select(stage => new {
                         stage.Id, stage.Kind, stage.DependsOn, stage.TimeoutSeconds,
+                        RequestedResources = stage.Resources,
+                        Resources = stage.Kind is "tlc" or "trace" ? TlcResources.Effective(stage.Kind, stage.Resources) : null,
                         Capability = stage.Kind == "oracle" ? "synchronous-int-bool-adapter; native signature resolution required" :
+                            stage.Kind == "csharp-regression" ? "selected console-harness assertions; observed compiler inputs and loaded entry binary; no model conformance" :
+                            stage.Kind == "dafny-verify" ? "native Dafny contracts and assumption audit; no C# correspondence or oracle execution" :
                             ApalacheInputs.IsStage(stage.Kind) ? "native Apalache " + stage.Kind + "; explicit typed safety scope; no TLC exhaustion, liveness or trace-matching claim" :
                             PInputs.IsStage(stage.Kind) ? "native P " + stage.Kind[2..] + "; explicit claim and approved configuration; no automatic C# refinement" :
                             stage.Kind == "trace" ? "guarded-scalar-entity-observations; explicit handoffs; finite trace only" :
@@ -56,11 +67,14 @@ public static partial class ProjectWorkflow
             Project = project.Id, ProjectDirectory = Path.GetDirectoryName(path)!, Scenario = scenarios[0].Id, Fingerprints = pins,
             ProjectSha256 = Files.Hash(path), RequirementsSha256 = Files.Hash(ProjectInputs.Resolve(path, project.Requirements))
         };
+        Files.WriteNew(Path.Combine(output, "expanded-project.json"), ProjectComposition.Expansion(path, project));
         foreach (AnalysisStage stage in ProjectInputs.Order(scenarios[0]))
         {
             if (stage.DependsOn.Any(d => !run.Stages.Any(s => s.Id == d && s.Outcome == "passed")))
             {
-                run.Stages.Add(new(stage.Id, stage.Kind, "blocked", "incomplete", "", "", [ErrorCode.DependencyBlocked.Id()], 0));
+                run.Stages.Add(new(stage.Id, stage.Kind, "blocked", "incomplete", "", "", [ErrorCode.DependencyBlocked.Id()], 0,
+                    RequestedResources: stage.Resources,
+                    Resources: stage.Kind is "tlc" or "trace" ? TlcResources.Effective(stage.Kind, stage.Resources) : null));
                 continue;
             }
             Stopwatch clock = Stopwatch.StartNew();
@@ -77,13 +91,16 @@ public static partial class ProjectWorkflow
                 run.Stages.Add(new(stage.Id, stage.Kind, outcome == "incomplete" ? "incomplete" : "completed",
                     outcome, Path.GetRelativePath(output, evidence), Files.Hash(evidence), diagnostics, clock.Elapsed.TotalSeconds,
                     stage.Kind == "tlc" && result.TryGetProperty("statistics", out JsonElement statistics)
-                        ? statistics.Deserialize<TlcStatistics>(ProjectInputs.Json) : null));
+                        ? statistics.Deserialize<TlcStatistics>(ProjectInputs.Json) : null,
+                    stage.Resources, stage.Kind is "tlc" or "trace" ? TlcResources.Effective(stage.Kind, stage.Resources) : null));
             }
             catch (Exception error) when (error is InputException or IOException or UnauthorizedAccessException or
                 JsonException or System.ComponentModel.Win32Exception or TimeoutException)
             {
                 run.Diagnostics.Add(new(ErrorCode.WorkflowStageFailed, stage.Id + ": " + error.Message));
-                run.Stages.Add(new(stage.Id, stage.Kind, "incomplete", "incomplete", "", "", [ErrorCode.WorkflowStageFailed.Id()], clock.Elapsed.TotalSeconds));
+                run.Stages.Add(new(stage.Id, stage.Kind, "incomplete", "incomplete", "", "", [ErrorCode.WorkflowStageFailed.Id()], clock.Elapsed.TotalSeconds,
+                    RequestedResources: stage.Resources,
+                    Resources: stage.Kind is "tlc" or "trace" ? TlcResources.Effective(stage.Kind, stage.Resources) : null));
             }
         }
         try { IntegratedInputs.CheckPins(run.Fingerprints); }
@@ -98,6 +115,7 @@ public static partial class ProjectWorkflow
     private static Dictionary<string, string> Pins(string path, AnalysisProject project, AcceptancePolicy policy, List<AnalysisScenario> scenarios)
     {
         Dictionary<string, string> pins = new(FilePaths.Comparer);
+        foreach (var pin in project.Authoring!.Fingerprints) Files.Pin(pins, pin.Key, pin.Value);
         void Pin(string file) => Files.Pin(pins, file, Files.Hash(file));
         Pin(path);
         Pin(ProjectInputs.Resolve(path, project.Requirements));
@@ -108,6 +126,14 @@ public static partial class ProjectWorkflow
         foreach (var entry in scenarios.SelectMany(s => s.Stages.Select(stage => (Scenario: s.Id, Stage: stage))))
         {
             AnalysisStage stage = entry.Stage;
+            if (stage.Kind == "csharp-regression")
+                _ = CSharpRegression.Load(ProjectInputs.Resolve(path, stage.Config!), pins);
+            if (stage.Kind == "dafny-verify")
+            {
+                needDafny = true;
+                _ = DafnyAnalysisBackend.Load(ProjectInputs.Resolve(path, stage.Config!), pins);
+                DafnyBackend.PinDistribution(ProjectInputs.Resolve(path, project.Tools.Dafny!.Path), pins);
+            }
             if (ApalacheInputs.IsStage(stage.Kind))
             {
                 needApalache = true;
@@ -181,7 +207,7 @@ public static partial class ProjectWorkflow
         return pins;
     }
 
-    private static string Executable(string name)
+    internal static string Executable(string name)
     {
         if (name is "java" or "javac")
         {
@@ -210,7 +236,14 @@ public static partial class ProjectWorkflow
             foreach (string define in project.Compiler.Defines ?? []) arguments.AddRange(["--define", define]);
         }
         void Jar() => arguments.AddRange(["--jar", ProjectInputs.Resolve(path, project.Tools.Jar!.Path)]);
-        if (ApalacheInputs.IsStage(stage.Kind))
+        if (stage.Kind is "csharp-regression" or "dafny-verify")
+        {
+            arguments.Add(stage.Kind == "csharp-regression" ? "check-regression" : "check-dafny");
+            arguments.AddRange(["--config", ProjectInputs.Resolve(path, stage.Config!), "--output", Path.Combine(output, "engine")]);
+            if (stage.Kind == "dafny-verify")
+                arguments.AddRange(["--dafny", ProjectInputs.Resolve(path, project.Tools.Dafny!.Path)]);
+        }
+        else if (ApalacheInputs.IsStage(stage.Kind))
         {
             arguments.Add("check-apalache");
             arguments.AddRange(["--config", ProjectInputs.Resolve(path, stage.Config!),
@@ -284,16 +317,25 @@ public static partial class ProjectWorkflow
         foreach (string arg in stage.Arguments ?? []) args.AddRange(["--arg", arg]);
         JsonElement receipt = InvokeCli(args, Path.Combine(output, "execute"), stage.TimeoutSeconds * 4);
         if (!File.Exists(Path.Combine(execution, "execution.json"))) return receipt;
-        JsonElement result = InvokeCli(["validate-trace", "--manifest", Path.Combine(generated, "bindings.json"),
+        List<string> validation = ["validate-trace", "--manifest", Path.Combine(generated, "bindings.json"),
             "--trace", trace, "--execution", Path.Combine(execution, "execution.json"),
             "--model", ProjectInputs.Resolve(path, stage.Models[0]), "--config", ProjectInputs.Resolve(path, stage.Config!),
             "--jar", ProjectInputs.Resolve(path, project.Tools.Jar!.Path), "--output", Path.Combine(output, "validation"),
-            "--timeout", stage.TimeoutSeconds.ToString()], Path.Combine(output, "validate"), stage.TimeoutSeconds * 4);
+            "--timeout", stage.TimeoutSeconds.ToString()];
+        if (stage.Resources is { } resources)
+            validation.AddRange(["--workers", resources.WorkerArgument, "--max-heap-mib", resources.MaxHeapMib.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
+        JsonElement result = InvokeCli(validation, Path.Combine(output, "validate"), stage.TimeoutSeconds * 4);
+        MergePins(result, pins);
         return result;
     }
 
     internal static string Outcome(string kind, JsonElement result)
     {
+        string? expectedKind = kind switch {
+            "csharp-regression" => "csharp-regression-result", "dafny-verify" => "dafny-result",
+            "tlc" => "tlc-result", "trace" => "trace-validation", _ => null };
+        if (expectedKind != null && (!result.TryGetProperty("kind", out JsonElement nativeKind) ||
+            nativeKind.GetString() != expectedKind)) return "incomplete";
         if (ApalacheInputs.IsStage(kind) && (!result.TryGetProperty("kind", out JsonElement apalacheKind) ||
             apalacheKind.GetString() != "apalache-result")) return "incomplete";
         if (PInputs.IsStage(kind) && (!result.TryGetProperty("kind", out JsonElement documentKind) ||
@@ -365,9 +407,9 @@ public static partial class ProjectWorkflow
         }
     }
 
-    internal static void Render(object result, CliOptions options)
+    internal static void Render(object result, CliOptions options, AcceptanceWorklist? worklist = null)
     {
-        if (options.Get("format", "json") == "summary") Console.WriteLine(CommandSummary.Create(result, options).ToJsonString(Files.Json));
+        if (options.Get("format", "json") == "summary") Console.WriteLine(CommandSummary.Create(result, options, worklist).ToJsonString(Files.Json));
         else if (options.Get("format", "json") == "json") Console.WriteLine(JsonSerializer.Serialize(result, Files.Json));
         else
         {

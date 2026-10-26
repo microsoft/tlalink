@@ -15,7 +15,7 @@ public sealed record CompilerProfile(string TargetFramework, string LanguageVers
 }
 public sealed record AnalysisStage(string Id, string Kind, List<string> DependsOn, int TimeoutSeconds,
     string? Bindings = null, List<string>? Sources = null, List<string>? Models = null,
-    string? Config = null, List<string>? Arguments = null);
+    string? Config = null, List<string>? Arguments = null, TlcResources? Resources = null);
 public sealed record AnalysisScenario(string Id, List<AnalysisStage> Stages);
 public sealed record ReviewObligation(string Id, string Claim, List<string> Assumptions, List<string> Inputs);
 public sealed record CheckObligation(string Id, string Kind, string Scenario, List<string> Requirements);
@@ -26,14 +26,20 @@ public sealed record ReviewDecision(int SchemaVersion, string Kind, string Oblig
     Dictionary<string, string> Fingerprints, List<string> Evidence);
 public sealed record AnalysisProject(int SchemaVersion, string Kind, string Id, ProjectTools Tools,
     CompilerProfile Compiler, string Requirements, List<AnalysisScenario> Scenarios,
-    List<ReviewObligation> Obligations, string ReviewDirectory, List<CheckObligation>? CheckObligations = null);
+    List<ReviewObligation> Obligations, string ReviewDirectory, List<CheckObligation>? CheckObligations = null)
+{
+    [JsonIgnore]
+    internal ProjectAuthoringMetadata? Authoring { get; init; }
+}
 public sealed record AnalysisRequirement(string Id, string Scenario, string Stage, string Expected,
     string? Diagnostic = null, List<string>? Bindings = null, List<string>? Cases = null,
-    List<string>? Reviews = null, string? ConfigSha256 = null, string? Claim = null, string? DiagnosticText = null);
+    List<string>? Reviews = null, string? ConfigSha256 = null, string? Claim = null, string? DiagnosticText = null,
+    List<string>? Tests = null, int? DiagnosticCount = null);
 public sealed record AcceptancePolicy(int SchemaVersion, string Kind, string Project,
     List<AnalysisRequirement> Requirements);
 public sealed record WorkflowStageResult(string Id, string Kind, string ExecutionStatus, string Outcome,
-    string Evidence, string Sha256, List<string> Diagnostics, double DurationSeconds, TlcStatistics? Statistics = null);
+    string Evidence, string Sha256, List<string> Diagnostics, double DurationSeconds, TlcStatistics? Statistics = null,
+    TlcResources? RequestedResources = null, TlcResources? Resources = null);
 public sealed class WorkflowRun
 {
     public int SchemaVersion => Schema.Version;
@@ -53,6 +59,11 @@ public sealed class WorkflowRun
 
 public static class ProjectInputs
 {
+    internal static readonly string[] StageKinds = [
+        "inspect", "verify", "oracle", "inputs", "tlc", "trace", "csharp-regression", "dafny-verify",
+        "apalache-typecheck", "apalache-check", "apalache-inductive",
+        "p-inspect", "p-pchecker", "p-pex", "p-psym", "p-pverifier", "p-pobserve"
+    ];
     public static readonly JsonSerializerOptions Json = new(Files.Json)
     {
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
@@ -68,7 +79,7 @@ public static class ProjectInputs
 
     public static (AnalysisProject Project, AcceptancePolicy Policy) Load(string path)
     {
-        AnalysisProject project = Read<AnalysisProject>(path);
+        AnalysisProject project = ProjectComposition.Read(path);
         if (project.SchemaVersion != Schema.Version || project.Kind != "analysis-project")
             throw new InputException(ErrorCode.InvalidWorkflowInput, "Expected the current analysis-project schema.");
         Id(project.Id);
@@ -100,67 +111,90 @@ public static class ProjectInputs
             if (scenario.Stages.Count is 0 or > 1000) throw new InputException(ErrorCode.InvalidWorkflowInput, "Scenario needs 1..1000 stages: " + scenario.Id);
             foreach (AnalysisStage stage in scenario.Stages)
             {
-                if (stage.Kind is not ("inspect" or "verify" or "oracle" or "inputs" or "tlc" or "trace") &&
-                    !PInputs.IsStage(stage.Kind) && !ApalacheInputs.IsStage(stage.Kind) ||
-                    stage.TimeoutSeconds is < 1 or > 7200)
-                    throw new InputException(ErrorCode.WorkflowPrerequisiteMissing, "Unsupported stage kind or timeout: " + stage.Id);
-                Unique(stage.DependsOn, "dependencies");
-                if (stage.DependsOn.Any(d => !scenario.Stages.Any(s => s.Id == d) || d == stage.Id))
-                    throw new InputException(ErrorCode.InvalidWorkflowInput, "Missing/self stage dependency: " + stage.Id);
-                if (ApalacheInputs.IsStage(stage.Kind))
+                try
                 {
-                    if (project.Tools.Apalache == null || project.Tools.Jar == null || stage.Config == null ||
-                        stage.Bindings != null || stage.Models != null || stage.Sources != null || stage.Arguments != null)
-                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Apalache stages require pinned Apalache/SANY tools and one explicit analysis config.");
-                    ApalacheAnalysis analysis = ApalacheInputs.Load(Resolve(path, stage.Config), new(FilePaths.Comparer));
-                    if (stage.Kind != ApalacheInputs.Stage(analysis.Mode))
-                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Apalache stage kind must match its configured mode.");
-                }
-                else if (PInputs.IsStage(stage.Kind))
-                {
-                    if (project.Tools.P == null || stage.Config == null || stage.Bindings != null ||
-                        stage.Models != null || stage.Sources != null || stage.Arguments != null)
-                        throw new InputException(ErrorCode.InvalidWorkflowInput, "P stages require pinned P and one explicit analysis config; scope comes from that config.");
-                    PAnalysis analysis = PInputs.Load(Resolve(path, stage.Config), new(FilePaths.Comparer));
-                    if (stage.Kind != "p-" + analysis.Engine)
-                        throw new InputException(ErrorCode.InvalidWorkflowInput, "P stage kind must match its configured engine.");
-                    if (analysis.Engine is "pex" or "psym" or "pobserve" &&
-                        !policy.Requirements.Where(r => r.Scenario == scenario.Id && r.Stage == stage.Id)
-                            .All(r => r.Reviews is { Count: > 0 }))
-                        throw new InputException(ErrorCode.InvalidWorkflowInput, "External P artifacts require explicit build/source review obligations.");
-                    if (analysis.Engine is "pex" or "psym" or "pobserve")
+                    if (stage.Resources != null && stage.Kind is not ("tlc" or "trace"))
+                        throw new InputException(ErrorCode.InvalidWorkflowInput, "TLC resources are supported only on tlc/trace stages.");
+                    if (stage.Kind is "tlc" or "trace") _ = TlcResources.Effective(stage.Kind, stage.Resources);
+                    if (!StageKinds.Contains(stage.Kind, StringComparer.Ordinal) ||
+                        stage.TimeoutSeconds is < 1 or > 7200)
+                        throw new InputException(ErrorCode.WorkflowPrerequisiteMissing, "Unsupported stage kind or timeout: " + stage.Id);
+                    Unique(stage.DependsOn, "dependencies");
+                    if (stage.DependsOn.Any(d => !scenario.Stages.Any(s => s.Id == d) || d == stage.Id))
+                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Missing/self stage dependency: " + stage.Id);
+                    if (stage.Kind is "csharp-regression" or "dafny-verify")
                     {
-                        HashSet<string> reviewIds = policy.Requirements.Where(r => r.Scenario == scenario.Id && r.Stage == stage.Id)
-                            .SelectMany(r => r.Reviews ?? []).ToHashSet(StringComparer.Ordinal);
-                        HashSet<string> inputs = project.Obligations.Where(o => reviewIds.Contains(o.Id))
-                            .SelectMany(o => o.Inputs).Select(p => Resolve(path, p)).ToHashSet(FilePaths.Comparer);
-                        IEnumerable<string> required = analysis.Models.Append(Resolve(path, stage.Config));
-                        required = analysis.Artifact != null ? required.Append(analysis.Artifact.Path) :
-                            required.Concat(new[] { analysis.Observation!.RuntimeJar.Path, analysis.Observation.MonitorJar.Path })
-                                .Concat(analysis.Observation.Logs);
-                        if (required.Any(p => !inputs.Contains(p)))
-                            throw new InputException(ErrorCode.InvalidWorkflowInput, "External artifact reviews must pin the config, P sources, JARs and selected logs.");
+                        if (stage.Config == null || stage.Bindings != null || stage.Models != null ||
+                            stage.Sources != null || stage.Arguments != null)
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "Regression/native Dafny scope comes only from an explicit analysis config.");
+                        if (stage.Kind == "csharp-regression") _ = CSharpRegression.Load(Resolve(path, stage.Config), new(FilePaths.Comparer));
+                        else
+                        {
+                            if (project.Tools.Dafny == null)
+                                throw new InputException(ErrorCode.InvalidWorkflowInput, "Native Dafny stages require pinned Dafny.");
+                            _ = DafnyAnalysisBackend.Load(Resolve(path, stage.Config), new(FilePaths.Comparer));
+                        }
                     }
+                    else if (ApalacheInputs.IsStage(stage.Kind))
+                    {
+                        if (project.Tools.Apalache == null || project.Tools.Jar == null || stage.Config == null ||
+                            stage.Bindings != null || stage.Models != null || stage.Sources != null || stage.Arguments != null)
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "Apalache stages require pinned Apalache/SANY tools and one explicit analysis config.");
+                        ApalacheAnalysis analysis = ApalacheInputs.Load(Resolve(path, stage.Config), new(FilePaths.Comparer));
+                        if (stage.Kind != ApalacheInputs.Stage(analysis.Mode))
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "Apalache stage kind must match its configured mode.");
+                    }
+                    else if (PInputs.IsStage(stage.Kind))
+                    {
+                        if (project.Tools.P == null || stage.Config == null || stage.Bindings != null ||
+                            stage.Models != null || stage.Sources != null || stage.Arguments != null)
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "P stages require pinned P and one explicit analysis config; scope comes from that config.");
+                        PAnalysis analysis = PInputs.Load(Resolve(path, stage.Config), new(FilePaths.Comparer));
+                        if (stage.Kind != "p-" + analysis.Engine)
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "P stage kind must match its configured engine.");
+                        if (analysis.Engine is "pex" or "psym" or "pobserve" &&
+                            !policy.Requirements.Where(r => r.Scenario == scenario.Id && r.Stage == stage.Id)
+                                .All(r => r.Reviews is { Count: > 0 }))
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "External P artifacts require explicit build/source review obligations.");
+                        if (analysis.Engine is "pex" or "psym" or "pobserve")
+                        {
+                            HashSet<string> reviewIds = policy.Requirements.Where(r => r.Scenario == scenario.Id && r.Stage == stage.Id)
+                                .SelectMany(r => r.Reviews ?? []).ToHashSet(StringComparer.Ordinal);
+                            HashSet<string> inputs = project.Obligations.Where(o => reviewIds.Contains(o.Id))
+                                .SelectMany(o => o.Inputs).Select(p => Resolve(path, p)).ToHashSet(FilePaths.Comparer);
+                            IEnumerable<string> required = analysis.Models.Append(Resolve(path, stage.Config));
+                            required = analysis.Artifact != null ? required.Append(analysis.Artifact.Path) :
+                                required.Concat(new[] { analysis.Observation!.RuntimeJar.Path, analysis.Observation.MonitorJar.Path })
+                                    .Concat(analysis.Observation.Logs);
+                            if (required.Any(p => !inputs.Contains(p)))
+                                throw new InputException(ErrorCode.InvalidWorkflowInput, "External artifact reviews must pin the config, P sources, JARs and selected logs.");
+                        }
+                    }
+                    else if (stage.Kind is "inspect" or "verify" or "oracle")
+                    {
+                        if (stage.Bindings == null || project.Tools.Dafny == null)
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "Integrated stages require bindings and pinned Dafny.");
+                        if (stage.Sources != null || stage.Models != null || stage.Config != null || stage.Arguments != null)
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "Integrated stages take source/model scope only from their binding manifest.");
+                    }
+                    else if (stage.Models is not { Count: > 0 } || project.Tools.Jar == null)
+                        throw new InputException(ErrorCode.InvalidWorkflowInput, "TLA stages require explicit models and a pinned JAR.");
+                    if (stage.Kind is "tlc" or "trace" && (stage.Config == null || stage.Models?.Count != 1))
+                        throw new InputException(ErrorCode.InvalidWorkflowInput, "TLC/trace stages require one root model and config.");
+                    if (stage.Kind == "trace" && stage.Sources is not { Count: > 0 })
+                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Trace stages require copied executable sources including their harness.");
+                    if (stage.Kind is "inputs" or "tlc" or "trace" && stage.Bindings != null ||
+                        stage.Kind is "inputs" or "tlc" && (stage.Sources != null || stage.Arguments != null) ||
+                        stage.Kind == "inputs" && stage.Config != null)
+                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Stage contains options unsupported for its kind: " + stage.Id);
+                    if (!policy.Requirements.Any(r => r.Scenario == scenario.Id && r.Stage == stage.Id))
+                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Every stage needs an acceptance requirement: " + stage.Id);
                 }
-                else if (stage.Kind is "inspect" or "verify" or "oracle")
+                catch (InputException error)
                 {
-                    if (stage.Bindings == null || project.Tools.Dafny == null)
-                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Integrated stages require bindings and pinned Dafny.");
-                    if (stage.Sources != null || stage.Models != null || stage.Config != null || stage.Arguments != null)
-                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Integrated stages take source/model scope only from their binding manifest.");
+                    string origin = project.Authoring!.StageOrigins[scenario.Id + "/" + stage.Id];
+                    throw new InputException(error.Code ?? ErrorCode.InvalidWorkflowInput, origin + ": " + stage.Id + ": " + error.Message);
                 }
-                else if (stage.Models is not { Count: > 0 } || project.Tools.Jar == null)
-                    throw new InputException(ErrorCode.InvalidWorkflowInput, "TLA stages require explicit models and a pinned JAR.");
-                if (stage.Kind is "tlc" or "trace" && (stage.Config == null || stage.Models?.Count != 1))
-                    throw new InputException(ErrorCode.InvalidWorkflowInput, "TLC/trace stages require one root model and config.");
-                if (stage.Kind == "trace" && stage.Sources is not { Count: > 0 })
-                    throw new InputException(ErrorCode.InvalidWorkflowInput, "Trace stages require copied executable sources including their harness.");
-                if (stage.Kind is "inputs" or "tlc" or "trace" && stage.Bindings != null ||
-                    stage.Kind is "inputs" or "tlc" && (stage.Sources != null || stage.Arguments != null) ||
-                    stage.Kind == "inputs" && stage.Config != null)
-                    throw new InputException(ErrorCode.InvalidWorkflowInput, "Stage contains options unsupported for its kind: " + stage.Id);
-                if (!policy.Requirements.Any(r => r.Scenario == scenario.Id && r.Stage == stage.Id))
-                    throw new InputException(ErrorCode.InvalidWorkflowInput, "Every stage needs an acceptance requirement: " + stage.Id);
             }
             Order(scenario);
             if (!policy.Requirements.Any(r => r.Scenario == scenario.Id))
@@ -185,14 +219,34 @@ public static class ProjectInputs
             if (requirement.DiagnosticText != null && (requirement.Expected != "rejected" ||
                 string.IsNullOrWhiteSpace(requirement.Diagnostic) || string.IsNullOrWhiteSpace(requirement.DiagnosticText)))
                 throw new InputException(ErrorCode.InvalidWorkflowInput, "Diagnostic text selectors require a rejected outcome, diagnostic code and nonempty literal text.");
+            if (requirement.DiagnosticCount != null && (requirement.Expected != "rejected" ||
+                string.IsNullOrWhiteSpace(requirement.Diagnostic) || requirement.DiagnosticCount is < 1 or > 1000))
+                throw new InputException(ErrorCode.InvalidWorkflowInput, "Diagnostic counts require a rejection diagnostic and an exact count of 1..1000.");
             foreach (string review in requirement.Reviews ?? [])
                 if (!project.Obligations.Any(o => o.Id == review))
                     throw new InputException(ErrorCode.InvalidWorkflowInput, "Unknown required review: " + review);
             AnalysisStage selected = scenario.Stages.Single(s => s.Id == requirement.Stage);
-            bool nativeClaim = PInputs.IsStage(selected.Kind) || ApalacheInputs.IsStage(selected.Kind);
+            bool nativeClaim = PInputs.IsStage(selected.Kind) || ApalacheInputs.IsStage(selected.Kind) ||
+                selected.Kind is "csharp-regression" or "dafny-verify";
             if (nativeClaim && string.IsNullOrWhiteSpace(requirement.Claim) ||
                 !nativeClaim && requirement.Claim != null)
-                throw new InputException(ErrorCode.InvalidWorkflowInput, "P/Apalache requirements must select an explicit evidence claim; other backends retain their own contracts.");
+                throw new InputException(ErrorCode.InvalidWorkflowInput, "Native analysis requirements must select an explicit backend claim.");
+            if (selected.Kind is "csharp-regression" or "dafny-verify")
+            {
+                string claim = requirement.Expected == "rejected" ? "not-established" :
+                    selected.Kind == "csharp-regression" ? "selected-csharp-regressions" : "dafny-contracts";
+                ErrorCode rejection = selected.Kind == "csharp-regression" ? ErrorCode.RegressionAssertionFailed : ErrorCode.DafnyVerificationFailed;
+                if (requirement.Claim != claim || requirement.Expected == "rejected" && requirement.Diagnostic != rejection.Id())
+                    throw new InputException(ErrorCode.InvalidWorkflowInput, "Native regression/Dafny requirements need the exact claim and assertion/verifier rejection diagnostic.");
+            }
+            if (selected.Kind == "csharp-regression")
+            {
+                CSharpRegressionAnalysis analysis = CSharpRegression.Load(Resolve(path, selected.Config!), new(FilePaths.Comparer));
+                if (requirement.Tests == null || !requirement.Tests.Order(StringComparer.Ordinal).SequenceEqual(analysis.Tests.Order(StringComparer.Ordinal)))
+                    throw new InputException(ErrorCode.InvalidWorkflowInput, "Regression requirements must independently declare the exact selected test IDs.");
+            }
+            else if (requirement.Tests != null)
+                throw new InputException(ErrorCode.InvalidWorkflowInput, "Test IDs are supported only on regression requirements.");
             if (ApalacheInputs.IsStage(selected.Kind))
             {
                 ApalacheAnalysis analysis = ApalacheInputs.Load(Resolve(path, selected.Config!), new(FilePaths.Comparer));
@@ -225,7 +279,8 @@ public static class ProjectInputs
     public static List<CheckCoverage> Coverage(AnalysisProject project, AcceptancePolicy policy, IEnumerable<string> scenarios)
     {
         HashSet<string> selected = scenarios.ToHashSet(StringComparer.Ordinal);
-        return (project.CheckObligations ?? []).Where(o => selected.Contains(o.Scenario)).Select(obligation => {
+        return (project.CheckObligations ?? []).Where(o => selected.Contains(o.Scenario)).Select(obligation =>
+        {
             List<string> gaps = [];
             if (obligation.Requirements.Count == 0) gaps.Add("No required check is mapped.");
             foreach (string id in obligation.Requirements)

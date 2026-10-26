@@ -7,7 +7,7 @@ using Microsoft.CodeAnalysis.CSharp;
 
 namespace TlaLink;
 
-public sealed class DafnyBackend(string executable, string output, int timeout, IntegratedPacket packet)
+public sealed class DafnyBackend(string executable, string output, int timeout, DafnyEvidenceState packet)
 {
     private List<string> dependencies = [];
     public string Executable { get; } = FilePaths.Full(executable);
@@ -24,7 +24,7 @@ public sealed class DafnyBackend(string executable, string output, int timeout, 
         foreach (string arg in args) start.ArgumentList.Add(arg);
         Files.WriteNew(Path.Combine(Output, stage + ".invocation.json"), new {
             SchemaVersion = Schema.Version, Kind = "process-invocation",
-            Executable = executable, Arguments = args, start.WorkingDirectory
+            Executable = executable, Arguments = args, start.WorkingDirectory, TimeoutSeconds = timeout
         });
         using Process process = Process.Start(start) ?? throw new InputException(ErrorCode.IntegratedToolFailure, "Could not start " + executable);
         Task<string> stdout = process.StandardOutput.ReadToEndAsync(), stderr = process.StandardError.ReadToEndAsync();
@@ -43,13 +43,21 @@ public sealed class DafnyBackend(string executable, string output, int timeout, 
     {
         if (!File.Exists(Executable) || !File.Exists(Path.Combine(Home, "DafnyCore.dll")))
             throw new InputException(ErrorCode.InvalidDafnyTool, "--dafny must select a trusted local Dafny 4.11.0 distribution executable.");
-        foreach (string file in Directory.EnumerateFiles(Home, "*", new EnumerationOptions {
-            RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false
-        })) Files.Pin(packet.Fingerprints, FilePaths.Full(file), Files.Hash(file));
+        PinDistribution(Executable, packet.Fingerprints);
         StageResult version = Run("dafny-version", Executable, ["--version"]);
         if (version.Status != "passed" || !Files.Read(version.Log).Trim().StartsWith("4.11.0+", StringComparison.Ordinal))
             throw new InputException(ErrorCode.InvalidDafnyTool, "This backend requires pinned Dafny 4.11.0; see " + version.Log);
         BuildIndex();
+    }
+
+    public static void PinDistribution(string executable, Dictionary<string, string> fingerprints)
+    {
+        string home = Path.GetDirectoryName(FilePaths.Full(executable))!;
+        if (!File.Exists(executable) || !File.Exists(Path.Combine(home, "DafnyCore.dll")))
+            throw new InputException(ErrorCode.InvalidDafnyTool, "Select a complete local Dafny 4.11.0 distribution.");
+        foreach (string file in Directory.EnumerateFiles(home, "*", new EnumerationOptions {
+            RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false
+        })) Files.Pin(fingerprints, FilePaths.Full(file), Files.Hash(file));
     }
 
     private void BuildIndex()

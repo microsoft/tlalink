@@ -47,6 +47,7 @@ for prerequisites, limits and test coverage.
 | Does this recorded C# execution fit my TLA+ model? | Instrument a separate source copy, record its build and execution, then use TLC to find a whole-trace witness. |
 | Does this C# operation agree with a verified algorithm? | Compare selected C# adapter calls with an executable Dafny oracle. |
 | Does my model satisfy its properties? | Run explicitly selected TLC, Apalache, Dafny or P analyses, keeping their different guarantees separate. |
+| Can my C# regression harness and standalone Dafny proofs join one evidence workflow? | Run explicit console-harness regression and native Dafny stages with independent provenance and acceptance checks. |
 | Is yesterday's evidence still relevant after a change? | Check archived evidence, current inputs and independent acceptance requirements. |
 | Which evidence must I keep, and what needs rechecking? | Use the read-only [retention planner](REFERENCE.md#evidence-retention-and-recheck-planning) to follow explicit pins, review histories and recorded dependencies. |
 | Can I share the whole evidence story with a person? | Generate a [Markdown report with Mermaid diagrams](REFERENCE.md#human-readable-evidence-reports), linked code regions, scoped claims, assumptions and open gates. |
@@ -95,6 +96,13 @@ agree on the smallest useful scope and the evidence needed.
 
 For repeatable work, the project workflow is
 **`doctor` -> `plan` -> `run` -> `accept` -> `explain`**.
+The [evidence-stage example](examples/Evidence/project.json) combines C#
+regressions and standalone Dafny proofs. Acceptance summaries group remaining
+work into incomplete stages, review gates, unmet requirements and validation
+diagnostics; full receipts retain the complete evidence assessment.
+For larger projects, [component manifests](examples/Components/README.md) keep
+checks beside their code, share explicit input sets and execution budgets,
+and assemble into one project through a small root manifest.
 The agent handles the mechanics; you should expect an explanation of the
 claim, the evidence supporting it and its limitations. It must not weaken
 requirements or replace a baseline merely to get a pass.

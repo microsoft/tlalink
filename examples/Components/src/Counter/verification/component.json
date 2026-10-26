@@ -1,0 +1,38 @@
+{
+  "$schema": "../../../../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "project-component",
+  "id": "counter",
+  "stages": [
+    {
+      "id": "counter-safety",
+      "kind": "tlc",
+      "profile": "small-tlc",
+      "models": ["Counter.tla"],
+      "config": "Safety.cfg"
+    },
+    {
+      "id": "counter-control",
+      "kind": "tlc",
+      "profile": "small-tlc",
+      "models": ["Counter.tla"],
+      "config": "Control.cfg"
+    }
+  ],
+  "obligations": [
+    {
+      "id": "counter-correspondence",
+      "claim": "Review the selected C# counter against the finite model. Native TLC outcomes alone do not establish C# correspondence.",
+      "assumptions": ["Calls are serialized; no concurrent or reflective mutation is modeled."],
+      "input_sets": ["counter-scope"]
+    }
+  ],
+  "check_obligations": [
+    {
+      "id": "counter-state-safety",
+      "kind": "safety",
+      "scenario": "complete",
+      "requirements": ["counter-safe"]
+    }
+  ]
+}

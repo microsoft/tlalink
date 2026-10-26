@@ -6,17 +6,23 @@ public sealed class CliOptions
     public string Command { get; }
     public CliOptions(string[] args)
     {
-        if (args.Length == 0) throw new InputException("Usage: TlaLink <report|gc|doctor|plan|run|accept|explain|inspect|check|review|inputs|instrument|execute|validate-trace|check-apalache|read-apalache|inspect-integrated|verify-integrated|test-integrated|read-integrated> [--option value ...]");
+        if (args.Length == 0) throw new InputException("Usage: TlaLink <report|gc|expand|project-schema|doctor|plan|run|accept|explain|inspect|check|review|inputs|instrument|execute|validate-trace|check-regression|read-regression|check-dafny|read-dafny|check-apalache|read-apalache|inspect-integrated|verify-integrated|test-integrated|read-integrated> [--option value ...]");
         Command = args[0];
         Dictionary<string, string[]> allowed = new()
         {
-            ["report"] = ["manifest", "output", "format"],
+            ["report"] = ["manifest", "project", "run", "output", "format"],
+            ["check-dafny"] = ["config", "dafny", "output", "timeout", "format"],
+            ["read-dafny"] = ["result", "current", "format"],
+            ["check-regression"] = ["config", "output", "timeout", "format"],
+            ["read-regression"] = ["result", "current", "format"],
             ["check-apalache"] = ["config", "apalache", "jar", "output", "timeout", "format"],
             ["read-apalache"] = ["result", "current", "format"],
             ["inspect-p"] = ["config", "p", "output", "reference", "define", "timeout", "format"],
             ["check-p"] = ["config", "p", "output", "reference", "define", "timeout", "format"],
             ["read-p"] = ["result", "current", "format"],
             ["gc"] = ["store", "pins", "grace-hours", "apply", "exclusive", "output", "format"],
+            ["expand"] = ["project", "output", "format"],
+            ["project-schema"] = ["output", "format"],
             ["doctor"] = ["project", "scenario", "format"],
             ["plan"] = ["project", "scenario", "format"],
             ["run"] = ["project", "scenario", "output", "format"],
@@ -29,7 +35,7 @@ public sealed class CliOptions
             ["inputs"] = ["model", "jar", "timeout", "format"],
             ["instrument"] = ["source", "model", "reference", "define", "jar", "timeout", "format", "output"],
             ["execute"] = ["manifest", "project", "trace", "output", "timeout", "format", "arg"],
-            ["validate-trace"] = ["model", "manifest", "trace", "config", "execution", "jar", "output", "timeout", "format", "init", "next"],
+            ["validate-trace"] = ["model", "manifest", "trace", "config", "execution", "jar", "output", "timeout", "format", "init", "next", "workers", "max-heap-mib"],
             ["inspect-integrated"] = ["bindings", "dafny", "jar", "reference", "define", "output", "baseline", "timeout", "format"],
             ["verify-integrated"] = ["bindings", "dafny", "jar", "reference", "define", "output", "baseline", "timeout", "format"],
             ["test-integrated"] = ["bindings", "dafny", "jar", "reference", "define", "output", "baseline", "timeout", "format"],
@@ -37,6 +43,7 @@ public sealed class CliOptions
         };
         if (!allowed.TryGetValue(Command, out string[]? options)) throw new InputException("Unknown command: " + Command);
         HashSet<string> repeated = ["source", "model", "reference", "define", "arg", "evidence"];
+        if (Command == "report") repeated.Add("run");
         for (int i = 1; i < args.Length; i += 2)
         {
             if (!args[i].StartsWith("--", StringComparison.Ordinal) || i + 1 >= args.Length) throw new InputException("Options require --name value.");

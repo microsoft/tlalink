@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "project-input-sets",
+  "sets": [
+    {
+      "id": "counter-scope",
+      "inputs": [
+        "../src/Counter/Counter.cs",
+        "../src/Counter/verification/Counter.tla",
+        "../src/Counter/verification/Safety.cfg",
+        "../src/Counter/verification/Control.cfg"
+      ]
+    }
+  ]
+}

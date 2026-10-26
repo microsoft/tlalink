@@ -14,10 +14,13 @@ public static class Program
         {
             options = new(args);
             if (options.Command == "report") return EvidenceReport.Run(options);
+            if (options.Command == "project-schema") return ProjectEditorSchema.Run(options);
             if (options.Command == "gc") return EvidenceGarbageCollection.Run(options);
+            if (options.Command is "check-dafny" or "read-dafny") return DafnyAnalysisBackend.Run(options);
+            if (options.Command is "check-regression" or "read-regression") return CSharpRegression.Run(options);
             if (options.Command is "check-apalache" or "read-apalache") return ApalacheBackend.Run(options);
             if (options.Command is "inspect-p" or "check-p" or "read-p") return PBackend.Run(options);
-            if (options.Command is "doctor" or "plan" or "run" or "accept" or "explain" or "record-review") return ProjectWorkflow.Run(options);
+            if (options.Command is "expand" or "doctor" or "plan" or "run" or "accept" or "explain" or "record-review") return ProjectWorkflow.Run(options);
             if (options.Command == "read-integrated") return IntegratedEvidence.Read(options);
             if (options.Command is "inspect-integrated" or "verify-integrated" or "test-integrated")
                 return IntegratedReview.Run(options);
@@ -52,7 +55,7 @@ public static class Program
                 object validation = TraceValidation.Validate(options.Required("manifest"), options.Required("trace"),
                     options.Required("config"), document.Path, document.Module, document.Variables.ToList(),
                     models.Bindings, models.Fingerprints, jar, options.Required("output"), options.Timeout,
-                    options.Get("init", "Init"), options.Get("next", "Next"), options.Required("execution"));
+                    options.Get("init", "Init"), options.Get("next", "Next"), options.Required("execution"), TlcResources.FromCli(options));
                 Render(validation, options);
                 using JsonDocument result = JsonDocument.Parse(JsonSerializer.Serialize(validation, Files.Json));
                 return result.RootElement.GetProperty("status").GetString() switch { "conforms" => 0, "rejected" => 1, _ => 2 };

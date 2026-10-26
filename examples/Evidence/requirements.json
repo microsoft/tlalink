@@ -1,0 +1,25 @@
+{
+  "schema_version": 4,
+  "kind": "acceptance-policy",
+  "project": "evidence-stages",
+  "requirements": [
+    {
+      "id": "selected-regressions",
+      "scenario": "arithmetic",
+      "stage": "regressions",
+      "expected": "passed",
+      "claim": "selected-csharp-regressions",
+      "tests": ["increment", "limit"],
+      "config_sha256": "E68C25D6512F6924C8F533C7E99D6C8416B43B624C9099F33EBA802F55DA476A"
+    },
+    {
+      "id": "dafny-contracts",
+      "scenario": "arithmetic",
+      "stage": "contracts",
+      "expected": "passed",
+      "claim": "dafny-contracts",
+      "reviews": ["source-correspondence"],
+      "config_sha256": "7C070AB00AA99DD604A8EBB157E6D5CDA369389C526DD3337FD5C09FD478668B"
+    }
+  ]
+}

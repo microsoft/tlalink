@@ -1,0 +1,38 @@
+{
+  "schema_version": 4,
+  "kind": "analysis-project",
+  "id": "evidence-stages",
+  "tools": {
+    "dafny": {
+      "path": "..\\..\\.tools\\dafny\\Dafny.exe",
+      "sha256": "AEBB6E5EA4AA1A8BA5432EE214C47255FD7AA5A583F5CAC8E83D27D9992C4DD0"
+    }
+  },
+  "compiler": {
+    "target_framework": "net10.0",
+    "language_version": "14",
+    "nullable": "enable",
+    "checked": false,
+    "allow_unsafe": true,
+    "references": []
+  },
+  "requirements": "requirements.json",
+  "scenarios": [
+    {
+      "id": "arithmetic",
+      "stages": [
+        {"id": "regressions", "kind": "csharp-regression", "depends_on": [], "timeout_seconds": 60, "config": "regression.json"},
+        {"id": "contracts", "kind": "dafny-verify", "depends_on": [], "timeout_seconds": 60, "config": "dafny.json"}
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "id": "source-correspondence",
+      "claim": "Review the correspondence between the selected C# implementation, test assertions, Dafny preconditions and arithmetic model.",
+      "assumptions": ["The proof concerns its supplied Dafny implementation, not arbitrary C# inputs or executions."],
+      "inputs": ["Program.cs", "Increment.dfy", "regression.json", "dafny.json"]
+    }
+  ],
+  "review_directory": "reviews"
+}

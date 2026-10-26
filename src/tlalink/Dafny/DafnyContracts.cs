@@ -23,27 +23,31 @@ public sealed record CorrespondenceResult(Correspondence Claim, string Status = 
     string CompositionStatus = "not-proved");
 public sealed record StageResult(string Status, string Log, int? ExitCode);
 
-public sealed class IntegratedPacket(string command)
+public class DafnyEvidenceState
+{
+    public string ProofStatus { get; set; } = "not-run";
+    public string AuditStatus { get; set; } = "not-run";
+    public List<Issue> Diagnostics { get; } = [];
+    public Dictionary<string, string> Fingerprints { get; } = new(FilePaths.Comparer);
+    public Dictionary<string, string> GeneratedFiles { get; } = new(FilePaths.Comparer);
+    public Dictionary<string, StageResult> Stages { get; } = [];
+}
+
+public sealed class IntegratedPacket(string command) : DafnyEvidenceState
 {
     public int SchemaVersion => Schema.Version;
     public string Kind => "integrated-result";
     public string Command { get; } = command;
     public string LinksStatus { get; set; } = "incomplete";
     public string CoverageStatus => "requires-review";
-    public string ProofStatus { get; set; } = "not-run";
-    public string AuditStatus { get; set; } = "not-run";
     public string ConformanceStatus { get; set; } = "not-run";
     public string CorrespondenceStatus => Correspondences.Count == 0 ? "not-specified" : "requires-review";
     public string ProvenanceStatus { get; set; } = "incomplete";
     public string Status { get; set; } = "incomplete";
-    public List<Issue> Diagnostics { get; } = [];
     public List<DafnyLink> Links { get; } = [];
     public List<DafnyDeclaration> Inventory { get; } = [];
     public List<Endpoint> SourceInventory { get; } = [];
     public List<CorrespondenceResult> Correspondences { get; } = [];
-    public Dictionary<string, string> Fingerprints { get; } = new(FilePaths.Comparer);
-    public Dictionary<string, string> GeneratedFiles { get; } = new(FilePaths.Comparer);
-    public Dictionary<string, StageResult> Stages { get; } = [];
     public Packet? Tla { get; set; }
     public object? Execution { get; set; }
     public List<string> Boundaries { get; } = [

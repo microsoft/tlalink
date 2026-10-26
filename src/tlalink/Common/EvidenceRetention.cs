@@ -11,7 +11,7 @@ public sealed record ProtectedConsumer(string Path, string Reason, Dictionary<st
     List<CatalogInput> Inputs, List<string> References);
 public sealed record ProtectedConsumerCatalog(int SchemaVersion, string Kind, string Store,
     Dictionary<string, string> ProducerFingerprints, List<ProtectedConsumer> Consumers);
-public sealed record GcInputUse(string Consumer, string ExpectedSha256);
+public sealed record GcInputUse(string Consumer, string? ExpectedSha256);
 public sealed record GcInputChange(string Path, string Status, string? ActualSha256, List<GcInputUse> Consumers);
 public sealed record GcRecheck(string Path, string Kind, List<string> ChangedInputs, List<string> AffectedBy,
     string Scope, List<string> Actions);
@@ -264,7 +264,7 @@ public static partial class EvidenceGarbageCollection
                             if (!Hash(pin.Value)) throw new InputException(ErrorCode.InvalidRetention, "Invalid SANY library fingerprint: " + pin.Key);
                             continue;
                         }
-                        if (!pin.Key.StartsWith("runtime:", StringComparison.Ordinal) && !pin.Key.StartsWith("tool:", StringComparison.Ordinal))
+                        if (pin.Key != "compiler:defines" && !pin.Key.StartsWith("runtime:", StringComparison.Ordinal) && !pin.Key.StartsWith("tool:", StringComparison.Ordinal))
                             throw new InputException(ErrorCode.InvalidRetention, "Unknown non-file fingerprint: " + pin.Key);
                         continue;
                     }
@@ -280,7 +280,19 @@ public static partial class EvidenceGarbageCollection
                     JsonElement document = state.Read(file);
                     if (document.ValueKind != JsonValueKind.Object || !document.TryGetProperty("kind", out JsonElement kind)) continue;
                     if (kind.ValueKind != JsonValueKind.String) throw new InputException(ErrorCode.InvalidRetention, "Invalid document kind: " + file);
-                    if (kind.GetString() == "review-decision") Review(document, run.ProjectDirectory, consumer);
+                    if (kind.GetString() is "csharp-regression-result" or "execution-receipt")
+                    {
+                        Files.RequireSchema(document, kind.GetString()!);
+                        JsonElement build = kind.GetString() == "csharp-regression-result" ? document.GetProperty("build") : document;
+                        foreach (JsonElement absent in build.GetProperty("missing_build_inputs").EnumerateArray())
+                        {
+                            string path = FilePaths.Full(absent.GetString()!);
+                            if (!inputs.TryGetValue(path, out List<GcInputUse>? uses)) inputs.Add(path, uses = []);
+                            uses.Add(new(consumer.Path, null));
+                            Reference(path, consumer);
+                        }
+                    }
+                    else if (kind.GetString() == "review-decision") Review(document, run.ProjectDirectory, consumer);
                     else if (kind.GetString() == "acceptance-result")
                     {
                         Files.RequireSchema(document, "acceptance-result");
@@ -319,9 +331,14 @@ public static partial class EvidenceGarbageCollection
             state.Try(path, () => {
                 JsonElement json = state.Read(path);
                 Files.RequireSchema(json, "analysis-project");
-                AnalysisProject project = json.Deserialize<AnalysisProject>(ProjectInputs.Json)!;
+                AnalysisProject project = ProjectComposition.Read(path, file => {
+                    JsonElement authored = state.Read(file);
+                    return new(authored, state.DocumentHashes[file]);
+                });
                 string directory = Path.GetDirectoryName(path)!;
                 Reference(path, null, "review project: " + path);
+                foreach (string authored in project.Authoring!.Fingerprints.Keys)
+                    Reference(authored, null, "review project authoring: " + path);
                 Reference(FilePaths.Full(project.Requirements, directory), null, "review project requirements: " + path);
                 foreach (ReviewObligation obligation in project.Obligations)
                 {
@@ -362,8 +379,8 @@ public static partial class EvidenceGarbageCollection
                 else { NoLinks(input.Key); state.MissingPaths.Add(input.Key); }
             });
             if (!readable) status = "unreadable";
-            List<GcInputUse> affected = input.Value.Where(p => actual == null ||
-                !p.ExpectedSha256.Equals(actual, StringComparison.OrdinalIgnoreCase)).Distinct().ToList();
+            List<GcInputUse> affected = input.Value.Where(p => !readable ||
+                !string.Equals(p.ExpectedSha256, actual, StringComparison.OrdinalIgnoreCase)).Distinct().ToList();
             if (affected.Count == 0) continue;
             changes.Add(new(input.Key, status, actual, affected));
             foreach (GcInputUse use in affected) consumers[use.Consumer].ChangedInputs.Add(input.Key);

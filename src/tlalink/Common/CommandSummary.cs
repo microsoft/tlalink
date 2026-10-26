@@ -5,7 +5,9 @@ namespace TlaLink;
 
 public static class CommandSummary
 {
-    public static JsonObject Create(object value, CliOptions options)
+    public static JsonObject Create(object value, CliOptions options) => Create(value, options, null);
+
+    internal static JsonObject Create(object value, CliOptions options, AcceptanceWorklist? worklist)
     {
         JsonObject source = JsonSerializer.SerializeToNode(value, Files.Json)!.AsObject();
         JsonObject result = Select(source, [
@@ -14,7 +16,7 @@ public static class CommandSummary
             "acceptance_status", "claim", "mode", "links_status", "proof_status", "audit_status",
             "conformance_status", "coverage_status", "correspondence_status", "provenance_status",
             "directory", "path", "boundary", "boundaries", "diagnostics", "next_actions", "statistics",
-            "nodes", "code_regions", "input_files"]);
+            "nodes", "code_regions", "input_files", "requested_resources", "resources"]);
         if (source["kind"]?.GetValue<string>() == "gc-plan")
         {
             foreach (string field in new[] { "store", "retention", "planned_at", "grace_hours", "read_only",
@@ -53,7 +55,7 @@ public static class CommandSummary
         result["kind"] = "command-summary";
         result["result_kind"] = source["kind"]?.DeepClone();
         result["presentation_only"] = true;
-        string[] stageFields = ["id", "kind", "depends_on", "execution_status", "outcome", "duration_seconds", "evidence", "diagnostics", "statistics"];
+        string[] stageFields = ["id", "kind", "depends_on", "execution_status", "outcome", "duration_seconds", "evidence", "diagnostics", "statistics", "requested_resources", "resources"];
         if (source["scenarios"] is JsonArray scenarios)
             result["scenarios"] = new JsonArray(scenarios.Select(item => {
                 JsonObject scenario = Select(item!.AsObject(), ["id"]);
@@ -83,6 +85,7 @@ public static class CommandSummary
         if (options.Optional("output") is string output) result["output"] = FilePaths.Full(output);
         if (options.Optional("result") is string receipt) result["result"] = FilePaths.Full(receipt);
         if (options.Optional("run") is string run) result["run"] = FilePaths.Full(run);
+        worklist?.Apply(result);
         return result;
     }
 

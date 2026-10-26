@@ -1,0 +1,26 @@
+{
+  "$schema": "../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "analysis-project",
+  "id": "component-counter",
+  "tools": {
+    "jar": {
+      "path": "../../.tools/tla/v1.8.0/tla2tools.jar",
+      "sha256": "D15655EEAFF4B3F7B3D65C46B838BC0F35D131B2EF4B1E473689B62C98D4726F"
+    }
+  },
+  "compiler": {
+    "target_framework": "net10.0",
+    "language_version": "14",
+    "nullable": "enable",
+    "checked": false,
+    "allow_unsafe": true,
+    "references": []
+  },
+  "requirements": "verification/requirements.json",
+  "review_directory": "verification/reviews",
+  "input_sets": ["verification/inputs.json"],
+  "execution_profiles": ["verification/profiles.json"],
+  "components": ["src/Counter/verification/component.json"],
+  "scenarios": [{ "id": "complete", "components": ["counter"] }]
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "../../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "project-execution-profiles",
+  "profiles": [
+    {
+      "id": "small-tlc",
+      "kind": "tlc",
+      "timeout_seconds": 30,
+      "resources": { "workers": 1, "max_heap_mib": 512 }
+    }
+  ]
+}

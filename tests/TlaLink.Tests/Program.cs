@@ -19,13 +19,13 @@ public static class Program
         }
         string root = FilePaths.Full(args.FirstOrDefault() ?? Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\.."));
         string[] testArguments = args.Skip(1).ToArray();
-        string[] selections = ["--core", "--apalache", "--p", "--diagnostics", "--integrated", "--workflow"];
+        string[] selections = ["--core", "--apalache", "--p", "--diagnostics", "--integrated", "--workflow", "--evidence"];
         if (testArguments.Length > 2 ||
             testArguments.Count(a => a.StartsWith("--", StringComparison.Ordinal)) > 1 ||
             testArguments.Count(a => !a.StartsWith("--", StringComparison.Ordinal)) > 1 ||
             testArguments.Any(a => a.StartsWith("--", StringComparison.Ordinal) && !selections.Contains(a)))
         {
-            Console.Error.WriteLine("Usage: TlaLink.Tests [root [report.json] [--core|--apalache|--p|--diagnostics|--integrated|--workflow]]");
+            Console.Error.WriteLine("Usage: TlaLink.Tests [root [report.json] [--core|--apalache|--p|--diagnostics|--integrated|--workflow|--evidence]]");
             return 2;
         }
         string? selection = testArguments.SingleOrDefault(a => a.StartsWith("--", StringComparison.Ordinal));
@@ -63,6 +63,12 @@ public static class Program
             ToolHashTests.Register(Test, work);
             if (selection is null or "--core" or "--apalache") ApalacheTests.RegisterExample(Test, root);
             DiagnosticTests.Register(Test);
+            if (selection == "--evidence")
+            {
+                StageEvidenceTests.RegisterCore(Test, root, work);
+                StageEvidenceTests.RegisterNative(Test, root, work);
+                return Finish();
+            }
             if (selection == "--apalache")
             {
                 ApalacheTests.RegisterCore(Test, work);
@@ -85,6 +91,7 @@ public static class Program
                 CoreTests.Register(Test, work);
                 EvidenceReportTests.Register(Test, work);
                 EvidenceRetentionTests.Register(Test, work);
+                StageEvidenceTests.RegisterCore(Test, root, work);
                 return Finish();
             }
             if (selection == "--integrated")
@@ -102,6 +109,8 @@ public static class Program
             CoreTests.Register(Test, work);
             EvidenceReportTests.Register(Test, work);
             EvidenceRetentionTests.Register(Test, work);
+            StageEvidenceTests.RegisterCore(Test, root, work);
+            StageEvidenceTests.RegisterNative(Test, root, work);
             ApalacheTests.RegisterCore(Test, work);
             ApalacheTests.RegisterNative(Test, root, work);
             JavaToolchainTests.RegisterCore(Test, work);

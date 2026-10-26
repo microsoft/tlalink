@@ -15,7 +15,8 @@ public static partial class ProjectWorkflow
         TlaDocument document = TlaBackend.Parse(model, jar, stage.TimeoutSeconds);
         foreach (var pin in document.DependencyFingerprints) Files.Pin(pins, pin.Key, pin.Value);
         RequireTlcModel(document);
-        var result = Invoke(Executable("java"), ["-Xmx512m", "-cp", jar, "tlc2.TLC", "-tool", "-workers", "1",
+        TlcResources resources = TlcResources.Effective(stage.Kind, stage.Resources);
+        var result = Invoke(Executable("java"), [resources.HeapArgument, "-cp", jar, "tlc2.TLC", "-tool", "-workers", resources.WorkerArgument,
             "-metadir", Path.Combine(output, "states"), "-config", ProjectInputs.Resolve(path, stage.Config!), model],
             output, stage.TimeoutSeconds, "tlc", allowFailure: true);
         List<Issue> diagnostics = TlcDiagnostics(result.Text);
@@ -26,6 +27,8 @@ public static partial class ProjectWorkflow
             Status = result.ExitCode == 0 ? "passed" : rejected ? "rejected" : "incomplete",
             Diagnostics = diagnostics,
             Model = model, Config = ProjectInputs.Resolve(path, stage.Config!), ExitCode = result.ExitCode,
+            RequestedResources = stage.Resources, Resources = resources,
+            Invocation = ProjectInputs.Read<JsonElement>(Path.Combine(output, "tlc.invocation.json")),
             Statistics = ReadTlcStatistics(result.Text),
             Boundaries = new[] { "Only the configured finite model; source correspondence and fingerprint collision risk require review." }
         }, Files.Json);
