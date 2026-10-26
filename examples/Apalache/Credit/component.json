@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "project-component",
+  "id": "credit",
+  "stages": [
+    { "id": "types", "kind": "apalache-typecheck", "timeout_seconds": 60, "config": "typecheck.json" },
+    { "id": "bounded", "kind": "apalache-check", "depends_on": ["types"], "timeout_seconds": 60, "config": "bounded.json" },
+    { "id": "inductive", "kind": "apalache-inductive", "depends_on": ["types"], "timeout_seconds": 60, "config": "inductive.json" },
+    { "id": "counterexample", "kind": "apalache-check", "timeout_seconds": 60, "config": "rejected.json" },
+    { "id": "noninductive", "kind": "apalache-inductive", "timeout_seconds": 60, "config": "noninductive.json" }
+  ],
+  "check_obligations": [
+    { "id": "credit-safety", "kind": "safety", "scenario": "credit", "requirements": ["bounded", "inductive"] }
+  ]
+}

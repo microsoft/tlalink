@@ -1,7 +1,7 @@
 {
   "schema_version": 4,
   "kind": "integrated-bindings",
-  "sources": ["Cancellation.cs"],
+  "sources": ["../Cancellation.cs"],
   "proofs": ["Rejected.dfy"],
   "models": [],
   "bindings": [

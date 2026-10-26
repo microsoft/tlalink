@@ -9,9 +9,9 @@ public static class StageEvidenceTests
     {
         test("public project examples retain their approved configuration bytes after checkout", () =>
         {
-            foreach (string relative in new[] { Path.Combine("Evidence", "project.json"), Path.Combine("Components", "tlalink.project.json") })
+            foreach (string relative in new[] { "Workflow", "Evidence", "Components" })
             {
-                string path = Path.Combine(root, "examples", relative);
+                string path = Path.Combine(root, "examples", relative, "tlalink.project.json");
                 AnalysisProject project = ProjectComposition.Read(path);
                 AcceptancePolicy policy = ProjectInputs.Read<AcceptancePolicy>(ProjectInputs.Resolve(path, project.Requirements));
                 foreach (AnalysisRequirement requirement in policy.Requirements.Where(r => r.ConfigSha256 != null))
@@ -34,7 +34,7 @@ public static class StageEvidenceTests
         });
         string fixture = Path.Combine(work, "regression-stage");
         Directory.CreateDirectory(fixture);
-        foreach (string file in Directory.EnumerateFiles(Path.Combine(root, "examples", "Evidence")))
+        foreach (string file in Directory.EnumerateFiles(Path.Combine(root, "examples", "Evidence", "src", "Increment")))
             File.Copy(file, Path.Combine(fixture, Path.GetFileName(file)));
         string config = Path.Combine(fixture, "regression.json");
         test("regression path arguments resolve and pin explicit file indices without interpreting opaque arguments", () =>
@@ -203,7 +203,7 @@ public static class StageEvidenceTests
         test("native proof-only Dafny verifies without C# bindings and independently rereads its audit", () =>
         {
             string output = Path.Combine(work, "native-dafny-good");
-            var response = TestCli.Run(["check-dafny", "--config", Path.Combine(root, "examples", "Evidence", "dafny.json"),
+            var response = TestCli.Run(["check-dafny", "--config", Path.Combine(root, "examples", "Evidence", "src", "Increment", "verification", "dafny.json"),
                 "--dafny", dafny, "--output", output, "--timeout", "60"]);
             if (response.Code != 0) throw new InvalidOperationException(response.Json);
             var read = TestCli.Run(["read-dafny", "--result", Path.Combine(output, "result.json"), "--current", "true"]);
@@ -265,7 +265,8 @@ public static class StageEvidenceTests
         {
             string directory = Directory.CreateDirectory(Path.Combine(work, "resource-project")).FullName;
             string projectPath = Path.Combine(directory, "project.json"), policyPath = Path.Combine(directory, "requirements.json");
-            string model = Path.Combine(root, "examples", "Workflow", "Lanes.tla"), config = Path.Combine(root, "examples", "Workflow", "Lanes.cfg");
+            string lanes = Path.Combine(root, "examples", "Workflow", "src", "Lanes", "verification");
+            string model = Path.Combine(lanes, "Lanes.tla"), config = Path.Combine(lanes, "Lanes.cfg");
             CompilerProfile compiler = new("net10.0", "14", "enable", false, true, []);
             AnalysisStage stage = new("model", "tlc", [], 60, Models: [model], Config: config, Resources: new(2, 512));
             AnalysisProject project = new(Schema.Version, "analysis-project", "resources", new(Jar: new(jar, Files.Hash(jar))),
@@ -322,15 +323,16 @@ public static class StageEvidenceTests
         });
         test("native regression and proof stages use ordinary acceptance reporting and retention", () =>
         {
-            string fixture = Directory.CreateDirectory(Path.Combine(work, "evidence-project")).FullName;
-            foreach (string file in Directory.EnumerateFiles(Path.Combine(root, "examples", "Evidence")))
-                File.Copy(file, Path.Combine(fixture, Path.GetFileName(file)));
-            string path = Path.Combine(fixture, "project.json");
-            AnalysisProject project = ProjectInputs.Read<AnalysisProject>(path);
-            Save(path, project with { Tools = new(Dafny: new(dafny, Files.Hash(dafny))) });
+            string fixture = Path.Combine(work, "evidence-project");
+            Copy(Path.Combine(root, "examples", "Evidence"), fixture);
+            string path = Path.Combine(fixture, "tlalink.project.json");
+            JsonObject authored = JsonNode.Parse(Files.Read(path))!.AsObject();
+            authored["tools"] = JsonSerializer.SerializeToNode(new ProjectTools(Dafny: new(dafny, Files.Hash(dafny))), Files.Json);
+            Save(path, authored);
+            string increment = Path.Combine(fixture, "src", "Increment");
             File.WriteAllText(Path.Combine(fixture, "NuGet.Config"), "<configuration><packageSources><clear /></packageSources></configuration>");
-            ObservedExecution.RequireSuccess(ObservedExecution.Invoke(["restore", Path.Combine(fixture, "Regression.csproj"),
-                "--configfile", Path.Combine(fixture, "NuGet.Config"), "-p:NuGetAudit=false"], fixture, 60, "restore"));
+            ObservedExecution.RequireSuccess(ObservedExecution.Invoke(["restore", Path.Combine(increment, "Regression.csproj"),
+                "--configfile", Path.Combine(fixture, "NuGet.Config"), "-p:NuGetAudit=false"], increment, 60, "restore"));
             string store = Directory.CreateDirectory(Path.Combine(work, "evidence-stage-store")).FullName;
             string output = Path.Combine(store, "arithmetic");
             var run = TestCli.Run(["run", "--project", path, "--scenario", "arithmetic", "--output", output]);
@@ -342,7 +344,7 @@ public static class StageEvidenceTests
             CoreTests.True(Files.Read(pending).Contains("not-accepted", StringComparison.Ordinal));
             CoreTests.True(Files.Read(pending + ".json").Contains("evidence-report", StringComparison.Ordinal));
             CoreTests.Equal(0, TestCli.Run(["record-review", "--project", path, "--obligation", "source-correspondence",
-                "--reviewer", "synthetic-test", "--rationale", "Explicit test-only review assertion.", "--evidence", "Program.cs"]).Code);
+                "--reviewer", "synthetic-test", "--rationale", "Explicit test-only review assertion.", "--evidence", Path.Combine("src", "Increment", "Program.cs")]).Code);
             var acceptance = TestCli.Run(["accept", "--project", path, "--run", output]);
             if (acceptance.Code != 0) throw new InvalidOperationException(acceptance.Json);
             string accepted = Path.Combine(work, "evidence-accepted.md");
@@ -358,8 +360,9 @@ public static class StageEvidenceTests
         {
             string directory = Directory.CreateDirectory(Path.Combine(work, "resource-trace")).FullName;
             string path = Path.Combine(directory, "project.json"), policyPath = Path.Combine(directory, "requirements.json");
-            string example = Path.Combine(root, "examples", "Workflow");
-            AnalysisProject original = ProjectInputs.Read<AnalysisProject>(Path.Combine(example, "project.json"));
+            string examplePath = Path.Combine(root, "examples", "Workflow", "tlalink.project.json");
+            string example = Path.GetDirectoryName(examplePath)!;
+            AnalysisProject original = ProjectComposition.Read(examplePath);
             AnalysisScenario lanes = original.Scenarios.Single(s => s.Id == "lanes");
             Save(path, original with {
                 Tools = new(Jar: new(jar, Files.Hash(jar))), Requirements = policyPath, Obligations = [],
@@ -368,7 +371,7 @@ public static class StageEvidenceTests
                     Models = s.Models?.Select(p => Path.Combine(example, p)).ToList(),
                     Config = Path.Combine(example, s.Config!), Resources = new(2, 512) }).ToList() }]
             });
-            AcceptancePolicy policy = ProjectInputs.Read<AcceptancePolicy>(Path.Combine(example, "requirements.json"));
+            AcceptancePolicy policy = ProjectInputs.Read<AcceptancePolicy>(ProjectInputs.Resolve(examplePath, original.Requirements));
             Save(policyPath, policy with { Requirements = policy.Requirements.Where(r => r.Scenario == "lanes").ToList() });
             string output = Path.Combine(work, "resource-trace-run");
             var run = TestCli.Run(["run", "--project", path, "--scenario", "lanes", "--output", output]);

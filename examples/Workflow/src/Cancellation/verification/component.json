@@ -1,0 +1,18 @@
+{
+  "$schema": "../../../../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "project-component",
+  "id": "cancellation",
+  "stages": [
+    { "id": "cleanup", "kind": "oracle", "timeout_seconds": 60, "bindings": "cancellation-bindings.json" },
+    { "id": "unsafe-control", "kind": "verify", "timeout_seconds": 60, "bindings": "rejected-bindings.json" }
+  ],
+  "obligations": [
+    {
+      "id": "cleanup-adapter",
+      "claim": "The adapter invokes Process, observes its finally cleanup, and catches only the expected cancellation exception.",
+      "assumptions": ["Single-threaded execution of this illustrative adapter.", "Output comparison does not establish general exception equivalence."],
+      "inputs": ["../Cancellation.cs", "Cancellation.dfy", "cancellation-bindings.json"]
+    }
+  ]
+}

@@ -450,12 +450,12 @@ Tests accept `TLALINK_APALACHE_JAR` for an alternative absolute local
 ```powershell
 $apalache = ".\.tools\apalache\0.62.4\lib\apalache.jar"
 $tla = ".\.tools\tla\v1.8.0\tla2tools.jar"
-.\TlaLink.ps1 check-apalache --config .\examples\Apalache\inductive.json --apalache $apalache --jar $tla --output .\Results\apalache-induction --timeout 60
+.\TlaLink.ps1 check-apalache --config .\examples\Apalache\Credit\inductive.json --apalache $apalache --jar $tla --output .\Results\apalache-induction --timeout 60
 .\TlaLink.ps1 read-apalache --result .\Results\apalache-induction\result.json --current true
-.\TlaLink.ps1 doctor --project .\examples\Apalache\project.json
-.\TlaLink.ps1 plan --project .\examples\Apalache\project.json --scenario credit
-.\TlaLink.ps1 run --project .\examples\Apalache\project.json --scenario credit --output .\Results\apalache-credit
-.\TlaLink.ps1 accept --project .\examples\Apalache\project.json --run .\Results\apalache-credit
+.\TlaLink.ps1 doctor --project .\examples\Apalache\tlalink.project.json
+.\TlaLink.ps1 plan --project .\examples\Apalache\tlalink.project.json --scenario credit
+.\TlaLink.ps1 run --project .\examples\Apalache\tlalink.project.json --scenario credit --output .\Results\apalache-credit
+.\TlaLink.ps1 accept --project .\examples\Apalache\tlalink.project.json --run .\Results\apalache-credit
 dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --apalache
 ```
 
@@ -653,8 +653,10 @@ dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --diagnosti
 ### Code-adjacent component authoring
 
 An `analysis-project` can declare inline stages or explicitly import component
-files. The [component example](examples/Components/README.md) demonstrates a small
-root project with verification declarations beside the C# code they describe.
+files. The maintained example projects all use components: the
+[component example](examples/Components/README.md) is the smallest, with a root
+project, verification declarations beside the C# code they describe, and shared
+input sets and execution profiles.
 There is no directory scanning, arbitrary templating or implicit component selection.
 
 | Declaration | Meaning |
@@ -706,15 +708,15 @@ changed, omitted or contradictory composition. Duplicate imports/IDs, missing se
 unknown references and import cycles fail explicitly. Composition is limited to 1,000
 documents, 32 child-import levels and 16 MiB per authoring document.
 
-Start with [the maintained project](examples/Workflow/project.json) and its
-separate [acceptance policy](examples/Workflow/requirements.json):
+Start with [the maintained project](examples/Workflow/tlalink.project.json) and its
+separate [acceptance policy](examples/Workflow/verification/requirements.json):
 
 ```powershell
-.\TlaLink.ps1 doctor --project .\examples\Workflow\project.json --scenario lanes
-.\TlaLink.ps1 plan --project .\examples\Workflow\project.json --scenario lanes
-.\TlaLink.ps1 run --project .\examples\Workflow\project.json --scenario lanes --output .\Results\lanes-new
-.\TlaLink.ps1 accept --project .\examples\Workflow\project.json --run .\Results\lanes-new --output .\Results\lanes-acceptance-new.json
-.\TlaLink.ps1 explain --project .\examples\Workflow\project.json --run .\Results\lanes-new --format text
+.\TlaLink.ps1 doctor --project .\examples\Workflow\tlalink.project.json --scenario lanes
+.\TlaLink.ps1 plan --project .\examples\Workflow\tlalink.project.json --scenario lanes
+.\TlaLink.ps1 run --project .\examples\Workflow\tlalink.project.json --scenario lanes --output .\Results\lanes-new
+.\TlaLink.ps1 accept --project .\examples\Workflow\tlalink.project.json --run .\Results\lanes-new --output .\Results\lanes-acceptance-new.json
+.\TlaLink.ps1 explain --project .\examples\Workflow\tlalink.project.json --run .\Results\lanes-new --format text
 ```
 
 `doctor` checks strict configuration, tool hashes, executable availability,
@@ -792,16 +794,16 @@ input closure, and are passed as absolute paths only at execution. For example,
 `selection` unchanged and pins the config-relative `scope.json`. The independent
 reader checks the same resolved invocation and file closure.
 
-[The evidence-stage project](examples/Evidence/project.json) is an independently
+[The evidence-stage project](examples/Evidence/tlalink.project.json) is an independently
 authored arithmetic example. Its correspondence review deliberately starts
 pending: successful tests and a Dafny proof do not supply that review.
 
 ```powershell
-dotnet restore .\examples\Evidence\Regression.csproj --configfile .\NuGet.Config
-.\TlaLink.ps1 doctor --project .\examples\Evidence\project.json --scenario arithmetic
-.\TlaLink.ps1 run --project .\examples\Evidence\project.json --scenario arithmetic --output .\Results\arithmetic-new
-.\TlaLink.ps1 accept --project .\examples\Evidence\project.json --run .\Results\arithmetic-new
-.\TlaLink.ps1 report --project .\examples\Evidence\project.json --run .\Results\arithmetic-new --output .\Results\arithmetic-report.md
+dotnet restore .\examples\Evidence\src\Increment\Regression.csproj --configfile .\NuGet.Config
+.\TlaLink.ps1 doctor --project .\examples\Evidence\tlalink.project.json --scenario arithmetic
+.\TlaLink.ps1 run --project .\examples\Evidence\tlalink.project.json --scenario arithmetic --output .\Results\arithmetic-new
+.\TlaLink.ps1 accept --project .\examples\Evidence\tlalink.project.json --run .\Results\arithmetic-new
+.\TlaLink.ps1 report --project .\examples\Evidence\tlalink.project.json --run .\Results\arithmetic-new --output .\Results\arithmetic-report.md
 ```
 
 Restore is a separate setup step. Regression execution builds with `--no-restore`
@@ -942,9 +944,9 @@ creating a run directory. A ready plan does not execute TLC or prove that native
 configuration evaluation will succeed.
 
 ```powershell
-.\TlaLink.ps1 plan --project .\examples\Workflow\project.json --scenario lanes --format summary
-.\TlaLink.ps1 run --project .\examples\Workflow\project.json --scenario lanes --output .\Results\lanes-new --format summary
-.\TlaLink.ps1 accept --project .\examples\Workflow\project.json --run .\Results\lanes-new --format summary
+.\TlaLink.ps1 plan --project .\examples\Workflow\tlalink.project.json --scenario lanes --format summary
+.\TlaLink.ps1 run --project .\examples\Workflow\tlalink.project.json --scenario lanes --output .\Results\lanes-new --format summary
+.\TlaLink.ps1 accept --project .\examples\Workflow\tlalink.project.json --run .\Results\lanes-new --format summary
 ```
 
 This is presentation only, not an evidence document: `run.json`, native results
@@ -996,7 +998,7 @@ does not itself invalidate the run. For example, after inspecting the actual
 cleanup adapter and evidence:
 
 ```powershell
-.\TlaLink.ps1 record-review --project .\examples\Workflow\project.json --obligation cleanup-adapter --reviewer "<alias>" --rationale "<review findings>" --evidence "..\..\Results\cancellation-new\cleanup\result.json"
+.\TlaLink.ps1 record-review --project .\examples\Workflow\tlalink.project.json --obligation cleanup-adapter --reviewer "<alias>" --rationale "<review findings>" --evidence "..\..\Results\cancellation-new\cleanup\result.json"
 ```
 
 Evidence paths above are project-relative. New decisions serialize evidence
@@ -1420,8 +1422,8 @@ Its trace stage runs all three low-level commands and generates/restores the
 standalone capture project automatically:
 
 ```powershell
-.\TlaLink.ps1 run --project .\examples\Workflow\project.json --scenario lanes --output .\Results\lanes-trace-new
-.\TlaLink.ps1 accept --project .\examples\Workflow\project.json --run .\Results\lanes-trace-new
+.\TlaLink.ps1 run --project .\examples\Workflow\tlalink.project.json --scenario lanes --output .\Results\lanes-trace-new
+.\TlaLink.ps1 accept --project .\examples\Workflow\tlalink.project.json --run .\Results\lanes-trace-new
 ```
 
 For a custom low-level integration, `instrument` writes separate rewritten
@@ -1429,7 +1431,7 @@ copies, runtime source and `bindings.json`. Supply a standalone net10.0
 executable project whose compiler settings match the instrumentation context
 and whose compile inputs include those generated files. Restore it before
 `execute`; call `TraceRuntime.Complete(args[0])` only after the workload has
-been joined. The [lane workload](examples/Workflow/Lanes.cs) demonstrates
+been joined. The [lane workload](examples/Workflow/src/Lanes/Lanes.cs) demonstrates
 completion and explicit handoffs.
 
 `execute` takes `--manifest`, `--project`, a new `--trace` file and a new

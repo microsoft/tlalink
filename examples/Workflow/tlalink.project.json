@@ -1,0 +1,36 @@
+{
+  "$schema": "../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "analysis-project",
+  "id": "workflow-pilots",
+  "tools": {
+    "dafny": {
+      "path": "../../.tools/dafny/Dafny.exe",
+      "sha256": "AEBB6E5EA4AA1A8BA5432EE214C47255FD7AA5A583F5CAC8E83D27D9992C4DD0"
+    },
+    "jar": {
+      "path": "../../.tools/tla/v1.8.0/tla2tools.jar",
+      "sha256": "D15655EEAFF4B3F7B3D65C46B838BC0F35D131B2EF4B1E473689B62C98D4726F"
+    }
+  },
+  "compiler": {
+    "target_framework": "net10.0",
+    "language_version": "14",
+    "nullable": "enable",
+    "checked": false,
+    "allow_unsafe": true,
+    "references": []
+  },
+  "requirements": "verification/requirements.json",
+  "review_directory": "verification/reviews",
+  "components": [
+    "../Integrated/verification/component.json",
+    "src/Lanes/verification/component.json",
+    "src/Cancellation/verification/component.json"
+  ],
+  "scenarios": [
+    { "id": "credits", "components": ["credits"] },
+    { "id": "lanes", "components": ["lanes"] },
+    { "id": "cancellation", "components": ["cancellation"] }
+  ]
+}
