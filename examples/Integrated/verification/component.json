@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "project-component",
+  "id": "credits",
+  "stages": [
+    { "id": "decisions", "kind": "oracle", "timeout_seconds": 60, "bindings": "../bindings.json" }
+  ]
+}

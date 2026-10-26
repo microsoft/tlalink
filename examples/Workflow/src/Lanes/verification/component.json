@@ -1,0 +1,18 @@
+{
+  "$schema": "../../../../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "project-component",
+  "id": "lanes",
+  "stages": [
+    { "id": "model", "kind": "tlc", "timeout_seconds": 60, "models": ["Lanes.tla"], "config": "Lanes.cfg" },
+    {
+      "id": "execution",
+      "kind": "trace",
+      "depends_on": ["model"],
+      "timeout_seconds": 60,
+      "sources": ["../Lanes.cs"],
+      "models": ["Lanes.tla"],
+      "config": "Lanes.cfg"
+    }
+  ]
+}

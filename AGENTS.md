@@ -70,8 +70,8 @@ namespace and flat deployed bridge-asset names when moving implementation.
 ```powershell
 dotnet build .\TlaLink.sln
 dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --core
-.\TlaLink.ps1 doctor --project .\examples\Workflow\project.json --scenario lanes
-.\TlaLink.ps1 plan --project .\examples\Workflow\project.json --scenario lanes
+.\TlaLink.ps1 doctor --project .\examples\Workflow\tlalink.project.json --scenario lanes
+.\TlaLink.ps1 plan --project .\examples\Workflow\tlalink.project.json --scenario lanes
 .\TlaLink.ps1 review --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
 ```
 

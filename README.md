@@ -128,7 +128,7 @@ access to the relevant sources and a shell. Then ask it to:
 
 1. Check setup and walk you through the [small C# example](examples/Demo.cs)
    and its [TLA+ model](examples/Demo.tla).
-2. Run the `lanes` scenario in the [workflow example](examples/Workflow/project.json),
+2. Run the `lanes` scenario in the [workflow example](examples/Workflow/tlalink.project.json),
    which checks a recorded C# execution against a model.
 3. Help you choose one concrete question about your own code.
 
@@ -137,12 +137,17 @@ access to the relevant sources and a shell. Then ask it to:
 | Example | Shows |
 |---|---|
 | [Demo](examples/Demo.cs) and its [model](examples/Demo.tla) | Linking C# code to a TLA+ model. |
-| [Workflow](examples/Workflow/project.json) | A repeatable project, including a recorded-execution check. |
-| [Components](examples/Components/README.md) | Checks kept beside their code and combined into one project. |
-| [Evidence stages](examples/Evidence/project.json) | C# regressions and Dafny proofs in one project. |
-| [Integrated bindings](examples/Integrated/bindings.json) | Comparing C# calls with verified Dafny results. |
+| [Workflow](examples/Workflow/README.md) | A repeatable project, including a recorded-execution check. |
+| [Components](examples/Components/README.md) | The project layout in its smallest form, with shared inputs and time limits. |
+| [Evidence stages](examples/Evidence/README.md) | C# regressions and Dafny proofs in one project. |
+| [Apalache](examples/Apalache/README.md) | Symbolic TLA+ type, bounded safety and induction checks. |
+| [Integrated bindings](examples/Integrated/README.md) | Comparing C# calls with verified Dafny results. |
+| [P](examples/P/README.md) | Linking C# to a P state machine checked with PChecker. |
 
-The examples are synthetic demonstrations, not policies for your system.
+Each example project uses the same layout: a small root `tlalink.project.json`
+that selects `component.json` files kept beside the code they check.
+The [examples overview](examples/README.md) describes each one and the tools it
+needs. The examples are synthetic demonstrations, not policies for your system.
 
 ## Supported tools
 

@@ -11,18 +11,20 @@ public static class ProjectWorkflowTests
         ProjectCompositionTests.RegisterNative(test, root, work);
         string fixture = Path.Combine(work, "workflow-project");
         string example = Path.Combine(fixture, "Workflow");
-        Directory.CreateDirectory(example);
-        Directory.CreateDirectory(Path.Combine(fixture, "Integrated"));
         foreach (string area in new[] { "Workflow", "Integrated" })
-            foreach (string file in Directory.EnumerateFiles(Path.Combine(root, "examples", area)))
-                File.Copy(file, Path.Combine(fixture, area, Path.GetFileName(file)));
-        string path = Path.Combine(example, "project.json");
-        AnalysisProject original = ProjectInputs.Read<AnalysisProject>(path);
+            StageEvidenceTests.Copy(Path.Combine(root, "examples", area), Path.Combine(fixture, area));
+        string path = Path.Combine(example, "tlalink.project.json");
         string dafny = TestTools.Dafny(root);
         string jar = TestTools.Jar(root);
-        original = original with { Tools = new(new(dafny, Files.Hash(dafny)), new(jar, Files.Hash(jar))) };
-        Save(path, original);
-        string policyPath = Path.Combine(example, "requirements.json");
+        JsonObject authoredRoot = JsonNode.Parse(Files.Read(path))!.AsObject();
+        authoredRoot["tools"] = JsonSerializer.SerializeToNode(
+            new ProjectTools(new(dafny, Files.Hash(dafny)), new(jar, Files.Hash(jar))), Files.Json);
+        Save(path, authoredRoot);
+        // Variants below are saved as flat projects; restoring these bytes returns to the composed example.
+        string authored = Files.Read(path);
+        void Restore() => File.WriteAllText(path, authored);
+        AnalysisProject original = ProjectComposition.Read(path);
+        string policyPath = ProjectInputs.Resolve(path, original.Requirements);
         AcceptancePolicy policy = ProjectInputs.Read<AcceptancePolicy>(policyPath);
         Save(policyPath, policy);
         string? creditRun = null;
@@ -111,7 +113,7 @@ public static class ProjectWorkflowTests
                 Save(path, unknown);
                 CoreTests.Equal(2, TestCli.Run(["doctor", "--project", path]).Code);
             }
-            finally { Save(path, original); }
+            finally { Restore(); }
         });
         test("TLC preflight pins transitive imports and rejects invalid models before creating a run", () =>
         {
@@ -147,7 +149,7 @@ public static class ProjectWorkflowTests
                 CoreTests.Equal(2, TestCli.Run(["run", "--project", path, "--scenario", "parse", "--output", output]).Code);
                 CoreTests.True(!Directory.Exists(output));
             }
-            finally { Save(path, original); Save(policyPath, policy); }
+            finally { Restore(); Save(policyPath, policy); }
         });
         test("declared check coverage reports mappings without inventing obligations or discharging missing checks", () =>
         {
@@ -184,7 +186,7 @@ public static class ProjectWorkflowTests
                     CoreTests.Equal(2, TestCli.Run(["doctor", "--project", path]).Code);
                 }
             }
-            finally { Save(path, original); }
+            finally { Restore(); }
         });
         test("unused tool pins and optional defines can be omitted without weakening required inputs", () =>
         {
@@ -218,7 +220,7 @@ public static class ProjectWorkflowTests
                 CoreTests.Equal(2, missing.Code);
                 CoreTests.True(missing.Json.Contains("pinned JAR", StringComparison.Ordinal));
             }
-            finally { Save(path, original); Save(policyPath, policy); }
+            finally { Restore(); Save(policyPath, policy); }
         });
         test("project tool version pins cannot silently follow changed executables", () =>
         {
@@ -227,7 +229,7 @@ public static class ProjectWorkflowTests
                 Save(path, original with { Tools = original.Tools with { Dafny = original.Tools.Dafny! with { Sha256 = new string('0', 64) } } });
                 CoreTests.Equal(2, TestCli.Run(["doctor", "--project", path]).Code);
             }
-            finally { Save(path, original); }
+            finally { Restore(); }
         });
         test("binding and case IDs cannot alias requirement selector delimiters", () =>
         {
@@ -417,7 +419,7 @@ public static class ProjectWorkflowTests
             AnalysisProject changedClaim = original with { Obligations = [
                 original.Obligations[0] with { Claim = "A different abstraction claim." }] };
             CoreTests.Equal("stale", ProjectAcceptance.ReviewStatus(path, changedClaim, "cleanup-adapter"));
-            string source = Path.Combine(example, "Cancellation.cs");
+            string source = Path.Combine(example, "src", "Cancellation", "Cancellation.cs");
             string before = Files.Read(source);
             try
             {

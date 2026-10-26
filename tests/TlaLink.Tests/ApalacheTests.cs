@@ -10,7 +10,7 @@ public static class ApalacheTests
     {
         test("maintained Apalache example preserves approved configuration bytes", () =>
         {
-            string path = Path.Combine(root, "examples", "Apalache", "project.json");
+            string path = Path.Combine(root, "examples", "Apalache", "tlalink.project.json");
             var (project, policy) = ProjectInputs.Load(path);
             foreach (AnalysisRequirement requirement in policy.Requirements)
             {
@@ -122,7 +122,7 @@ public static class ApalacheTests
         string directory = Path.Combine(work, "apalache-native");
         Directory.CreateDirectory(directory);
         string model = Path.Combine(directory, "Credit.tla");
-        File.Copy(Path.Combine(root, "examples", "Apalache", "Credit.tla"), model);
+        File.Copy(Path.Combine(root, "examples", "Apalache", "Credit", "Credit.tla"), model);
         string? boundedRun = null;
         string? inductiveRun = null;
         string Run(ApalacheAnalysis config, int expected)
