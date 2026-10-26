@@ -28,10 +28,12 @@ root-relative because this document lives beside the README.
 
 ## Overview
 
-TlaLink is an agent-first .NET 10 CLI for reviewing C#/TLA+/Dafny/P
-correspondence, checking selected executions against TLA+, and comparing C#
-adapters with verified Dafny oracles. It is not a bundled agent or hosted AI
-service. Its implementation-facing integrations target the C#/.NET toolchain:
+TlaLink is a C#/.NET 10 CLI for turning a scoped behavior question into repeatable
+checks and inspectable evidence. It combines source/model correspondence review,
+explicit native analyses, selected C# regressions, recorded-execution checks
+against TLA+, and C# adapter comparisons with verified Dafny oracles.
+You can run it directly or have a coding agent operate it; it is not a bundled
+agent or hosted AI service. Its implementation-facing integrations target the C#/.NET toolchain:
 Roslyn source resolution, explicit compiler context, compiled adapters and
 build/execution provenance. TLA+, Dafny and P are complementary formal backends,
 not support for arbitrary implementation languages.
@@ -1232,7 +1234,12 @@ They compare the synthetic integrated example with its Dafny oracle and include
 an extra-credit mutation rejected specifically for disagreement, false proofs,
 audited assumptions (including included files), invalid preconditions, unresolved
 bindings, adapter signatures and archive/current drift. Fixtures are created in
-temporary directories and removed after the suite.
+temporary directories and removed after their test group. The complete console
+run also releases each group's fixtures before starting the next group, so
+byte-complete native archives do not accumulate across the entire run. It logs
+each group's fixture bytes and retains all test outcomes in the final report.
+The session-wide immutable-tool hashes and read leases remain active until the
+whole run finishes; checker coverage and evidence validation are unchanged.
 
 ## Review commands
 

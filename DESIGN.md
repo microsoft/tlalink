@@ -7,9 +7,12 @@ never product files.
 
 ## Agent-first operating model
 
-TlaLink exposes deterministic CLI workflows and structured evidence for a coding
-agent to operate. It does not include an agent, language-model runtime or hosted
-analysis service. The human-facing README explains the value and workflow;
+TlaLink turns scoped C# behavior questions into repeatable checks and inspectable
+evidence. It records the inputs, tools, assumptions and results supporting a
+claim rather than inferring implementation correctness from a passing model.
+Its deterministic CLI workflows can be operated directly or by a coding agent.
+It does not include an agent, language-model runtime or hosted analysis
+service. The human-facing README explains the value and workflow;
 the reference documents the commands and formats; AGENTS.md gives operational
 and maintenance safeguards.
 

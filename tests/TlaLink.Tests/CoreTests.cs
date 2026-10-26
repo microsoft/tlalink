@@ -9,6 +9,29 @@ public static class CoreTests
     {
         AcceptanceSummaryTests.Register(test, work);
         ProjectCompositionTests.RegisterCore(test, work);
+        test("suite fixtures are released after success and failure without removing shared assets", () =>
+        {
+            string parent = Directory.CreateDirectory(Path.Combine(work, "suite-cleanup")).FullName;
+            string shared = Path.Combine(parent, "shared-tool-manifest.json");
+            File.WriteAllText(shared, "{}");
+            for (int index = 0; index < 2; index++)
+            {
+                Program.RunSuite(parent, "fixture", directory =>
+                {
+                    Equal(0, Directory.GetFiles(directory).Length);
+                    File.WriteAllBytes(Path.Combine(directory, "archive-input"), new byte[1024]);
+                });
+                True(!Directory.Exists(Path.Combine(parent, "fixture")));
+                Equal(1, Directory.GetFiles(parent, "*", SearchOption.AllDirectories).Length);
+            }
+            ThrowsAny<InvalidOperationException>(() => Program.RunSuite(parent, "failed", directory =>
+            {
+                File.WriteAllText(Path.Combine(directory, "partial-output"), "incomplete");
+                throw new InvalidOperationException("Synthetic suite failure.");
+            }));
+            True(!Directory.Exists(Path.Combine(parent, "failed")));
+            Equal("{}", File.ReadAllText(shared));
+        });
         test("review writers normalize absolute evidence and aliases into relocatable project-relative records", () =>
         {
             string root = Path.Combine(work, "relative-review"), moved = Path.Combine(work, "relative-review-moved");
