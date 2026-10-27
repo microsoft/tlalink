@@ -70,6 +70,10 @@ SANY/PlusCal, Dafny's resolved AST and P's authoritative frontend resolve native
 endpoints from authoritative declaration spans and their annotations. Several independent
 bindings may attach to one C# node. Only the TLC adapter currently consumes
 `capture`; no generic native execution/refinement capability is inferred.
+TLA+ state pairs may attach directly to SANY variable declarations; parameterized
+observation operators remain appropriate for projections such as per-entity
+state. The bridge exports both from the native AST rather than inventing wrapper
+operators or parsing declarations from text.
 
 Exclusions and logging omissions are correspondence dispositions, not code
 removal or safety exemptions. Receiver/argument evaluation, competing accesses,

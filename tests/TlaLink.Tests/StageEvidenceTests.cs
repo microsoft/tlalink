@@ -7,6 +7,20 @@ public static class StageEvidenceTests
 {
     public static void RegisterCore(Action<string, Action> test, string root, string work)
     {
+        test("code-adjacent examples declare the implementation endpoints they ask humans to review", () =>
+        {
+            foreach (var example in new[] {
+                (Path: "Components", Source: Path.Combine("src", "Counter", "Counter.cs"),
+                    Ids: new[] { "counter::value", "counter::step" }),
+                (Path: "Evidence", Source: Path.Combine("src", "Increment", "Increment.cs"),
+                    Ids: new[] { "increment-spec::increment" })
+            })
+            {
+                CSharpScope source = CSharpScope.Parse([Path.Combine(root, "examples", example.Path, example.Source)]);
+                CoreTests.True(source.Diagnostics.All(d => d.Severity != "error"));
+                CoreTests.True(source.Bindings.Select(b => b.BindingId).ToHashSet(StringComparer.Ordinal).SetEquals(example.Ids));
+            }
+        });
         test("public project examples retain their approved configuration bytes after checkout", () =>
         {
             foreach (string relative in new[] { "Workflow", "Evidence", "Components" })
@@ -79,6 +93,7 @@ public static class StageEvidenceTests
             CSharpRegressionResult result = ProjectInputs.Read<CSharpRegressionResult>(Path.Combine(output, "result.json"));
             CoreTests.Equal(2, result.Tests.Count);
             CoreTests.True(result.Build.CompileInputs.ContainsKey(Path.Combine(fixture, "Program.cs")));
+            CoreTests.True(result.Build.CompileInputs.ContainsKey(Path.Combine(fixture, "Increment.cs")));
             CoreTests.True(result.Build.BuildInputs.ContainsKey(Path.Combine(fixture, "Regression.csproj")));
             CoreTests.Equal("passed", result.Status);
         });
@@ -228,6 +243,39 @@ public static class StageEvidenceTests
     public static void RegisterNative(Action<string, Action> test, string root, string work)
     {
         string dafny = TestTools.Dafny(root), jar = TestTools.Jar(root);
+        test("code-adjacent examples resolve their authored endpoints without fixture-generated markers", () =>
+        {
+            string counter = Path.Combine(root, "examples", "Components", "src", "Counter");
+            var links = TestCli.Run(["inspect", "--annotation-version", "4", "--source", Path.Combine(counter, "Counter.cs"),
+                "--scope", Path.Combine(counter, "verification", "scope.json"), "--target", "counter", "--jar", jar]);
+            if (links.Code != 0) throw new InvalidOperationException(links.Json);
+            string increment = Path.Combine(root, "examples", "Evidence", "src", "Increment", "verification", "bindings.json");
+            var evidence = TestCli.Run(["inspect-integrated", "--annotation-version", "4", "--bindings", increment,
+                "--dafny", dafny, "--output", Path.Combine(work, "increment-links")]);
+            if (evidence.Code != 0) throw new InvalidOperationException(evidence.Json);
+        });
+        test("integrated unit-return model reaches an accepted return from an empty window", () =>
+        {
+            string directory = Directory.CreateDirectory(Path.Combine(work, "integrated-reachability")).FullName;
+            string model = Path.Combine(directory, "Credits.tla"), config = Path.Combine(directory, "Credits.cfg");
+            string original = Files.Read(Path.Combine(root, "examples", "Integrated", "Credits.tla"));
+            int end = original.LastIndexOf("\n====", StringComparison.Ordinal);
+            File.WriteAllText(model, original[..end] + "\nNeverReturned == available # 1\n====\n");
+            File.WriteAllText(config, "CONSTANT Window = 2\nINIT Init\nNEXT Next\nINVARIANT NeverReturned\nCHECK_DEADLOCK FALSE\n");
+            string project = Path.Combine(directory, "project.json");
+            Save(project, new AnalysisProject(Schema.Version, "analysis-project", "unit-return-reachability",
+                new(Jar: new(jar, Files.Hash(jar))), new("net10.0", "14", "enable", false, true, []),
+                "requirements.json", [new("reachability", [new("return", "tlc", [], 60, Models: [model], Config: config)])],
+                [], "reviews"));
+            Save(Path.Combine(directory, "requirements.json"), new AcceptancePolicy(Schema.Version, "acceptance-policy",
+                "unit-return-reachability", [new("reachable", "reachability", "return", "rejected",
+                    Diagnostic: "TLC2110", DiagnosticText: "Invariant NeverReturned is violated.", ConfigSha256: Files.Hash(config))]));
+            string output = Path.Combine(directory, "run");
+            var run = TestCli.Run(["run", "--project", project, "--scenario", "reachability", "--output", output]);
+            if (run.Code != 0) throw new InvalidOperationException(run.Json);
+            var accepted = TestCli.Run(["accept", "--project", project, "--run", output]);
+            if (accepted.Code != 0) throw new InvalidOperationException(accepted.Json);
+        });
         test("project acceptance distinguishes a completed trace rejection from an incomplete control", () =>
         {
             string directory = Directory.CreateDirectory(Path.Combine(work, "trace-rejection-control")).FullName;

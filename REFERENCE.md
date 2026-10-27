@@ -1759,7 +1759,9 @@ three integrated analysis commands require `--annotation-version 4`. Project
 workflows pass their declared version to child commands. Missing or unsupported
 versions fail explicitly; neither filenames nor comments select a version.
 Commands such as `inputs`, which do not interpret bindings, need no annotation
-version. The marker denotes correspondence, not general implementation-language
+version. Standalone P commands read the annotation version from their explicitly
+selected correspondence scope instead of a CLI version option.
+The marker denotes correspondence, not general implementation-language
 support: the source integration remains C#, and native checker configurations
 and claims remain backend-specific.
 
@@ -1769,6 +1771,9 @@ the same unique `scope::name` ID. Attach formal markers to authored declarations
 or PlusCal labels, never generated translation bodies. Regenerate translations
 explicitly and collect new successor evidence,
 preserving historical receipts and independent configuration/requirement pins.
+Direct TLA+ variable endpoints use SANY's identifier span: place the marker after
+`VARIABLE`/`VARIABLES` and immediately before that variable's name. Observation
+operators remain useful for derived or entity-indexed projections.
 
 Use a native block comment containing `@link` followed by a standard JSON object.
 `bind` participates on either side; `capture` and `exclude` are C# only.

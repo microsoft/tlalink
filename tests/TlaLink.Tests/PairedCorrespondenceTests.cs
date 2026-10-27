@@ -42,6 +42,36 @@ public static class PairedCorrespondenceTests
 
     public static void RegisterNative(Action<string, Action> test, string root, string work)
     {
+        test("TLA state endpoints attach to SANY variable declarations without an observation wrapper", () =>
+        {
+            string directory = Directory.CreateDirectory(Path.Combine(work, "paired-variable")).FullName;
+            string source = Path.Combine(directory, "State.cs"), model = Path.Combine(directory, "State.tla");
+            File.WriteAllText(source, """
+                class State {
+                  /* @link {"bind":[{"id":"state::value"}]} */
+                  bool enabled;
+                }
+                """);
+            File.WriteAllText(model, """
+                ---- MODULE State ----
+                VARIABLE
+                  (* @link {"bind":[{"id":"state::value"}]} *)
+                  differentlyNamed
+                Init == differentlyNamed = FALSE
+                Next == differentlyNamed' = ~differentlyNamed
+                ====
+                """);
+            string scope = Path.Combine(directory, "scope.json");
+            Files.WriteNew(scope, new CorrespondenceConfiguration(Schema.Version, "correspondence-scope", Markup.Version,
+                [new("state", "tla", [model], RequiredBindings: ["state::value"])], []));
+            var response = TestCli.Run(["inspect", "--annotation-version", "4", "--source", source,
+                "--scope", scope, "--target", "state", "--jar", TestTools.Jar(root)]);
+            if (response.Code != 0) throw new InvalidOperationException(response.Json);
+            using JsonDocument packet = JsonDocument.Parse(response.Json);
+            JsonElement endpoint = packet.RootElement.GetProperty("links")[0].GetProperty("specification");
+            CoreTests.Equal("variable", endpoint.GetProperty("kind").GetString());
+            CoreTests.Equal("differentlyNamed", endpoint.GetProperty("name").GetString());
+        });
         test("TLA endpoints match shared IDs rather than operator spelling and reject either orphan", () =>
         {
             string directory = Directory.CreateDirectory(Path.Combine(work, "paired-tla")).FullName;

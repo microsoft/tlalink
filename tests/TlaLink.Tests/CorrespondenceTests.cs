@@ -27,7 +27,9 @@ public static class CorrespondenceTests
             CoreTests.True(exclusion.From.SequenceEqual(["lamp"]));
             CoreTests.Equal(4, parsed[0].Start);
             AnnotationPayload payload = new() { Bind = [binding], Capture = [capture], Exclude = [exclusion] };
-            CoreTests.Equal(3, Markup.Parse("@link " + Markup.Encode(payload), 0, 0).Count);
+            string encoded = Markup.Encode(payload);
+            CoreTests.True(!encoded.Contains("\"identity\"", StringComparison.Ordinal));
+            CoreTests.Equal(3, Markup.Parse("@link " + encoded, 0, 0).Count);
         });
         foreach (string payload in new[] {
             """{"bind":[null]}""", """{"bind":null}""", """{"bind":[{"id":"x"}]}""",

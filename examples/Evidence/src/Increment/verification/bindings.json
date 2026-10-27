@@ -1,0 +1,14 @@
+{
+  "schema_version": 4,
+  "kind": "integrated-bindings",
+  "sources": ["../Increment.cs"],
+  "scope": "scope.json",
+  "bindings": [
+    {
+      "id": "increment-spec::increment",
+      "adapter": null,
+      "cases": []
+    }
+  ],
+  "correspondences": []
+}

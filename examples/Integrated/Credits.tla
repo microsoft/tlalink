@@ -3,7 +3,7 @@ EXTENDS Naturals
 
 CONSTANT Window
 VARIABLE available
-Init == available = Window
+Init == available = 0
 
 (* @link {"bind":[{"id":"CreditDecision::Return"}]} *)
 Return == /\ available < Window

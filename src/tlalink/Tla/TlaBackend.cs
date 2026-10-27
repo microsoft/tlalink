@@ -225,7 +225,7 @@ public static partial class TlaBackend
                 case "translation":
                     AddTranslation(row, path, diagnostics);
                     break;
-                case "operator" or "label":
+                case "operator" or "label" or "variable":
                     if (includeEndpoints)
                         endpoints.Add(Endpoint(row, text));
                     break;

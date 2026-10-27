@@ -17,8 +17,8 @@ bool failed = false;
 foreach (string test in tests)
 {
     bool passed = test switch {
-        "increment" => Increment(3) == 4,
-        "limit" => Increment(10) == (args.Skip(2).Contains("reject") ? 11 : 10),
+        "increment" => Arithmetic.Increment(3) == 4,
+        "limit" => Arithmetic.Increment(10) == (args.Skip(2).Contains("reject") ? 11 : 10),
         _ => throw new InvalidOperationException("Unknown test: " + test)
     };
     failed |= !passed;
@@ -32,5 +32,3 @@ JsonSerializer.Serialize(stream, new {
     selection = tests, results
 });
 return failed ? 1 : 0;
-
-static int Increment(int value) => value < 10 ? value + 1 : 10;

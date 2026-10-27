@@ -1,0 +1,13 @@
+{
+  "schema_version": 4,
+  "kind": "correspondence-scope",
+  "annotation_version": 4,
+  "targets": [
+    {
+      "id": "increment-spec",
+      "language": "dafny",
+      "inputs": ["Increment.dfy"]
+    }
+  ],
+  "omissions": []
+}

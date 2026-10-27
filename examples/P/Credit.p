@@ -2,6 +2,7 @@ machine Credit {
     start state Init {
         entry {
             assert ReturnCredit(0) == 1, "credit-return";
+            assert ReturnCredit(1) == 2, "credit-return-at-limit";
         }
     }
     /* @link {"bind":[{"id":"credit-p::credit-return"}]} */

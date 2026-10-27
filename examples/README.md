@@ -35,4 +35,7 @@ algorithm in [Demo.tla](Demo.tla). Review the links for one step:
 ```
 
 This checks that the annotations resolve on both sides. It does not run the
-C# or prove that the model describes it correctly.
+C# or prove that the model describes it correctly. The PlusCal algorithm
+describes one `Open` followed by one `Release`, not arbitrary repeated calls,
+unmatched releases, or general concurrent use of the C# class. Its program
+counter and terminating stutter are model control, not additional C# bindings.

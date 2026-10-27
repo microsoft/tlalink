@@ -91,6 +91,17 @@ lock (this.gate)
 }
 ```
 
+The formal declaration owns the same common name, independently of its native
+operator name:
+
+```tla
+(* @link {"bind":[{"id":"lifecycle::admit"}]} *)
+Admit == active' = active + 1
+```
+
+The observed field and its formal state endpoint also need the paired
+`lifecycle::active` declaration; this excerpt is not a complete capture setup.
+
 ## What you do, and what the agent does
 
 | You | The agent |

@@ -22,6 +22,7 @@ public abstract record SourceAnnotation
 
 public sealed record BindAnnotation(string Id, string? Reason = null) : SourceAnnotation
 {
+    [JsonIgnore]
     public override string Identity => Id;
 }
 
@@ -31,6 +32,7 @@ public sealed record CaptureAnnotation(string Binding, CapturePoint? Point = nul
     List<string>? Observe = null, string? Guard = null, CapturedType? Type = null,
     string? Units = null, string? Reason = null, SchedulingHook? Hook = null) : SourceAnnotation
 {
+    [JsonIgnore]
     public override string Identity => Binding;
 
     internal Dictionary<string, string> BackendOptions()
@@ -58,6 +60,7 @@ public sealed record CaptureAnnotation(string Binding, CapturePoint? Point = nul
 
 public sealed record ExcludeAnnotation(string Id, List<string> From, string Reason) : SourceAnnotation
 {
+    [JsonIgnore]
     public override string Identity => Id;
 }
 

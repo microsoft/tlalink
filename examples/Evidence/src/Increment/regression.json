@@ -2,7 +2,7 @@
   "schema_version": 4,
   "kind": "csharp-regression",
   "project": "Regression.csproj",
-  "sources": ["Program.cs"],
+  "sources": ["Program.cs", "Increment.cs"],
   "compiler": {
     "target_framework": "net10.0",
     "language_version": "14",
