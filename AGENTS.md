@@ -275,6 +275,11 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   source annotation grammar, not an older JSON schema.
 - Keep capture side effects and scheduling hooks separate. Never run hooks
   under the recorder lock or generate them inside source locks.
+- Receiver/reference and `$call` identities are nominal correlation labels,
+  never ordering or Task-handoff evidence. Use separate operation identities
+  for independent pumps on one receiver and `$call` for overlapping invocations;
+  never merge concurrent calls into a constant operation merely to obtain a
+  witness. Invoke-only return/throw/switch capture does not observe completion.
 - No global timestamp/sequence ordering, invented cross-lock snapshots or
   independently reset per-event model states.
 - The producing host/build project is trusted, not authenticated. A matching

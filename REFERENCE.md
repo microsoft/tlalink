@@ -1571,14 +1571,19 @@ Step options:
   permits internal model transitions between observations; it is not the same
   as an implementation stutter. Hidden and observed mappings cannot overlap.
 
-Model actions currently take zero arguments, actor, or actor+operation in that
-order. Capture expressions exclude calls, getters, indexers and mutations.
+Model actions take zero arguments, actor, actor+operation, or actor+operation+entity
+in that order. Three-argument actions require an explicit captured entity;
+hidden three-argument actions range only over captured entities.
+Capture expressions exclude calls, getters, indexers and mutations.
 Enum-valued identities are lowered to their integral value; UInt64-backed enums
 are rejected because trace integers are signed. Mutable enum identity fields
 still require an actually held guard. Enum state observations are not supported.
 `actor=this` or `entity=this` gives a class receiver an execution-local reference
 identity without calling user equality/hashing. Struct/interface `this`
 identities are rejected. The `object:` prefix is reserved for these identities.
+Simple class-reference fields, parameters and locals can likewise be identities;
+null or boxed-value references fail explicitly, and getters/instance chains
+remain unsupported. String identities retain their literal values.
 Identity numbers are nominal labels, not causal ordering or domain IDs.
 Independent pumps on one receiver still need distinct operation identities.
 
@@ -1593,6 +1598,9 @@ Automatic capture supports ordinary local declarations as well as expression
 statements in blocks/switch sections. Using declarations are not completion
 points: their disposal happens later and cannot be captured as if the
 declaration completed the resource lifetime.
+Return, throw and switch statements support invoke-only observation immediately
+before control transfers; automatic post-return or exceptional capture is not
+inferred.
 Observed primitive fields must share an actually held readonly reference-field
 lock. Cross-lock snapshots are rejected. This does not prove that *all other*
 accesses obey that lock.

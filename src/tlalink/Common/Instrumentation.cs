@@ -43,7 +43,8 @@ public static class Instrumentation
     {
         scope.RequireCompilable();
         if (packet.LinksStatus != "passed" || packet.Diagnostics.Any(d => d.Severity == "error" || d.Is(ErrorCode.UnboundModelEndpoint, ErrorCode.UncoveredStateWrite, ErrorCode.UnresolvedCompilation)))
-            throw new InputException(ErrorCode.UnresolvedInstrumentation, "Instrumentation requires resolved, complete structural/state-write bindings.");
+            throw new InputException(ErrorCode.UnresolvedInstrumentation, "Instrumentation requires resolved, complete structural/state-write bindings. " +
+                string.Join("; ", packet.Diagnostics.Take(8).Select(d => d.Code + ": " + d.Message)));
         output = FilePaths.Full(output);
         if (Directory.Exists(output) || File.Exists(output)) throw new InputException(ErrorCode.UnresolvedInstrumentation, "Instrumentation output must be a new directory.");
         List<SourceBinding> executable = scope.Bindings.Where(b => b.Tag.Kind == "step" && b.Tag.Options.ContainsKey("point")).ToList();
@@ -85,10 +86,12 @@ public static class Instrumentation
             string classification = tag.Options.GetValueOrDefault("classification", "unresolved");
             if (classification == "unresolved" || point == "fault")
                 throw new InputException(ErrorCode.InvalidInstrumentation, "Unresolved or fault observation requires a reviewed capture implementation; not generated.");
-            if (binding.Node is not (ExpressionStatementSyntax or LocalDeclarationStatementSyntax) ||
+            bool controlTransfer = binding.Node is ReturnStatementSyntax or ThrowStatementSyntax or SwitchStatementSyntax;
+            if (binding.Node is not (ExpressionStatementSyntax or LocalDeclarationStatementSyntax) && !controlTransfer ||
+                controlTransfer && point != "invoke" ||
                 binding.Node is LocalDeclarationStatementSyntax local && !local.UsingKeyword.IsKind(SyntaxKind.None) ||
                 binding.Node.Parent is not (BlockSyntax or SwitchSectionSyntax))
-                throw new InputException(ErrorCode.InvalidInstrumentation, "Executable annotations require expression statements or ordinary local declarations directly in a block/switch section; using declarations are not completion points.");
+                throw new InputException(ErrorCode.InvalidInstrumentation, "Capture requires expression statements, ordinary local declarations, or invoke-only return/throw/switch statements in a block/switch section; using declarations are not completion points.");
             if (binding.Node.DescendantNodes().Any(n => n is AnonymousFunctionExpressionSyntax))
                 throw new InputException(ErrorCode.InvalidInstrumentation, "Nested lambda capture is unsupported.");
             string actor = RequiredIdentity(binding, "actor");
@@ -98,7 +101,8 @@ public static class Instrumentation
             string connection = tag.Options.TryGetValue("connection", out string? c) ? Scalar(binding, c, identity: true) : "0L";
             ModelBinding? action = models.SingleOrDefault(m => m.Model == binding.Model && m.Tag.Kind == "step" && m.Tag.Identity == tag.Identity);
             if (classification == "transition" && action is null) throw new InputException(ErrorCode.InvalidInstrumentation, "Observable transition has no model action.");
-            if (action is not null && action.Arity is < 0 or > 2) throw new InputException(ErrorCode.InvalidInstrumentation, "Trace pilot supports model actions with 0, 1 (actor), or 2 (actor, operation) arguments.");
+            if (action is not null && (action.Arity is < 0 or > 3 || action.Arity == 3 && entity == null))
+                throw new InputException(ErrorCode.InvalidInstrumentation, "Trace actions take 0, actor, actor+operation, or actor+operation+explicit entity.");
             List<Observation> observed = [];
             List<string> values = [];
             ISymbol? guardSymbol = null;
@@ -228,6 +232,8 @@ public static class Instrumentation
             _ = TypeName(underlying);
             return "((long)(" + expression + "))";
         }
+        if (identity && type is INamedTypeSymbol { TypeKind: TypeKind.Class } && type.SpecialType != SpecialType.System_String)
+            return "global::TlaLink.Runtime.TraceRuntime.ObjectIdentity(" + expression + ")";
         if (type is null || identity && TypeName(type) == "bool") throw new InputException(ErrorCode.InvalidInstrumentation, "Identity requires int or string.");
         _ = TypeName(type);
         return expression;

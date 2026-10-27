@@ -228,5 +228,58 @@ public static class SourceInventoryTests
             CoreTests.True(rewritten.Contains("string __tlalinkOperation0_ =", StringComparison.Ordinal));
             CoreTests.True(TlaLink.Runtime.TraceRuntime.NewOperationIdentity() != TlaLink.Runtime.TraceRuntime.NewOperationIdentity());
         });
+        test("control transfers are invoke-only and three-argument actions require an explicit entity", () =>
+        {
+            string path = Path.Combine(directory, "Routing.cs");
+            string text = """
+                /* @link model Routes; */
+                class Router {
+                    void Route(Target target, bool fail) {
+                        /* @link step Choose actor=this operation="$call" entity=target point=invoke classification=transition; */
+                        switch (fail) {
+                            case true:
+                                /* @link step Reject actor=this operation="$call" entity=target point=invoke classification=transition; */
+                                throw new System.InvalidOperationException();
+                            default:
+                                /* @link step Return actor=this operation="$call" entity=target point=invoke classification=transition; */
+                                return;
+                        }
+                    }
+                }
+                class Target {}
+                """;
+            InstrumentManifest Generate(string output)
+            {
+                CSharpScope scope = CSharpScope.Parse([path]);
+                List<ModelBinding> models = scope.Bindings.Select(b => new ModelBinding(b.Model, b.Tag,
+                    new(b.Tag.Identity, "", b.Tag.Kind, new("fixture.tla", 1, 1), ""), 3)).ToList();
+                return Instrumentation.Generate(scope, models, Review.Build("instrument", scope, models, [], []), output);
+            }
+            File.WriteAllText(path, text);
+            string generated = Path.Combine(directory, "routing-generated");
+            CoreTests.True(Generate(generated).Events.All(e => e.Arity == 3 && e.Entity));
+            CoreTests.True(Files.Read(Path.Combine(generated, "Routing.cs")).Contains("ObjectIdentity(target)", StringComparison.Ordinal));
+            File.WriteAllText(path, text.Replace("point=invoke", "point=commit"));
+            CoreTests.ThrowsAny<InputException>(() => Generate(Path.Combine(directory, "routing-after")));
+            File.WriteAllText(path, text.Replace("entity=target ", ""));
+            CoreTests.ThrowsAny<InputException>(() => Generate(Path.Combine(directory, "routing-missing-entity")));
+        });
+        test("blocked instrumentation retains the diagnostic that requires action", () =>
+        {
+            string path = Path.Combine(directory, "Blocked.cs");
+            File.WriteAllText(path, "class Blocked {}");
+            CSharpScope scope = CSharpScope.Parse([path]);
+            Packet packet = new("instrument") { LinksStatus = "incomplete" };
+            packet.Diagnostics.Add(new(ErrorCode.UnboundModelEndpoint, "Specific unresolved correspondence endpoint."));
+            try
+            {
+                Instrumentation.Generate(scope, [], packet, Path.Combine(directory, "blocked-output"));
+                throw new InvalidOperationException("Blocked instrumentation was accepted.");
+            }
+            catch (InputException error)
+            {
+                CoreTests.True(error.Message.Contains("Specific unresolved correspondence endpoint.", StringComparison.Ordinal));
+            }
+        });
     }
 }

@@ -17,9 +17,11 @@ public static class TraceTests
             Run(root, Path.Combine(work, "reference-actor"), parallel: false, hidden: true, trajectory: true, expected: "conforms", referenceActor: true));
         test("overlapping async invocations retain distinct operation identities across awaits", () =>
             ConcurrentCalls(root, Path.Combine(work, "concurrent-calls")));
+        test("explicit reference entities are passed to three-argument actions", () =>
+            ConcurrentCalls(root, Path.Combine(work, "reference-entities"), entity: true));
     }
 
-    private static void ConcurrentCalls(string root, string output)
+    private static void ConcurrentCalls(string root, string output, bool entity = false)
     {
         Directory.CreateDirectory(output);
         string source = Path.Combine(output, "Subject.cs"), model = Path.Combine(output, "Calls.tla");
@@ -51,6 +53,30 @@ public static class TraceTests
             Spec == Init /\ [][Next]_vars
             ====
             """);
+        if (entity)
+        {
+            File.WriteAllText(source, Files.Read(source).Replace("Run(Task release)", "Run(Task release, Subject target)")
+                .Replace("actor=this operation=", "actor=this entity=target operation="));
+            File.WriteAllText(model, """
+                ---- MODULE Calls ----
+                (* @link model Calls; *)
+                Ops == {"call:1", "call:2"}
+                VARIABLE pc, target
+                vars == <<pc, target>>
+                Init == pc = [op \in Ops |-> "New"] /\ target = [op \in Ops |-> ""]
+                (* @link step BeginCall; *)
+                BeginCall(actor, op, entity) ==
+                  /\ pc[op] = "New" /\ pc' = [pc EXCEPT ![op] = "Pending"]
+                  /\ target' = [target EXCEPT ![op] = entity]
+                (* @link step EndCall; *)
+                EndCall(actor, op, entity) ==
+                  /\ pc[op] = "Pending" /\ target[op] = entity
+                  /\ pc' = [pc EXCEPT ![op] = "Done"] /\ UNCHANGED target
+                Next == \E op \in Ops : BeginCall(1, op, "object:2") \/ EndCall(1, op, "object:2")
+                Spec == Init /\ [][Next]_vars
+                ====
+                """);
+        }
         string generated = Path.Combine(output, "generated"), jar = TestTools.Jar(root);
         var instrument = TestCli.Run(["instrument", "--annotation-version", "2", "--source", source,
             "--model", model, "--jar", jar, "--output", generated]);
@@ -70,6 +96,12 @@ public static class TraceTests
                 }
             }
             """);
+        if (entity)
+        {
+            string program = Path.Combine(generated, "Program.cs");
+            File.WriteAllText(program, Files.Read(program).Replace("var subject = new Subject();",
+                "var subject = new Subject(); var target = new Subject();").Replace("subject.Run(release.Task)", "subject.Run(release.Task, target)"));
+        }
         string project = Path.Combine(generated, "Fixture.csproj");
         File.WriteAllText(project, "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable></PropertyGroup></Project>");
         TestCli.Restore(project, output, Path.Combine(root, "NuGet.Config"));
