@@ -8,9 +8,11 @@ public sealed record SourceCall(string? Target, string Dispatch, Place Location,
 public sealed record SourceLock(string Expression, string? Symbol, Place Location);
 public sealed record SourceMember(string Symbol, string Kind, Place Location, List<SourceCall> Calls,
     List<SourceLock> Locks, List<Place> Awaits, List<Place> Throws, List<Place> Using, List<Access> FieldAccesses);
+public sealed record SourceCompilerContext(string LanguageVersion, string Nullable, string FrameworkReferences,
+    bool AllowUnsafe, bool Checked, List<string> Defines);
 public sealed record SourceInventoryResult(int SchemaVersion, string Kind, string Status, int AnnotationVersion,
     int SourceCount, int MemberCount, int CallCount, int AwaitCount, List<SourceMember> Members,
-    Dictionary<string, string> Fingerprints, List<Issue> Diagnostics, List<string> Boundaries);
+    Dictionary<string, string> Fingerprints, List<Issue> Diagnostics, List<string> Boundaries, SourceCompilerContext Compiler);
 
 public static class SourceInventory
 {
@@ -20,17 +22,28 @@ public static class SourceInventory
     public static int Run(CliOptions options)
     {
         List<string> paths = Files.Discover(options.Many("source"), ".cs");
+        NullableContextOptions nullable = options.Get("nullable", "enable") switch {
+            "enable" => NullableContextOptions.Enable, "disable" => NullableContextOptions.Disable,
+            _ => throw new InputException(ErrorCode.UnresolvedCompilation, "--nullable must be enable or disable.")
+        };
+        bool framework = options.Get("framework-references", "implicit") switch {
+            "implicit" => true, "explicit" => false,
+            _ => throw new InputException(ErrorCode.UnresolvedCompilation, "--framework-references must be implicit or explicit.")
+        };
+        if (!framework && options.Many("reference").Count == 0)
+            throw new InputException(ErrorCode.UnresolvedCompilation, "Explicit framework references require --reference paths.");
         SourceInventoryResult inventory = Build(paths, options.Many("reference"),
-            options.Has("define") ? options.Many("define") : null);
+            options.Has("define") ? options.Many("define") : null, nullable, framework);
         if (options.Optional("output") is string output) Files.WriteNew(FilePaths.Full(output), inventory);
         ProjectWorkflow.Render(inventory, options);
         return inventory.Status == "ready" ? 0 : 2;
     }
 
     internal static SourceInventoryResult Build(List<string> paths, IEnumerable<string>? references = null,
-        IEnumerable<string>? defines = null)
+        IEnumerable<string>? defines = null, NullableContextOptions nullable = NullableContextOptions.Enable,
+        bool includeFrameworkReferences = true)
     {
-        CSharpScope scope = CSharpScope.Parse(paths, references, defines);
+        CSharpScope scope = CSharpScope.Parse(paths, references, defines, nullable, includeFrameworkReferences);
         List<Issue> diagnostics = [.. scope.Diagnostics];
         List<SourceMember> members = [];
         foreach (Diagnostic error in scope.Compilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error))
@@ -92,6 +105,9 @@ public static class SourceInventory
                 "Field accesses are candidate accesses within each member's source lines. Properties are not inlined.",
                 "Field initializers are inventoried separately. Implicit compiler/runtime effects, using-disposal calls and generated members are not enumerated.",
                 "An inventory is not validated code or an acceptance receipt."
-            ]);
+            ], new("14", nullable.ToString().ToLowerInvariant(),
+                includeFrameworkReferences ? "implicit" : "explicit", scope.Compilation.Options.AllowUnsafe,
+                scope.Compilation.Options.CheckOverflow,
+                scope.Fingerprints["compiler:defines"].Split(',', StringSplitOptions.RemoveEmptyEntries).ToList()));
     }
 }

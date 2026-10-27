@@ -1428,9 +1428,18 @@ Field initializers have their own regions. It pins source/reference bytes, the
 selected defines, producing tool and runtime. Output is exclusive; use a new
 path for each inventory.
 
+The `compiler` object records C# 14, nullable mode, unsafe/overflow options,
+defines and framework-reference selection. Defaults are `--nullable enable`
+and `--framework-references implicit` (the host's trusted platform assemblies
+plus additional references). To reproduce a recorded compiler reference closure,
+use `--framework-references explicit` with every observed `--reference`, the
+observed `--define` values and `--nullable enable|disable`. Explicit mode adds no
+implicit framework references and requires at least one reference. This does
+not load an MSBuild workspace or discover project settings.
+
 Compiler errors, unresolved call targets and unsupported top-level scopes return
 2 with an incomplete inventory, rather than a success-shaped empty result.
-Summary output retains status, diagnostics and source/member/call/await counts;
+Summary output retains compiler context, status, diagnostics and source/member/call/await counts;
 use full JSON or the saved file for individual regions.
 
 This is an inventory under the supplied C# compiler context, not an MSBuild

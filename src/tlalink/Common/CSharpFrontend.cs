@@ -26,7 +26,8 @@ public sealed class CSharpScope
     public Dictionary<string, string> Fingerprints { get; } = new(FilePaths.Comparer);
     public Dictionary<string, string> Texts { get; } = new(FilePaths.Comparer);
 
-    public static CSharpScope Parse(List<string> paths, IEnumerable<string>? references = null, IEnumerable<string>? defines = null)
+    public static CSharpScope Parse(List<string> paths, IEnumerable<string>? references = null, IEnumerable<string>? defines = null,
+        NullableContextOptions nullable = NullableContextOptions.Enable, bool includeFrameworkReferences = true)
     {
         string[] symbols = (defines ?? ["DEBUG", "TRACE", "NET", "NETCOREAPP", "NET10_0", "NET10_0_OR_GREATER", "NET9_0_OR_GREATER",
             "NET8_0_OR_GREATER", "NET7_0_OR_GREATER", "NET6_0_OR_GREATER", "NET5_0_OR_GREATER",
@@ -38,16 +39,19 @@ public sealed class CSharpScope
         Dictionary<string, string> sourcePins = new(FilePaths.Comparer);
         Dictionary<string, string> texts = paths.ToDictionary(p => p, p => Files.ReadPinned(p, sourcePins), FilePaths.Comparer);
         List<SyntaxTree> trees = paths.Select(p => CSharpSyntaxTree.ParseText(SourceText.From(texts[p]), parse, p)).Cast<SyntaxTree>().ToList();
-        string[] framework = ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
-            ?? throw new InputException("Cannot establish .NET framework references.")).Split(Path.PathSeparator);
+        string[] framework = includeFrameworkReferences ? ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+            ?? throw new InputException("Cannot establish .NET framework references.")).Split(Path.PathSeparator) : [];
         string[] referencePaths = framework.Concat(references ?? []).Select(FilePaths.Full).Distinct(FilePaths.Comparer).ToArray();
         CSharpCompilation compilation = CSharpCompilation.Create("TlaLink.ExplicitScope", trees,
             referencePaths.Select(p => MetadataReference.CreateFromFile(p)),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true,
-                nullableContextOptions: NullableContextOptions.Enable));
+                nullableContextOptions: nullable));
         CSharpScope result = new() { Compilation = compilation };
         foreach (string reference in referencePaths) Files.Pin(result.Fingerprints, reference, Files.Hash(reference));
         result.Fingerprints["compiler:defines"] = string.Join(",", symbols.Order());
+        result.Fingerprints["tool:csharp-context"] = System.Text.Json.JsonSerializer.Serialize(new {
+            LanguageVersion = "14", Nullable = nullable.ToString(), IncludeFrameworkReferences = includeFrameworkReferences
+        }, Files.Json);
         foreach (SyntaxTree tree in trees)
         {
             string path = tree.FilePath, text = texts[path];

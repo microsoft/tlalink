@@ -68,6 +68,37 @@ public static class SourceInventoryTests
             CoreTests.Equal("incomplete", incomplete.RootElement.GetProperty("status").GetString());
             CoreTests.True(incomplete.RootElement.GetProperty("diagnostics").GetArrayLength() > 0);
         });
+        test("source inventory accepts an explicit compiler reference closure without implicit framework additions", () =>
+        {
+            string path = Path.Combine(directory, "ExplicitContext.cs");
+            File.WriteAllText(path, """
+                #if CONTEXT
+                public class ExplicitContext { public string? Value; }
+                #else
+                public class ExplicitContext { MissingType Value; }
+                #endif
+                """);
+            string reference = typeof(object).Assembly.Location;
+            var response = TestCli.Run(["inspect-source", "--annotation-version", "2", "--source", path,
+                "--framework-references", "explicit", "--reference", reference, "--nullable", "disable",
+                "--define", "CONTEXT", "--format", "summary"]);
+            if (response.Code != 0) throw new InvalidOperationException(response.Json);
+            using JsonDocument document = JsonDocument.Parse(response.Json);
+            JsonElement compiler = document.RootElement.GetProperty("compiler");
+            CoreTests.Equal("explicit", compiler.GetProperty("framework_references").GetString());
+            CoreTests.Equal("disable", compiler.GetProperty("nullable").GetString());
+            CoreTests.Equal("CONTEXT", compiler.GetProperty("defines")[0].GetString());
+            SourceInventoryResult result = SourceInventory.Build([path], [reference], ["CONTEXT"],
+                Microsoft.CodeAnalysis.NullableContextOptions.Disable, false);
+            CoreTests.Equal("ready", result.Status);
+            CSharpScope scope = CSharpScope.Parse([path], [reference], ["CONTEXT"],
+                Microsoft.CodeAnalysis.NullableContextOptions.Disable, false);
+            CoreTests.Equal(reference, scope.Compilation.References.Single().Display);
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "2", "--source", path,
+                "--framework-references", "explicit"]).Code);
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "2", "--source", path,
+                "--nullable", "guess"]).Code);
+        });
         test("review-only invocation links identify callbacks without inheriting their creation lock", () =>
         {
             string path = Path.Combine(directory, "Callbacks.cs");

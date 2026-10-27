@@ -18,6 +18,8 @@ public static class CommandSummary
             "directory", "path", "boundary", "boundaries", "diagnostics", "next_actions", "statistics",
             "nodes", "code_regions", "input_files", "requested_resources", "resources", "annotation_version",
             "source_count", "member_count", "call_count", "await_count"]);
+        if (source["kind"]?.GetValue<string>() == "source-inventory")
+            result["compiler"] = source["compiler"]?.DeepClone();
         if (source["kind"]?.GetValue<string>() == "gc-plan")
         {
             foreach (string field in new[] { "store", "retention", "planned_at", "grace_hours", "read_only",

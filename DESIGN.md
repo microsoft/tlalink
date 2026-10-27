@@ -130,6 +130,12 @@ compiler/source-generator behavior and OS/runtime remain trusted. Inputs exposed
 at the MSBuild capture boundary are recorded; this is not a complete MSBuild
 workspace or authenticated compiler/runtime closure.
 
+Source inventories can use that recorded reference closure and defines with
+explicit nullable mode, rather than silently adding the tool host's framework
+references. The compiler settings and reference-selection mode are recorded and
+fingerprinted. This reproduces the selected Roslyn context, not MSBuild execution
+or source-generator behavior; the inventory remains source facts, not coverage.
+
 Standalone Dafny uses the same authoritative frontend, distribution pinning,
 verification classifier and assumption audit as integrated bindings. Its native
 contracts do not become C# correspondence or executable-oracle evidence.

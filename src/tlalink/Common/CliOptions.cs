@@ -14,7 +14,7 @@ public sealed class CliOptions
         Dictionary<string, string[]> allowed = new()
         {
             ["report"] = ["manifest", "project", "run", "output", "format"],
-            ["inspect-source"] = ["source", "reference", "define", "output", "format"],
+            ["inspect-source"] = ["source", "reference", "define", "output", "format", "nullable", "framework-references"],
             ["check-dafny"] = ["config", "dafny", "output", "timeout", "format"],
             ["read-dafny"] = ["result", "current", "format"],
             ["check-regression"] = ["config", "output", "timeout", "format"],
