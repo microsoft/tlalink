@@ -23,7 +23,7 @@ public sealed class GcApplyResult
     public int RemovedFileCount => RemovedFiles.Count;
     public List<Issue> Diagnostics { get; } = [];
     public List<string> Boundaries { get; } = [
-        "Offline, explicitly selected completed workflow archives only; not proof validation or acceptance.",
+        "Offline, explicitly selected completed workflow archives or TLC result families only; not acceptance.",
         "Unknown reference scope blocks application. Directory handles prevent ancestor replacement; all writers must still be stopped.",
         "Deletion is not transactional. An incomplete receipt may describe partial removal; interrupted writes may leave an incomplete or malformed receipt.",
         "Logical file lengths do not guarantee physical space reclaimed."
@@ -152,6 +152,11 @@ public static partial class EvidenceGarbageCollection
 
     private static void VerifyArchive(string candidate)
     {
+        if (!File.Exists(Path.Combine(candidate, "run.json")))
+        {
+            ReadResultFamily(candidate, new Scan(candidate));
+            return;
+        }
         WorkflowRun run = ProjectInputs.Read<WorkflowRun>(Path.Combine(candidate, "run.json"));
         foreach (var artifact in run.Artifacts)
             if (!Files.Hash(LocalArtifact(candidate, artifact.Key)).Equals(artifact.Value, StringComparison.OrdinalIgnoreCase))

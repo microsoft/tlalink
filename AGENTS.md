@@ -203,6 +203,11 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   extend reuse to trace, regression or other backends without the same
   answer-determining key and acceptance revalidation. Use `check-stage` for
   expensive searches instead of raising routine budgets or weakening configs.
+  Result-store cleanup uses `evidence-retention.result_projects` and `gc` on
+  `<result_store>/tlc`, never ad hoc deletion of unmatched keys. List every
+  project to protect; unknown/active entries block collection. Keep matching
+  families at any age and preserve the existing saved-plan/offline-writer/
+  byte/snapshot/handle checks for explicit Windows application.
 - Apalache is an explicitly selected TLA+ engine, not an automatic TLC
   fallback. Its strict `apalache-analysis` manifests select typechecking,
   bounded safety or complete initiation/preservation/implication induction.

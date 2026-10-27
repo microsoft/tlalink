@@ -854,10 +854,36 @@ passes under N distinct fingerprint functions for the same key. Expected
 rejections need only one counterexample.
 
 The store is a cache. Runs never depend on it, because reused evidence is copied
-into them, so deleting it only forces re-execution. Automatic pruning of entries
-whose inputs no longer match any current stage is not implemented yet. `gc` does
-not treat store entries as collectible run units, and stale entries remain until
-the store or the entry is removed.
+into them, so deleting it only forces re-execution. To plan stale-entry cleanup,
+use the existing guarded retention workflow with an `evidence-retention`
+manifest that declares `result_projects`:
+
+```json
+{
+  "schema_version": 4,
+  "kind": "evidence-retention",
+  "pins": [],
+  "review_projects": [],
+  "result_projects": ["tlalink.project.json"]
+}
+```
+
+Select `<result_store>/tlc` as `gc --store`, not the containing result store.
+The manifest paths are relative to the manifest. Each result project must name
+that same result store. Include every project whose current results should be
+kept; this is explicit trusted scope, not automatic discovery of other users.
+The planner resolves current model closures through SANY and computes their
+current family keys. It retains all fingerprint functions in matching families.
+An unmatched family may be a candidate, subject to pins, grace and the usual
+snapshot/byte/directory-handle guards. No time-based expiry applies to matching
+families. Missing projects/tools, parse errors, malformed or changed entries,
+unknown folders and active `.work-*` directories block collection.
+
+Planning remains read-only. Actual Windows deletion still requires a saved full
+plan, offline writers, `--exclusive true` and a new receipt; see
+[guarded application](#explicit-guarded-application-windows). Applying a stale
+plan fails rather than weakening the checks. The store is never automatically
+pruned by `run`, and result families cannot use protected-consumer catalogs.
 
 ### C# regressions and standalone Dafny proofs
 

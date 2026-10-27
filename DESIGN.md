@@ -271,6 +271,18 @@ scan races and unsupported formats are explicit blockers. A grace interval
 protects recent output but does not prove inactivity. Byte totals are logical
 lengths, not guaranteed reclaimed space or hard-link identity proofs.
 
+For TLC result-store cleanup, `result_projects` explicitly selects the complete
+set of projects whose current families must be retained. The inspected store is
+the result store's `tlc` directory; each immediate child is one immutable family,
+containing all its fingerprint-function entries. SANY resolves current closures
+before family keys are compared. Matching families are roots regardless of age;
+unmatched families may be candidates under the same pins, grace, snapshot,
+byte-complete verification and Windows handle guards as workflow units. Unknown,
+malformed and active units block the whole plan. The project list is trusted
+reference scope, not discovery or a claim that no other project needs a result.
+Copied run evidence has no dependency on the store. No automatic pruning or
+second cleanup command is introduced.
+
 On Windows, existing recorded input paths may pass through links only when an
 opened read handle supplies their final native path and the bytes hashed through
 that same handle. Physical store-relative identities supply retention edges;

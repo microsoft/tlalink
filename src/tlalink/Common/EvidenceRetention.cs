@@ -5,7 +5,7 @@ namespace TlaLink;
 
 public sealed record RetentionPin(string Path, string Reason);
 public sealed record EvidenceRetention(int SchemaVersion, string Kind, List<RetentionPin> Pins, List<string> ReviewProjects,
-    string? Catalog = null);
+    string? Catalog = null, List<string>? ResultProjects = null);
 public sealed record CatalogInput(string Path, string Sha256);
 public sealed record ProtectedConsumer(string Path, string Reason, Dictionary<string, string> Files,
     List<CatalogInput> Inputs, List<string> References);
@@ -78,7 +78,8 @@ public static partial class EvidenceGarbageCollection
         Files.RequireSchema(policyJson, "evidence-retention");
         EvidenceRetention policy = policyJson.Deserialize<EvidenceRetention>(ProjectInputs.Json)!;
         if (policy.Pins.Any(p => p is null || string.IsNullOrWhiteSpace(p.Path) || string.IsNullOrWhiteSpace(p.Reason)) ||
-            policy.ReviewProjects.Any(string.IsNullOrWhiteSpace))
+            policy.ReviewProjects.Any(string.IsNullOrWhiteSpace) ||
+            (policy.ResultProjects ?? []).Any(string.IsNullOrWhiteSpace))
             throw new InputException(ErrorCode.InvalidRetention, "Retention pins require paths/reasons and review projects require paths.");
         string physicalStore = OperatingSystem.IsWindows() ? DirectoryLeases.ResolvePath(store) : store;
         var catalog = new Dictionary<string, ProtectedConsumer>(FilePaths.Comparer);
@@ -113,6 +114,9 @@ public static partial class EvidenceGarbageCollection
                 }
             });
         var unitPaths = new Dictionary<string, Unit>(FilePaths.Comparer);
+        bool resultStore = policy.ResultProjects is { Count: > 0 };
+        if (resultStore && policy.Catalog != null)
+            throw new InputException(ErrorCode.InvalidRetention, "Result-store scope cannot be combined with a protected-consumer catalog.");
         state.Observe(store);
         foreach (string child in Directory.EnumerateFileSystemEntries(store).Order(FilePaths.Comparer))
         {
@@ -221,7 +225,7 @@ public static partial class EvidenceGarbageCollection
             });
         foreach (Unit unit in unitPaths.Values)
         {
-            Consumer consumer = ConsumerFor(unit.Path, "run");
+            Consumer consumer = ConsumerFor(unit.Path, resultStore ? "tlc-result-family" : "run");
             state.Try(unit.Path, () => {
                 Tree tree = state.Walk(unit.Path);
                 List<string> files = tree.Files;
@@ -231,6 +235,19 @@ public static partial class EvidenceGarbageCollection
                 {
                     Protected(unit.Path, files, exportedConsumer, consumer);
                     unit.Protected = true;
+                    unit.Recognized = true;
+                    return;
+                }
+                if (resultStore)
+                {
+                    foreach (TlcStoredResult entry in ReadResultFamily(unit.Path, state))
+                        foreach (TlcKeyInput input in entry.Material.Inputs)
+                        {
+                            if (input.Path.StartsWith("library:", StringComparison.Ordinal)) continue;
+                            if (!FilePaths.IsNativeAbsolute(input.Path))
+                                throw new InputException(ErrorCode.InvalidRetention, "Unknown result input identity: " + input.Path);
+                            Input(input.Path, input.Sha256, consumer);
+                        }
                     unit.Recognized = true;
                     return;
                 }
@@ -313,6 +330,17 @@ public static partial class EvidenceGarbageCollection
         }
         string declaringDirectory = Path.GetDirectoryName(retention)!;
         var roots = new HashSet<string>(FilePaths.Comparer);
+        foreach (string selected in policy.ResultProjects ?? [])
+        {
+            string path = FilePaths.Full(selected, declaringDirectory);
+            if (!roots.Add(path)) throw new InputException(ErrorCode.InvalidRetention, "Duplicate retention root: " + path);
+            state.Try(path, () => {
+                foreach (string family in CurrentResultFamilies(path, store, state,
+                    input => Reference(input, null, "result project input: " + path)))
+                    if (unitPaths.TryGetValue(Path.Combine(store, family), out Unit? unit))
+                        unit.Reasons.Add("Current TLC stage in result project: " + path);
+            });
+        }
         foreach (RetentionPin pin in policy.Pins)
         {
             string path = FilePaths.Full(pin.Path, declaringDirectory);
@@ -422,16 +450,17 @@ public static partial class EvidenceGarbageCollection
         List<GcRecheck> recheck = consumers.Values.Where(c => c.ChangedInputs.Count > 0 || c.AffectedBy.Count > 0)
             .OrderBy(c => c.Path, FilePaths.Comparer).Select(c => new GcRecheck(c.Path, c.Kind,
                 c.ChangedInputs.Order(FilePaths.Comparer).ToList(), c.AffectedBy.Order(FilePaths.Comparer).ToList(),
-                c.Kind == "run" ? "whole-run-conservative" : "review",
+                c.Kind == "run" ? "whole-run-conservative" : c.Kind == "tlc-result-family" ? "stored-result-family" : "review",
                 c.Kind == "run" ? ["reassess-inputs-and-affected-analysis", "renew-reviews-and-acceptance"] :
+                    c.Kind == "tlc-result-family" ? ["recompute-current-stage-key", "run-changed-analysis-if-required"] :
                     new List<string> { "reconsider-review", "reaccept-dependent-runs" })).ToList();
         return new(Schema.Version, "gc-plan", complete ? "ready" : "incomplete", store, retention, now, graceHours, true, false,
             new(entries.Count, entries.Count(e => e.Status == "candidate"), entries.Count(e => e.Status == "retained"),
                 entries.Count(e => e.Status == "protected"), entries.Where(e => e.Status == "candidate").Sum(e => e.LogicalBytes ?? 0),
                 changes.Count, recheck.Count),
             entries, state.ProtectedPaths.Order(FilePaths.Comparer).ToList(), changes, recheck, state.DocumentHashes, state.Stamps, state.CurrentHashes, state.ResolvedInputs, state.Diagnostics, [
-                "Read-only scoped inventory, not archive validation, acceptance, or deletion authorization. Only completed schema-4 workflow units are candidates; byte-pinned catalog consumers remain protected.",
-                "Pins and selected review projects define retention scope; undeclared external consumers, Markdown links and other formats cannot be inferred.",
+                "Read-only scoped inventory, not acceptance or deletion authorization. Completed schema-4 workflow units or explicitly scoped TLC result families may be candidates; byte-pinned catalog consumers remain protected.",
+                "Pins and selected review/result projects define retention scope; undeclared external consumers, Markdown links and other formats cannot be inferred.",
                 "Impact checks recorded file hashes and transitive run references, not stage-level dependencies, runtime metadata or current review selection. No file change is not a current-applicability verdict.",
                 "Unfinished/unknown archives, unresolved references, reparse points and observed scan changes block all candidates. Grace alone does not prove inactivity.",
                 "Logical bytes are not guaranteed reclaimed space. Path checks and metadata observations are not hard-link identity proofs or an atomic filesystem snapshot."
