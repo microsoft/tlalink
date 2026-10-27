@@ -1576,6 +1576,23 @@ order. Capture expressions exclude calls, getters, indexers and mutations.
 Enum-valued identities are lowered to their integral value; UInt64-backed enums
 are rejected because trace integers are signed. Mutable enum identity fields
 still require an actually held guard. Enum state observations are not supported.
+`actor=this` or `entity=this` gives a class receiver an execution-local reference
+identity without calling user equality/hashing. Struct/interface `this`
+identities are rejected. The `object:` prefix is reserved for these identities.
+Identity numbers are nominal labels, not causal ordering or domain IDs.
+Independent pumps on one receiver still need distinct operation identities.
+
+`operation="$call"` generates one collision-free local identity per invocation
+of the enclosing block-bodied function, shared by its observation points and
+preserved across awaits. Different concurrent invocations have different
+identities; the `call:` prefix is reserved. Allocation does not add causal edges
+or establish caller/callee, Task or queue handoffs. Use explicit handoffs where
+those edges matter.
+
+Automatic capture supports ordinary local declarations as well as expression
+statements in blocks/switch sections. Using declarations are not completion
+points: their disposal happens later and cannot be captured as if the
+declaration completed the resource lifetime.
 Observed primitive fields must share an actually held readonly reference-field
 lock. Cross-lock snapshots are rejected. This does not prove that *all other*
 accesses obey that lock.

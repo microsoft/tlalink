@@ -30,16 +30,39 @@ public static class TraceRuntime
     private sealed class Identity(long value) { public long Value { get; } = value; }
     private static readonly object Gate = new();
     private static readonly ConditionalWeakTable<object, Identity> Guards = new();
+    private static readonly ConditionalWeakTable<object, Identity> Objects = new();
     private static readonly Dictionary<string, long> Last = [];
     private static readonly Dictionary<int, HashSet<long>> PendingHandoffs = [];
     private static readonly ConcurrentQueue<TraceEvent> Events = new();
     private static string? binding;
     private static long sequence;
     private static long identity;
+    private static long objectIdentity;
+    private static long operationIdentity;
     private static bool finished;
     public static Action<string, string>? SchedulingHook { get; set; }
 
     public static void Checkpoint(string step, string position) => SchedulingHook?.Invoke(step, position);
+
+    public static string ObjectIdentity(object value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (value.GetType().IsValueType) throw new InvalidOperationException("Object identities require a reference object, not a boxed value.");
+        lock (Gate)
+        {
+            if (finished) throw new InvalidOperationException("Trace was already completed.");
+            return "object:" + Objects.GetValue(value, _ => new Identity(++objectIdentity)).Value.ToString(CultureInfo.InvariantCulture);
+        }
+    }
+
+    public static string NewOperationIdentity()
+    {
+        lock (Gate)
+        {
+            if (finished) throw new InvalidOperationException("Trace was already completed.");
+            return "call:" + (++operationIdentity).ToString(CultureInfo.InvariantCulture);
+        }
+    }
 
     public static long Emit(string bindingId, string model, string step, string point, string classification,
         object connection, object actor, object operation, object? guard, Dictionary<string, object> observations, params long[] causes)

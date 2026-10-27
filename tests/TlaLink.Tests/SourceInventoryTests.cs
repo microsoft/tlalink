@@ -5,6 +5,12 @@ namespace TlaLink.Tests;
 
 public static class SourceInventoryTests
 {
+    private sealed class HostileIdentity
+    {
+        public override bool Equals(object? other) => throw new InvalidOperationException("User equality must not run.");
+        public override int GetHashCode() => throw new InvalidOperationException("User hashing must not run.");
+    }
+
     public static void Register(Action<string, Action> test, string work)
     {
         string directory = Directory.CreateDirectory(Path.Combine(work, "source-inventory")).FullName;
@@ -148,6 +154,79 @@ public static class SourceInventoryTests
             CoreTests.True(Files.Read(Path.Combine(generated, "EnumIdentity.cs")).Contains("((long)(role))", StringComparison.Ordinal));
             File.WriteAllText(path, text.Replace("enum Role {", "enum Role : ulong {"));
             CoreTests.ThrowsAny<InputException>(() => Generate(Path.Combine(directory, "enum-unsupported")));
+        });
+        test("reference identities are stable and never invoke user equality or hashing", () =>
+        {
+            object first = new HostileIdentity(), second = new HostileIdentity();
+            string id = TlaLink.Runtime.TraceRuntime.ObjectIdentity(first);
+            CoreTests.Equal(id, TlaLink.Runtime.TraceRuntime.ObjectIdentity(first));
+            CoreTests.True(id != TlaLink.Runtime.TraceRuntime.ObjectIdentity(second));
+            CoreTests.True(id.StartsWith("object:", StringComparison.Ordinal));
+            CoreTests.ThrowsAny<InvalidOperationException>(() => TlaLink.Runtime.TraceRuntime.ObjectIdentity(1));
+        });
+        test("ordinary local declarations can be captured without treating using declarations as completed disposal", () =>
+        {
+            string path = Path.Combine(directory, "LocalCapture.cs");
+            string text = """
+                /* @link model Locals; */
+                class Locals {
+                    readonly object gate = new();
+                    /* @link state Value guard=gate type=int; */
+                    int value;
+                    void Change() {
+                        lock (gate) {
+                            /* @link step Change point=commit actor=this operation="1" classification=transition observe=Value; */
+                            int result = value = 1;
+                        }
+                    }
+                }
+                """;
+            InstrumentManifest Generate(string output)
+            {
+                CSharpScope scope = CSharpScope.Parse([path]);
+                List<ModelBinding> models = scope.Bindings.Select(b => new ModelBinding(b.Model, b.Tag,
+                    new(b.Tag.Identity, "", b.Tag.Kind, new("fixture.tla", 1, 1), ""), 0)).ToList();
+                return Instrumentation.Generate(scope, models, Review.Build("instrument", scope, models, [], []), output);
+            }
+            File.WriteAllText(path, text);
+            string generated = Path.Combine(directory, "local-generated");
+            Generate(generated);
+            string rewritten = Files.Read(Path.Combine(generated, "LocalCapture.cs"));
+            CoreTests.True(rewritten.Contains("ObjectIdentity(this)", StringComparison.Ordinal));
+            CoreTests.True(rewritten.IndexOf("int result = value = 1;", StringComparison.Ordinal) <
+                rewritten.IndexOf("TraceRuntime.Emit(", StringComparison.Ordinal));
+            File.WriteAllText(path, text.Replace("int result = value = 1;", "using var stream = new System.IO.MemoryStream();"));
+            CoreTests.ThrowsAny<InputException>(() => Generate(Path.Combine(directory, "using-unsupported")));
+        });
+        test("invocation identities are shared within a function and generated locals cannot shadow source names", () =>
+        {
+            string path = Path.Combine(directory, "CallIdentity.cs");
+            File.WriteAllText(path, """
+                /* @link model Calls; */
+                class Calls {
+                    string __tlalinkOperation0 = "";
+                    readonly object gate = new();
+                    /* @link state Value guard=gate type=int; */
+                    int value;
+                    void Change() {
+                        lock (gate) {
+                            /* @link step First actor=this operation="$call" point=commit classification=transition observe=Value; */
+                            value = 1;
+                            /* @link step Second actor=this operation="$call" point=commit classification=transition observe=Value; */
+                            value++;
+                        }
+                    }
+                }
+                """);
+            CSharpScope scope = CSharpScope.Parse([path]);
+            List<ModelBinding> models = scope.Bindings.Select(b => new ModelBinding(b.Model, b.Tag,
+                new(b.Tag.Identity, "", b.Tag.Kind, new("fixture.tla", 1, 1), ""), 0)).ToList();
+            string generated = Path.Combine(directory, "call-generated");
+            Instrumentation.Generate(scope, models, Review.Build("instrument", scope, models, [], []), generated);
+            string rewritten = Files.Read(Path.Combine(generated, "CallIdentity.cs"));
+            CoreTests.Equal(1, rewritten.Split("NewOperationIdentity()", StringSplitOptions.None).Length - 1);
+            CoreTests.True(rewritten.Contains("string __tlalinkOperation0_ =", StringComparison.Ordinal));
+            CoreTests.True(TlaLink.Runtime.TraceRuntime.NewOperationIdentity() != TlaLink.Runtime.TraceRuntime.NewOperationIdentity());
         });
     }
 }
