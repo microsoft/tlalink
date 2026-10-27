@@ -51,6 +51,33 @@ public static class Instrumentation
         List<EventBinding> events = [];
         Dictionary<string, List<TextChange>> changes = [];
         List<(SourceBinding Binding, string Before, string After)> captures = [];
+        Dictionary<(string Path, int Start), string> invocationNames = [];
+        string InvocationIdentity(SourceBinding binding)
+        {
+            SyntaxNode? function = binding.Node.Ancestors().FirstOrDefault(n =>
+                n is BaseMethodDeclarationSyntax or LocalFunctionStatementSyntax or AnonymousFunctionExpressionSyntax or AccessorDeclarationSyntax);
+            BlockSyntax? body = function switch {
+                BaseMethodDeclarationSyntax method => method.Body,
+                LocalFunctionStatementSyntax localFunction => localFunction.Body,
+                AnonymousFunctionExpressionSyntax lambda => lambda.Body as BlockSyntax,
+                AccessorDeclarationSyntax accessor => accessor.Body,
+                _ => null
+            };
+            if (body == null) throw new InputException(ErrorCode.InvalidInstrumentation, "operation=\"$call\" requires an enclosing block-bodied function.");
+            if (body.DescendantNodes(n => n is not (AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax)).Any(n => n is YieldStatementSyntax))
+                throw new InputException(ErrorCode.InvalidInstrumentation, "operation=\"$call\" does not treat iterator enumeration as a method invocation.");
+            var key = (binding.Path, body.SpanStart);
+            if (invocationNames.TryGetValue(key, out string? known)) return known;
+            string name = "__tlalinkOperation" + invocationNames.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            HashSet<string> identifiers = body.SyntaxTree.GetRoot().DescendantTokens()
+                .Where(t => t.IsKind(SyntaxKind.IdentifierToken)).Select(t => t.ValueText).ToHashSet(StringComparer.Ordinal);
+            while (identifiers.Contains(name)) name += "_";
+            invocationNames.Add(key, name);
+            if (!changes.TryGetValue(binding.Path, out List<TextChange>? edits)) changes[binding.Path] = edits = [];
+            edits.Add(new(new TextSpan(body.OpenBraceToken.Span.End, 0),
+                "\nstring " + name + " = global::TlaLink.Runtime.TraceRuntime.NewOperationIdentity();\n"));
+            return name;
+        }
         foreach (SourceBinding binding in executable)
         {
             Tag tag = binding.Tag;
@@ -58,12 +85,15 @@ public static class Instrumentation
             string classification = tag.Options.GetValueOrDefault("classification", "unresolved");
             if (classification == "unresolved" || point == "fault")
                 throw new InputException(ErrorCode.InvalidInstrumentation, "Unresolved or fault observation requires a reviewed capture implementation; not generated.");
-            if (binding.Node is not ExpressionStatementSyntax || binding.Node.Parent is not (BlockSyntax or SwitchSectionSyntax))
-                throw new InputException(ErrorCode.InvalidInstrumentation, "Executable annotations require expression statements directly in a block/switch section.");
+            if (binding.Node is not (ExpressionStatementSyntax or LocalDeclarationStatementSyntax) ||
+                binding.Node is LocalDeclarationStatementSyntax local && !local.UsingKeyword.IsKind(SyntaxKind.None) ||
+                binding.Node.Parent is not (BlockSyntax or SwitchSectionSyntax))
+                throw new InputException(ErrorCode.InvalidInstrumentation, "Executable annotations require expression statements or ordinary local declarations directly in a block/switch section; using declarations are not completion points.");
             if (binding.Node.DescendantNodes().Any(n => n is AnonymousFunctionExpressionSyntax))
                 throw new InputException(ErrorCode.InvalidInstrumentation, "Nested lambda capture is unsupported.");
             string actor = RequiredIdentity(binding, "actor");
-            string operation = RequiredIdentity(binding, "operation");
+            string operation = tag.Options.GetValueOrDefault("operation") == "$call"
+                ? InvocationIdentity(binding) : RequiredIdentity(binding, "operation");
             string? entity = tag.Options.TryGetValue("entity", out string? identity) ? Scalar(binding, identity, identity: true) : null;
             string connection = tag.Options.TryGetValue("connection", out string? c) ? Scalar(binding, c, identity: true) : "0L";
             ModelBinding? action = models.SingleOrDefault(m => m.Model == binding.Model && m.Tag.Kind == "step" && m.Tag.Identity == tag.Identity);
@@ -176,6 +206,12 @@ public static class Instrumentation
             throw new InputException(ErrorCode.InvalidInstrumentation, "Only signed numeric literals may use prefix operators.");
         ITypeSymbol? type = binding.Semantics.GetSpeculativeTypeInfo(binding.Node.SpanStart, syntax, SpeculativeBindingOption.BindAsExpression).Type;
         ISymbol? symbol = binding.Semantics.GetSpeculativeSymbolInfo(binding.Node.SpanStart, syntax, SpeculativeBindingOption.BindAsExpression).Symbol;
+        if (identity && syntax is ThisExpressionSyntax)
+        {
+            if (type is not INamedTypeSymbol { TypeKind: TypeKind.Class, IsReferenceType: true })
+                throw new InputException(ErrorCode.InvalidInstrumentation, "this identities require a reference-type class receiver.");
+            return "global::TlaLink.Runtime.TraceRuntime.ObjectIdentity(this)";
+        }
         if (syntax is not LiteralExpressionSyntax && syntax is not PrefixUnaryExpressionSyntax && symbol is not (IFieldSymbol or ILocalSymbol or IParameterSymbol))
             throw new InputException(ErrorCode.InvalidInstrumentation, "Unresolved or effectful capture symbol.");
         if (syntax is MemberAccessExpressionSyntax member && member.Expression is not ThisExpressionSyntax &&
