@@ -5,6 +5,15 @@ namespace TlaLink;
 
 public static class Markup
 {
+    public const int Version = 2;
+
+    public static void RequireVersion(int version)
+    {
+        if (version != Version)
+            throw new InputException(ErrorCode.InvalidAnnotation,
+                $"Declare annotation_version {Version} in the root project, or --annotation-version {Version} on standalone annotation commands.");
+    }
+
     private const string Id = @"[A-Za-z_][A-Za-z0-9_.-]*";
     private static readonly Regex Token = new($@"\G\s*(""(?:[^""\\]|\\.)*""|{Id}|[=;])", RegexOptions.CultureInvariant);
     private static readonly Dictionary<string, HashSet<string>> Options = new()
@@ -17,10 +26,13 @@ public static class Markup
     public static List<Tag> Parse(string content, int start, int end)
     {
         string payload = content.Trim();
-        if (!payload.StartsWith("@tla", StringComparison.Ordinal)) return [];
-        Match header = Regex.Match(payload, @"^@tla\s+2\b");
+        if (payload.StartsWith("@tla", StringComparison.Ordinal))
+            throw new InputException(ErrorCode.InvalidAnnotation,
+                "Replace @tla version headers with @link and declare annotation_version in the root project.");
+        if (!Regex.IsMatch(payload, @"^@link\b")) return [];
+        Match header = Regex.Match(payload, @"^@link(?=\s|$)");
         if (!header.Success)
-            throw new InputException(ErrorCode.InvalidAnnotation, "Use @tla 2 with semicolon-terminated model/state/step directives.");
+            throw new InputException(ErrorCode.InvalidAnnotation, "Use @link with semicolon-terminated model/state/step directives.");
         List<string> tokens = [];
         int offset = header.Length;
         while (payload[offset..].Trim().Length != 0)

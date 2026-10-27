@@ -1,7 +1,7 @@
 ---------------------------- MODULE Demo ----------------------------
 EXTENDS Naturals
 
-(* @tla 2
+(* @link
 model demo;
 *)
 
@@ -42,7 +42,7 @@ Termination == <>(pc = "Done")
 
 \* END TRANSLATION 
 
-(* @tla 2
+(* @link
 state active;
 *)
 ObservedActive == active

@@ -8,6 +8,24 @@ public static class ProjectCompositionTests
 {
     public static void RegisterCore(Action<string, Action> test, string work)
     {
+        test("root annotation version is required and components cannot override it", () =>
+        {
+            Fixture f = new(work);
+            string original = File.ReadAllText(f.Path);
+            JsonObject root = JsonNode.Parse(original)!.AsObject();
+            root.Remove("annotation_version");
+            Save(f.Path, root);
+            CoreTests.ThrowsAny<InputException>(() => ProjectComposition.Read(f.Path));
+            root["annotation_version"] = 3;
+            Save(f.Path, root);
+            CoreTests.ThrowsAny<InputException>(() => ProjectComposition.Read(f.Path));
+            File.WriteAllText(f.Path, original);
+            CoreTests.Equal(2, ProjectComposition.Read(f.Path).AnnotationVersion);
+            JsonObject component = JsonNode.Parse(File.ReadAllText(f.ComponentPath))!.AsObject();
+            component["annotation_version"] = 2;
+            Save(f.ComponentPath, component);
+            CoreTests.ThrowsAny<InputException>(() => ProjectComposition.Read(f.Path));
+        });
         test("component expansion resolves declaring-file paths and shares exact input sets and execution budgets", () => {
             Fixture f = new(work);
             ProjectExpansion expanded = ProjectComposition.Expand(f.Path);
@@ -215,7 +233,8 @@ public static class ProjectCompositionTests
                 new("net10.0", "14", "enable", false, true, []), "requirements.json",
                 [new("complete", Components: ["counter"])], "verification/reviews",
                 Components: [System.IO.Path.GetRelativePath(Root, ComponentPath)],
-                InputSets: ["verification/inputs.json"], ExecutionProfiles: ["verification/profiles.json"]));
+                InputSets: ["verification/inputs.json"], ExecutionProfiles: ["verification/profiles.json"],
+                AnnotationVersion: Markup.Version));
             Save(System.IO.Path.Combine(Root, "requirements.json"), new AcceptancePolicy(Schema.Version,
                 "acceptance-policy", "counter-project", [
                     new("counter-safe", "complete", "counter-safety", "passed", ConfigSha256: Files.Hash(config))

@@ -27,7 +27,7 @@ public sealed record ReviewDecision(int SchemaVersion, string Kind, string Oblig
 public sealed record AnalysisProject(int SchemaVersion, string Kind, string Id, ProjectTools Tools,
     CompilerProfile Compiler, string Requirements, List<AnalysisScenario> Scenarios,
     List<ReviewObligation> Obligations, string ReviewDirectory, List<CheckObligation>? CheckObligations = null,
-    string? ResultStore = null)
+    string? ResultStore = null, int AnnotationVersion = Markup.Version)
 {
     [JsonIgnore]
     internal ProjectAuthoringMetadata? Authoring { get; init; }

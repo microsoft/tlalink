@@ -23,7 +23,7 @@ root-relative because this document lives beside the README.
 - [Evidence retention and recheck planning](#evidence-retention-and-recheck-planning)
 - [Integrated TLA+ and Dafny workflow](#integrated-tla-and-dafny-workflow)
 - [Review commands](#review-commands)
-- [Source annotation grammar](#one-maintained-markup-tla-2)
+- [Source annotation grammar](#one-maintained-markup-link)
 - [Instrumentation and trace validation](#instrument-execute-validate)
 - [Tests and evidence](#tests-and-evidence)
 
@@ -433,7 +433,7 @@ acceptance requirements explicit; one claim cannot silently substitute for anoth
 
 Apalache uses the same TLA+ language, not a simpler replacement language.
 Variables/constants need upstream `@type:` comments; many operator types are
-inferred by Snowcat. These are independent of `@tla 2` source correspondence.
+inferred by Snowcat. These are independent of `@link` source correspondence.
 A bounded pass is not TLC exhaustion or an inductive proof. Inductive success
 is scoped to the selected constants/domains, assumptions and supported native
 encoding, not all C# executions or arbitrary model parameters.
@@ -1121,7 +1121,7 @@ All public manifests, receipts, traces, packets, plans, reviews and reports use
 `schema_version: 4` plus a `kind` discriminator. Each kind has a specific shape;
 tool-specific evidence is not flattened into a generic proof claim. Unknown
 versions, kinds, duplicate fields and unknown project options are errors.
-Source annotation grammar remains `@tla 2`; that grammar number is not a JSON
+Source annotations use `@link` with root `annotation_version: 2`; that grammar number is not a JSON
 schema version. Native backend output and .NET runtime/project configuration
 retain their upstream formats.
 
@@ -1309,9 +1309,9 @@ alone is not sufficient. No package installation or public service is involved.
 Using the repository-local tool cache:
 
 ```powershell
-.\TlaLink.ps1 inspect-integrated --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-review-new
-.\TlaLink.ps1 verify-integrated --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-proof-new
-.\TlaLink.ps1 test-integrated --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-test-new --timeout 60
+.\TlaLink.ps1 inspect-integrated --annotation-version 2 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-review-new
+.\TlaLink.ps1 verify-integrated --annotation-version 2 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-proof-new
+.\TlaLink.ps1 test-integrated --annotation-version 2 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-test-new --timeout 60
 .\TlaLink.ps1 read-integrated --result .\Results\integrated-test-new\result.json --current true
 ```
 
@@ -1368,7 +1368,7 @@ command names and do not require Dafny; their JSON uses the same current schema.
   endpoints are errors. These claims always remain `requires-review` /
   `not-proved`; matching names or two successful backends never prove composition.
 
-There is no need to add Dafny comments to existing source. Existing `@tla 2`
+There is no need to add Dafny comments to existing source. Existing `@link`
 annotations continue to supply optional TLA+ links. The example exercises
 multi-output credit return, a mathematical-integer function, and Boolean
 functions. Its accepted-unit-return correspondence deliberately does not cover
@@ -1413,10 +1413,10 @@ whole run finishes; checker coverage and evidence validation are unchanged.
 ## Review commands
 
 ```powershell
-.\TlaLink.ps1 inspect --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar
-.\TlaLink.ps1 review --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
-.\TlaLink.ps1 check --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --snapshot .\review-new.json
-.\TlaLink.ps1 check --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --baseline .\review-new.json
+.\TlaLink.ps1 inspect --annotation-version 2 --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar
+.\TlaLink.ps1 review --annotation-version 2 --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
+.\TlaLink.ps1 check --annotation-version 2 --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --snapshot .\review-new.json
+.\TlaLink.ps1 check --annotation-version 2 --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --baseline .\review-new.json
 .\TlaLink.ps1 inputs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar
 ```
 
@@ -1449,7 +1449,28 @@ Reflection, aliasing, external calls and accesses outside supplied files retain
 review obligations. Interference analysis compares resolved field symbols,
 not field-name text.
 
-## One maintained markup: `@tla 2`
+## One maintained markup: `@link`
+
+Declare `"annotation_version": 2` once in the root `analysis-project`.
+All imported components, C# sources and annotated TLA+ modules use that grammar;
+components cannot select or override it. JSON `schema_version` remains 4 and
+is independent of the annotation grammar version.
+
+Standalone `inspect`, `check`, `review`, `instrument`, `validate-trace` and the
+three integrated analysis commands require `--annotation-version 2`. Project
+workflows pass their declared version to child commands. Missing or unsupported
+versions fail explicitly; neither filenames nor comments select a version.
+Commands such as `inputs`, which do not interpret bindings, need no annotation
+version. The marker denotes correspondence, not general implementation-language
+support: the source integration remains C#, and Dafny/P retain their separate
+backend-specific binding manifests.
+
+To migrate maintained inputs, add the root field and replace each `@tla 2`
+header with `@link` in source/model comments. Old `@tla` headers and version
+numbers embedded after `@link` are rejected, not accepted as a parallel grammar.
+Regenerate copied/instrumented sources and collect new evidence. Do not rewrite
+historical receipts, approved configuration pins or generated PlusCal bodies
+just to clear drift.
 
 Use C# block comments or TLA+ comments, with semicolon-terminated directives.
 Quoted values use JSON escaping. Unknown versions/options and duplicate options
@@ -1457,15 +1478,15 @@ are errors. IDs begin with a letter/underscore and may contain letters, digits,
 underscores, dots and hyphens. Numeric expressions must be quoted.
 
 ```csharp
-/* @tla 2 model CreditLane; */
+/* @link model CreditLane; */
 class Lane {
     readonly object gate = new();
-    /* @tla 2 state Available guard=gate type=int units=frames; */
+    /* @link state Available guard=gate type=int units=frames; */
     int available;
 
     void Acquire() {
         lock (gate) {
-            /* @tla 2 step Acquire actor="1" operation="1" connection="1"
+            /* @link step Acquire actor="1" operation="1" connection="1"
                point=commit classification=transition observe=Available; */
             available--;
         }
@@ -1479,10 +1500,10 @@ zero-argument operators, or one-argument entity-indexed operators when the
 step declares an explicit scalar `entity` identity:
 
 ```tla
-(* @tla 2 model CreditLane; *)
-(* @tla 2 state Available type=int; *)
+(* @link model CreditLane; *)
+(* @link state Available type=int; *)
 Available == available
-(* @tla 2 step Acquire; *)
+(* @link step Acquire; *)
 Acquire == ...
 ```
 

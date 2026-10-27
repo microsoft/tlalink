@@ -25,16 +25,16 @@ public static class EntityTraceTests
     {
         Directory.CreateDirectory(output);
         string text = """
-            /* @tla 2 model Fixture; */
+            /* @link model Fixture; */
             class Lane {
                 readonly object gate = new();
                 readonly int id = 1;
                 int Identity => id;
-                /* @tla 2 state Value guard=gate type=int; */
+                /* @link state Value guard=gate type=int; */
                 int value;
                 void Move() {
                     lock (gate) {
-                        /* @tla 2 step Move actor="1" operation="1" entity=id point=commit classification=transition observe=Value; */
+                        /* @link step Move actor="1" operation="1" entity=id point=commit classification=transition observe=Value; */
                         value = 1;
                     }
                 }
@@ -107,19 +107,19 @@ public static class EntityTraceTests
         Directory.CreateDirectory(output);
         string source = Path.Combine(output, "Lane.cs"), model = Path.Combine(output, "EntityFixture.tla");
         File.WriteAllText(source, """
-            /* @tla 2 model EntityFixture; */
+            /* @link model EntityFixture; */
             class Lane
             {
                 readonly object gate = new();
                 readonly int id;
-                /* @tla 2 state Value guard=gate type=int; */
+                /* @link state Value guard=gate type=int; */
                 int value;
                 public Lane(int id) { this.id = id; }
                 public void Move()
                 {
                     lock (gate)
                     {
-                        /* @tla 2 step Move actor="1" operation="1" entity=id point=commit classification=transition observe=Value; */
+                        /* @link step Move actor="1" operation="1" entity=id point=commit classification=transition observe=Value; */
                         value = MUTATION;
                     }
                 }
@@ -128,13 +128,13 @@ public static class EntityTraceTests
         File.WriteAllText(model, """
             ---- MODULE EntityFixture ----
             EXTENDS Integers
-            (* @tla 2 model EntityFixture; *)
+            (* @link model EntityFixture; *)
             VARIABLE x
             vars == <<x>>
             Init == x = [i \in 1..2 |-> 0]
-            (* @tla 2 state Value type=int; *)
+            (* @link state Value type=int; *)
             Value(entity) == x[entity]
-            (* @tla 2 step Move; *)
+            (* @link step Move; *)
             Move == \E lane \in 1..2:
                       /\ x[lane] = 0
                       /\ (lane = 1 \/ x[1] = 1)
@@ -147,7 +147,7 @@ public static class EntityTraceTests
         File.WriteAllText(config, "SPECIFICATION Spec\n");
         string generated = Path.Combine(output, "generated");
         string jar = TestTools.Jar(root);
-        var instrument = TestCli.Run(["instrument", "--source", source, "--model", model, "--jar", jar, "--output", generated]);
+        var instrument = TestCli.Run(["instrument", "--annotation-version", "2", "--source", source, "--model", model, "--jar", jar, "--output", generated]);
         if (instrument.Code != 0) throw new InvalidOperationException(instrument.Json);
         string first = mode is "reverse" or "unordered" ? "b" : "a";
         string second = mode is "reverse" or "unordered" ? "a" : "b";
@@ -199,7 +199,7 @@ public static class EntityTraceTests
         CoreTests.Equal(handoff ? 1 : 0, causes.Length);
         if (handoff) CoreTests.Equal(1L, causes[0]);
         else CoreTests.Equal(0, events[1].GetProperty("predecessors").GetArrayLength());
-        var check = TestCli.Run(["validate-trace", "--model", model, "--jar", jar, "--manifest", manifest, "--trace", trace,
+        var check = TestCli.Run(["validate-trace", "--annotation-version", "2", "--model", model, "--jar", jar, "--manifest", manifest, "--trace", trace,
             "--execution", Path.Combine(execution, "execution.json"), "--config", config, "--output", Path.Combine(output, "validation")]);
         if (mode == "guard")
         {

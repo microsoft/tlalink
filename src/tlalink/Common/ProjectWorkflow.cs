@@ -36,6 +36,7 @@ public static partial class ProjectWorkflow
             var report = new {
                 SchemaVersion = Schema.Version, Kind = options.Command == "doctor" ? "project-preflight" : "analysis-plan",
                 Project = project.Id, Status = coverageIssues.Count == 0 ? "ready" : "incomplete", Compiler = project.Compiler,
+                AnnotationVersion = project.AnnotationVersion,
                 CheckCoverage = coverage, Diagnostics = coverageIssues,
                 Fingerprints = pins, Scenarios = scenarios.Select(s => new {
                     s.Id, Stages = ProjectInputs.Order(s).Select(stage => new {
@@ -293,6 +294,8 @@ public static partial class ProjectWorkflow
             Jar();
         }
         arguments.AddRange(["--timeout", stage.TimeoutSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
+        if (CliOptions.AnnotationCommands.Contains(arguments[0], StringComparer.Ordinal))
+            arguments.AddRange(["--annotation-version", project.AnnotationVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
         JsonElement result = InvokeCli(arguments, output, stage.TimeoutSeconds * 8);
         MergePins(result, pins);
         return result;
@@ -301,7 +304,8 @@ public static partial class ProjectWorkflow
     private static JsonElement Trace(string path, AnalysisProject project, AnalysisStage stage, string output, Dictionary<string, string> pins)
     {
         string generated = Path.Combine(output, "generated");
-        List<string> args = ["instrument", "--output", generated, "--jar", ProjectInputs.Resolve(path, project.Tools.Jar!.Path),
+        List<string> args = ["instrument", "--annotation-version", project.AnnotationVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--output", generated, "--jar", ProjectInputs.Resolve(path, project.Tools.Jar!.Path),
             "--model", ProjectInputs.Resolve(path, stage.Models![0]), "--timeout", stage.TimeoutSeconds.ToString()];
         foreach (string source in stage.Sources!) args.AddRange(["--source", ProjectInputs.Resolve(path, source)]);
         foreach (string reference in project.Compiler.References) args.AddRange(["--reference", ProjectInputs.Resolve(path, reference)]);
@@ -335,7 +339,8 @@ public static partial class ProjectWorkflow
         foreach (string arg in stage.Arguments ?? []) args.AddRange(["--arg", arg]);
         JsonElement receipt = InvokeCli(args, Path.Combine(output, "execute"), stage.TimeoutSeconds * 4);
         if (!File.Exists(Path.Combine(execution, "execution.json"))) return receipt;
-        List<string> validation = ["validate-trace", "--manifest", Path.Combine(generated, "bindings.json"),
+        List<string> validation = ["validate-trace", "--annotation-version", project.AnnotationVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--manifest", Path.Combine(generated, "bindings.json"),
             "--trace", trace, "--execution", Path.Combine(execution, "execution.json"),
             "--model", ProjectInputs.Resolve(path, stage.Models[0]), "--config", ProjectInputs.Resolve(path, stage.Config!),
             "--jar", ProjectInputs.Resolve(path, project.Tools.Jar!.Path), "--output", Path.Combine(output, "validation"),

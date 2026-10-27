@@ -601,6 +601,10 @@
             "null"
           ],
           "default": null
+        },
+        "annotation_version": {
+          "type": "integer",
+          "const": 2
         }
       },
       "required": [
@@ -611,7 +615,8 @@
         "compiler",
         "requirements",
         "scenarios",
-        "review_directory"
+        "review_directory",
+        "annotation_version"
       ],
       "additionalProperties": false
     },

@@ -6,7 +6,7 @@ policies for your own system.
 
 | Example | What it shows | Tools needed |
 |---|---|---|
-| [Demo](Demo.cs) and its [model](Demo.tla) | Linking a C# class to a TLA+ model with `@tla 2` annotations, and reviewing those links. | TLA+ tools |
+| [Demo](Demo.cs) and its [model](Demo.tla) | Linking a C# class to a TLA+ model with `@link` annotations, and reviewing those links. | TLA+ tools |
 | [Components](Components/README.md) | The project layout in its smallest form: a root project, checks beside the code, and shared inputs and time limits. | TLA+ tools |
 | [Workflow](Workflow/README.md) | A complete project: model checking, checking a recorded C# execution against a model, Dafny comparisons and a human review gate. | TLA+ tools, Dafny |
 | [Evidence](Evidence/README.md) | C# regression tests and a Dafny proof checked together, with a pending correspondence review. | Dafny, .NET SDK |
@@ -17,6 +17,8 @@ policies for your own system.
 Every project example uses the same layout: a small root `tlalink.project.json`
 selects `component.json` files kept beside the code they check, and a separate
 `verification/requirements.json` states what counts as acceptable evidence.
+The root also selects one annotation version; `@link` comments contain only
+the code/model binding.
 
 Run commands from the repository root. Each checker is installed separately
 and pinned in the local `.tools` cache; see the
@@ -29,7 +31,7 @@ and pinned in the local `.tools` cache; see the
 algorithm in [Demo.tla](Demo.tla). Review the links for one step:
 
 ```powershell
-.\TlaLink.ps1 review --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
+.\TlaLink.ps1 review --annotation-version 2 --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
 ```
 
 This checks that the annotations resolve on both sides. It does not run the

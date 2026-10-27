@@ -7,7 +7,8 @@ public sealed record ProjectAuthoring(int SchemaVersion, string Kind, string Id,
     CompilerProfile Compiler, string Requirements, List<ScenarioAuthoring> Scenarios, string ReviewDirectory,
     List<ReviewAuthoring>? Obligations = null, List<CheckObligation>? CheckObligations = null,
     List<string>? Components = null, List<string>? InputSets = null, List<string>? ExecutionProfiles = null,
-    [property: JsonPropertyName("$schema")] string? EditorSchema = null, string? ResultStore = null);
+    [property: JsonPropertyName("$schema")] string? EditorSchema = null, string? ResultStore = null,
+    [property: JsonRequired] int AnnotationVersion = 0);
 public sealed record ScenarioAuthoring(string Id, List<StageAuthoring>? Stages = null, List<string>? Components = null);
 public sealed record StageAuthoring(string Id, string Kind, List<string>? DependsOn = null,
     int? TimeoutSeconds = null, string? Bindings = null, List<string>? Sources = null,
@@ -145,6 +146,7 @@ public static class ProjectComposition
         internal AnalysisProject Load()
         {
             ProjectAuthoring source = Document<ProjectAuthoring>(root, "analysis-project");
+            Markup.RequireVersion(source.AnnotationVersion);
             Id(root, source.Id);
             metadata.Composed = (source.Components?.Count ?? 0) + (source.InputSets?.Count ?? 0) +
                 (source.ExecutionProfiles?.Count ?? 0) > 0;
@@ -210,7 +212,8 @@ public static class ProjectComposition
             Unique(scenarios.Select(s => s.Id), root, "scenario");
             return new AnalysisProject(source.SchemaVersion, source.Kind, source.Id, source.Tools,
                 source.Compiler, source.Requirements, scenarios, obligations, source.ReviewDirectory,
-                source.CheckObligations == null && components.Count == 0 ? null : checks, source.ResultStore) { Authoring = metadata };
+                source.CheckObligations == null && components.Count == 0 ? null : checks, source.ResultStore,
+                source.AnnotationVersion) { Authoring = metadata };
         }
 
         private void Component(string file, int depth)

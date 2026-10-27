@@ -72,7 +72,7 @@ dotnet build .\TlaLink.sln
 dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --core
 .\TlaLink.ps1 doctor --project .\examples\Workflow\tlalink.project.json --scenario lanes
 .\TlaLink.ps1 plan --project .\examples\Workflow\tlalink.project.json --scenario lanes
-.\TlaLink.ps1 review --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
+.\TlaLink.ps1 review --annotation-version 2 --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
 ```
 
 The core suite needs no external backends. The example preflight/review
@@ -105,7 +105,11 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   MSBuild workspace; unresolved context blocks instrumentation.
 - Follow calls, competing accesses, awaits, cancellation, cleanup and external
   effects beyond the supplied scope. Symbol resolution does not prove atomicity.
-- Use only `@tla 2`. Review-only bindings need not have executable metadata.
+- Use only `@link`, with `"annotation_version": 2` declared once in the root
+  project. Components inherit it and must not override it. Standalone annotation
+  commands require `--annotation-version 2`; never guess a version, restore
+  per-comment version headers or add compatibility parsing for `@tla`.
+  Review-only bindings need not have executable metadata.
 - Instrument separate copied sources, never product code or frozen profiles.
   Keep selected observation points and missing coverage explicit.
 - Use `execute` to bind generated sources to compiler inputs and a loaded binary,
@@ -212,7 +216,7 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   fallback. Its strict `apalache-analysis` manifests select typechecking,
   bounded safety or complete initiation/preservation/implication induction.
   Keep these claims distinct from TLC exhaustion and causal trace matching.
-  Use native Snowcat types alongside, not instead of, `@tla 2` bindings.
+  Use native Snowcat types alongside, not instead of, `@link` bindings.
   Use the supported named nullary predicates and explicit constant initialization,
   not TLC configuration translation, temporal properties or simulation.
   Reject SANY-resolved ASSUME declarations rather than depend on differing
@@ -263,7 +267,7 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   timeout/termination handling, strict input validation and exclusive writes.
 - All maintained public JSON uses `Schema.Version` (4) and an explicit document
   kind. Update producers/readers/examples/tests together; do not add legacy
-  acceptance branches or rewrite historical evidence. `@tla 2` is a separate
+  acceptance branches or rewrite historical evidence. `@link` is a separate
   source annotation grammar, not an older JSON schema.
 - Keep capture side effects and scheduling hooks separate. Never run hooks
   under the recorder lock or generate them inside source locks.

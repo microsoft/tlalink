@@ -29,8 +29,8 @@ public static class StageEvidenceTests
             CoreTests.Equal(new TlcResources(1, 1024), TlcResources.Effective("trace", null));
             foreach (TlcResources invalid in new[] { new TlcResources(0, 512), new(65, 512), new(1, 127), new(1, 65537) })
                 CoreTests.ThrowsAny<InputException>(() => TlcResources.Effective("tlc", invalid));
-            CoreTests.Equal(new TlcResources(2, 2048), TlcResources.FromCli(new(["validate-trace", "--workers", "2", "--max-heap-mib", "2048"])));
-            CoreTests.ThrowsAny<InputException>(() => TlcResources.FromCli(new(["validate-trace", "--workers", "auto"])));
+            CoreTests.Equal(new TlcResources(2, 2048), TlcResources.FromCli(new(["validate-trace", "--annotation-version", "2", "--workers", "2", "--max-heap-mib", "2048"])));
+            CoreTests.ThrowsAny<InputException>(() => TlcResources.FromCli(new(["validate-trace", "--annotation-version", "2", "--workers", "auto"])));
         });
         string fixture = Path.Combine(work, "regression-stage");
         Directory.CreateDirectory(fixture);

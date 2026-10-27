@@ -7,11 +7,12 @@
 Formal methods such as TLA+, Dafny and P can catch concurrency bugs, lost
 updates and cleanup mistakes that testing misses. Until recently, writing
 those models took specialist skills and a lot of time. Coding agents have
-changed that: an agent can now draft a model of the behavior you care about
-in a fraction of the time.
+changed that. Mechanically translating a whole program rarely works, because
+the result has far too many states to check. Instead, an agent can quickly
+draft a small model of just the behavior you care about.
 
-The harder problem is keeping a model connected to the code. Code keeps
-changing, and a model that passed last month may no longer describe what
+The problem TlaLink solves is keeping that model connected to the code. Code
+keeps changing, and a model that passed last month may no longer describe what
 the code does today. Without an explicit link, a passing model can give false
 confidence.
 
@@ -55,13 +56,14 @@ your code. It is designed for the **C#/.NET toolchain**.
    simplified or assumed, and what is still open. You decide whether that is
    good enough.
 
-The mapping lives in your source as short annotations. For example, this
+The project declares the annotation version once; it is not repeated in source.
+The mapping lives in your source as short `@link` annotations. For example, this
 says the increment under the lock is the model step `Admit`:
 
 ```csharp
 lock (this.gate)
 {
-    /* @tla 2
+    /* @link
     step Admit justification=lock actor="1" operation="1" point=commit classification=transition observe=active;
     */
     this.active++;

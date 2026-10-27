@@ -44,6 +44,16 @@ formal backends supporting the C# workflow.
 
 ## Architecture
 
+Binding comments use `@link` without an embedded version. The root project's
+required `annotation_version` selects one grammar for all components and
+annotated C#/TLA+ inputs. Standalone annotation commands require explicit
+version context instead. This keeps source comments focused on correspondence
+and makes version changes project-wide migrations, not mixed per-comment
+interpretations. Only annotation version 2 is supported; JSON schema 4 is
+independent. Old `@tla` markers are rejected. The neutral marker does not unify
+backend semantics: Dafny and P retain their native binding formats, and source
+resolution remains C#-specific.
+
 Sources are physically grouped into `Common`, `PLang`, `Tla`, `Tlc`,
 `Apalache`, `PlusCal` and `Dafny` under `src\tlalink`. This is a responsibility split in
 one executable, not independently versioned plugins. Public namespaces
@@ -55,7 +65,7 @@ and freshness handling are in a separate partial frontend under `PlusCal`.
 |---|---|
 | `Contracts.cs` | Evidence records, strict decoding, original-byte hashes, exclusive writes |
 | `ErrorCode.cs` / `DiagnosticCatalog.cs` | Attributed diagnostic IDs/default severities, validated cached metadata and stable string output |
-| `Markup.cs` | The single maintained `@tla 2` grammar/comment envelopes |
+| `Markup.cs` | The single maintained `@link` grammar/comment envelopes; project-level annotation version |
 | `CSharpFrontend.cs` | Explicit Roslyn compilation, attachments, field symbols and boundaries |
 | `TlaBackend.cs` | Bounded fresh Java processes, normalized spans, dependencies and freshness |
 | `TlaIndex.java` | Authoritative SANY/PlusCal adapter |
@@ -374,7 +384,7 @@ checksums alone and never editing the module.
 
 All maintained public JSON uses schema 4 with a document-kind discriminator.
 Older versions are rejected, with no compatibility branches or implicit
-upgrades. Historical evidence is not rewritten. The `@tla 2` source grammar
+upgrades. Historical evidence is not rewritten. The `@link` source grammar
 is independent of JSON versioning. Integrated commands use an external strict
 binding manifest and an independent evidence packet. This keeps source parsing, file hashing, compiler
 context and TLA review shared without making model-language semantics generic.

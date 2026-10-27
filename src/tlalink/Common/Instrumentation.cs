@@ -18,6 +18,8 @@ public sealed record InstrumentManifest(int SchemaVersion, string BindingId, Dic
 {
     [JsonRequired]
     public string Kind { get; init; } = "instrumentation-manifest";
+    [JsonRequired]
+    public int AnnotationVersion { get; init; } = Markup.Version;
 }
 public sealed record ModelBinding(string Model, Tag Tag, Endpoint Endpoint, int Arity);
 
@@ -29,6 +31,7 @@ public static class Instrumentation
         Files.RequireSchema(document.RootElement, "instrumentation-manifest");
         InstrumentManifest manifest = document.RootElement.Deserialize<InstrumentManifest>(Files.Json)
             ?? throw new InputException(ErrorCode.InvalidTrace, "Invalid binding manifest.");
+        Markup.RequireVersion(manifest.AnnotationVersion);
         if (manifest.Events.Count == 0 ||
             manifest.BindingId != Files.HashText(JsonSerializer.Serialize(new { manifest.Fingerprints, manifest.Events }, Files.Json)) ||
             manifest.Events.Select(e => (e.Model, e.Step)).Distinct().Count() != manifest.Events.Count)

@@ -35,6 +35,11 @@ public static class ProjectEditorSchema
             JsonObject properties = schema["properties"]!.AsObject();
             properties["schema_version"]!["const"] = Schema.Version;
             properties["kind"]!["const"] = document.Kind;
+            if (document.Kind == "analysis-project")
+            {
+                properties["annotation_version"]!["const"] = Markup.Version;
+                properties["annotation_version"]!.AsObject().Remove("default");
+            }
             definitions[document.Name] = schema;
         }
         return new JsonObject {
