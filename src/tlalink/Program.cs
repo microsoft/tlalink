@@ -15,6 +15,7 @@ public static class Program
             options = new(args);
             if (CliOptions.AnnotationCommands.Contains(options.Command, StringComparer.Ordinal))
                 Markup.RequireVersion(options.AnnotationVersion);
+            if (options.Command == "inspect-source") return SourceInventory.Run(options);
             if (options.Command == "report") return EvidenceReport.Run(options);
             if (options.Command == "project-schema") return ProjectEditorSchema.Run(options);
             if (options.Command == "gc") return EvidenceGarbageCollection.Run(options);

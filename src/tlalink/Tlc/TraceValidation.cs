@@ -95,7 +95,10 @@ public static class TraceValidation
                 entry.GetProperty(name).ValueKind is not (JsonValueKind.Number or JsonValueKind.String)))
                 throw new InputException(ErrorCode.InvalidTrace, "Trace identities require integers or strings.");
             string action = binding.Classification == "stutter" ? $"UNCHANGED {Tuple()}" :
-                binding.Operator + (binding.Arity switch { 0 => "", 1 => $"({actor})", 2 => $"({actor},{operation})", _ => throw new InputException(ErrorCode.InvalidTrace, "Unsupported action arity.") });
+                binding.Operator + (binding.Arity switch {
+                    0 => "", 1 => $"({actor})", 2 => $"({actor},{operation})",
+                    3 when binding.Entity => $"({actor},{operation},{entityValue})",
+                    _ => throw new InputException(ErrorCode.InvalidTrace, "Unsupported action arity or missing entity.") });
             if (binding.Classification == "transition") actionNames.Add(binding.Operator);
             JsonElement observations = entry.GetProperty("observations");
             if (observations.EnumerateObject().Count() != binding.Observations.Count)
@@ -133,6 +136,8 @@ public static class TraceValidation
         if (connections.Count != 1) throw new InputException(ErrorCode.InvalidTrace, "Pilot validates one model connection per trace.");
         string actors = "{" + string.Join(",", events.Select(e => TlaValue(e.GetProperty("actor"))).Distinct()) + "}";
         string operations = "{" + string.Join(",", events.Select(e => TlaValue(e.GetProperty("operation"))).Distinct()) + "}";
+        string entities = "{" + string.Join(",", events.Where(e => e.TryGetProperty("entity", out _))
+            .Select(e => TlaValue(e.GetProperty("entity"))).Distinct()) + "}";
         List<string> hidden = [];
         foreach (ModelBinding binding in models.Where(m => m.Tag.Kind == "step" && m.Tag.Options.GetValueOrDefault("visibility") == "hidden"))
         {
@@ -142,6 +147,7 @@ public static class TraceValidation
                 0 => binding.Endpoint.Name,
                 1 => $"(\\E a \\in {actors}: {binding.Endpoint.Name}(a))",
                 2 => $"(\\E a \\in {actors}, op \\in {operations}: {binding.Endpoint.Name}(a,op))",
+                3 when entities != "{}" => $"(\\E a \\in {actors}, op \\in {operations}, entity \\in {entities}: {binding.Endpoint.Name}(a,op,entity))",
                 _ => throw new InputException(ErrorCode.InvalidTrace, "Unsupported hidden action arity.")
             });
         }

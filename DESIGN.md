@@ -66,6 +66,7 @@ and freshness handling are in a separate partial frontend under `PlusCal`.
 | `Contracts.cs` | Evidence records, strict decoding, original-byte hashes, exclusive writes |
 | `ErrorCode.cs` / `DiagnosticCatalog.cs` | Attributed diagnostic IDs/default severities, validated cached metadata and stable string output |
 | `Markup.cs` | The single maintained `@link` grammar/comment envelopes; project-level annotation version |
+| `SourceInventory.cs` | Current Roslyn source/member/call/lock/await facts under explicit compiler scope; no coverage or atomicity verdict |
 | `CSharpFrontend.cs` | Explicit Roslyn compilation, attachments, field symbols and boundaries |
 | `TlaBackend.cs` | Bounded fresh Java processes, normalized spans, dependencies and freshness |
 | `TlaIndex.java` | Authoritative SANY/PlusCal adapter |
@@ -128,6 +129,12 @@ integration, a causal trace or model conformance. Build projects, the harness,
 compiler/source-generator behavior and OS/runtime remain trusted. Inputs exposed
 at the MSBuild capture boundary are recorded; this is not a complete MSBuild
 workspace or authenticated compiler/runtime closure.
+
+Source inventories can use that recorded reference closure and defines with
+explicit nullable mode, rather than silently adding the tool host's framework
+references. The compiler settings and reference-selection mode are recorded and
+fingerprinted. This reproduces the selected Roslyn context, not MSBuild execution
+or source-generator behavior; the inventory remains source facts, not coverage.
 
 Standalone Dafny uses the same authoritative frontend, distribution pinning,
 verification classifier and assumption audit as integrated bindings. Its native

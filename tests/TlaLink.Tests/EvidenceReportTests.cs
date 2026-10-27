@@ -34,6 +34,23 @@ public static class EvidenceReportTests
             Files.WriteNew(path, manifest);
             return (directory, path, source, manifest);
         }
+        test("multi-run summaries retain every explicit path and preserve command-error diagnostics", () =>
+        {
+            string project = Path.Combine(work, "absent-report-project.json");
+            string first = Path.Combine(work, "first-run"), second = Path.Combine(work, "second-run");
+            string[] arguments = ["report", "--project", project, "--run", first, "--run", second, "--format", "summary"];
+            JsonObject summary = CommandSummary.Create(new { SchemaVersion = Schema.Version, Kind = "report-result" },
+                new CliOptions(arguments));
+            CoreTests.Equal(2, summary["runs"]!.AsArray().Count);
+            CoreTests.Equal(first, summary["runs"]![0]!.GetValue<string>());
+            CoreTests.Equal(second, summary["runs"]![1]!.GetValue<string>());
+            CoreTests.True(!summary.ContainsKey("run"));
+            var failure = TestCli.Run(arguments);
+            CoreTests.Equal(2, failure.Code);
+            using JsonDocument document = JsonDocument.Parse(failure.Json);
+            CoreTests.Equal(2, document.RootElement.GetProperty("runs").GetArrayLength());
+            CoreTests.True(document.RootElement.GetProperty("diagnostics").GetArrayLength() > 0);
+        });
         test("whole evidence report emits Markdown Mermaid code inventory and separate claim dimensions", () =>
         {
             var fixture = Fixture();

@@ -16,7 +16,10 @@ public static class CommandSummary
             "acceptance_status", "claim", "mode", "links_status", "proof_status", "audit_status",
             "conformance_status", "coverage_status", "correspondence_status", "provenance_status",
             "directory", "path", "boundary", "boundaries", "diagnostics", "next_actions", "statistics",
-            "nodes", "code_regions", "input_files", "requested_resources", "resources", "annotation_version"]);
+            "nodes", "code_regions", "input_files", "requested_resources", "resources", "annotation_version",
+            "source_count", "member_count", "call_count", "await_count"]);
+        if (source["kind"]?.GetValue<string>() == "source-inventory")
+            result["compiler"] = source["compiler"]?.DeepClone();
         if (source["kind"]?.GetValue<string>() == "gc-plan")
         {
             foreach (string field in new[] { "store", "retention", "planned_at", "grace_hours", "read_only",
@@ -103,7 +106,9 @@ public static class CommandSummary
             result["decision"] = Select(decision, ["obligation", "disposition", "reviewer", "rationale"]);
         if (options.Optional("output") is string output) result["output"] = FilePaths.Full(output);
         if (options.Optional("result") is string receipt) result["result"] = FilePaths.Full(receipt);
-        if (options.Optional("run") is string run) result["run"] = FilePaths.Full(run);
+        List<string> runs = options.Many("run");
+        if (runs.Count == 1) result["run"] = FilePaths.Full(runs[0]);
+        else if (runs.Count > 1) result["runs"] = JsonSerializer.SerializeToNode(runs.Select(run => FilePaths.Full(run)));
         worklist?.Apply(result);
         return result;
     }
