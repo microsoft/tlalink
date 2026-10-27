@@ -1,11 +1,11 @@
-/* @tla 2
+/* @link
 model demo;
 */
 internal sealed class Demo
 {
     private readonly object gate = new object();
 
-    /* @tla 2
+    /* @link
     state active guard="this.gate" type=int;
     */
     private int active;
@@ -14,7 +14,7 @@ internal sealed class Demo
     {
         lock (this.gate)
         {
-            /* @tla 2
+            /* @link
             step Admit justification=lock actor="1" operation="1" point=commit classification=transition observe=active;
             */
             this.active++;
@@ -25,7 +25,7 @@ internal sealed class Demo
     {
         lock (this.gate)
         {
-            /* @tla 2
+            /* @link
             step Release justification=lock actor="1" operation="1" point=commit classification=transition observe=active;
             */
             this.active--;

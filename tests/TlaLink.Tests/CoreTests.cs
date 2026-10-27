@@ -171,15 +171,29 @@ public static class CoreTests
             }
         });
         foreach (string text in new[] {
-            "@tla 1 model A;", "@tla 3 model A;", "@tla 2 model A",
-            "@tla 2 state A typo=B;", "@tla 2 step A point=commit point=complete;",
-            "@tla 2 step A point=done;", "@tla 2 step A classification=maybe;",
-            "@tla 2 state A type=object;", "@tla 2 step A hook=inside;",
-            "@tla 2 state A guard=\"\";", "@tla 2 state A guard=\"\\q\";",
-            "@tla 2;", "@tla 2 nonsense A;", "@tla 2 state \"not an ID\";"
+            "@tla 1 model A;", "@tla 2 model A;", "@tla 3 model A;", "@link 2 model A;", "@link model A",
+            "@link state A typo=B;", "@link step A point=commit point=complete;",
+            "@link step A point=done;", "@link step A classification=maybe;",
+            "@link state A type=object;", "@link step A hook=inside;",
+            "@link state A guard=\"\";", "@link state A guard=\"\\q\";",
+            "@link;", "@link nonsense A;", "@link state \"not an ID\";"
         }) test("grammar rejects " + text, () => Throws(() => Markup.Parse(text, 0, text.Length)));
-        test("schema2 multiple directives", () => Equal(3, Markup.Parse("@tla 2 model M; state Active guard=\"this.gate\" type=int units=frames; step Admit point=commit classification=transition actor=\"1\" operation=\"2\" observe=Active;", 0, 1).Count));
-        test("comment-looking nonannotation ignored", () => Equal(0, Markup.Parse("hello @tla 2 model A;", 0, 1).Count));
+        test("schema2 multiple directives", () => Equal(3, Markup.Parse("@link model M; state Active guard=\"this.gate\" type=int units=frames; step Admit point=commit classification=transition actor=\"1\" operation=\"2\" observe=Active;", 0, 1).Count));
+        test("comment-looking nonannotation ignored", () => Equal(0, Markup.Parse("hello @link model A;", 0, 1).Count));
+        test("annotation commands require explicit supported context", () =>
+        {
+            foreach (string command in CliOptions.AnnotationCommands)
+            {
+                var missing = TestCli.Run([command]);
+                Equal(2, missing.Code);
+                True(missing.Json.Contains("TL001", StringComparison.Ordinal));
+                var unsupported = TestCli.Run([command, "--annotation-version", "3"]);
+                Equal(2, unsupported.Code);
+                True(unsupported.Json.Contains("TL001", StringComparison.Ordinal));
+            }
+            Markup.RequireVersion(2);
+            Equal(0, Markup.Parse("@linkage is unrelated", 0, 1).Count);
+        });
         test("TLA nested comments and strings", () => Equal(2, Markup.TlaComments("\"(* not a comment *)\"\n(* outer (* nested *) *)\n\\* line").Count));
         test("TLA unterminated comment", () => Throws(() => Markup.TlaComments("(* broken")));
         test("UTF16LE original byte hash", () =>
@@ -216,13 +230,13 @@ public static class CoreTests
         test("wrong extension fails", () => Throws(() => Files.Discover([Path.Combine(work, "exclusive.json")], ".cs")));
 
         string source = """
-            /* @tla 2 model M; */
+            /* @link model M; */
             class C {
               readonly object gate = new();
-              /* @tla 2 state Active guard=gate type=int; */
+              /* @link state Active guard=gate type=int; */
               int active;
               void Admit() { lock (gate) {
-                /* @tla 2 step Admit actor="1" operation="1" point=commit classification=transition observe=Active; */
+                /* @link step Admit actor="1" operation="1" point=commit classification=transition observe=Active; */
                 active++;
               }}
             }
@@ -277,7 +291,7 @@ public static class CoreTests
         });
         test("model namespace uses nearest annotated type", () =>
         {
-            string text = source.Replace("void Admit()", "/* @tla 2 model Inner; */ class Nested { /* @tla 2 state Count; */ int count; }\nvoid Admit()");
+            string text = source.Replace("void Admit()", "/* @link model Inner; */ class Nested { /* @link state Count; */ int count; }\nvoid Admit()");
             var (scope, _, _) = Scope(text, "nested");
             Equal("Inner", scope.Bindings.Single(b => b.Tag.Identity == "Count").Model);
         });
@@ -288,13 +302,13 @@ public static class CoreTests
         });
         test("string cannot create CSharp annotations", () =>
         {
-            var (scope, _, _) = Scope(source.Replace("int active;", "int active; string ignored = \"/* @tla 2 step Fake; */\";"), "string");
+            var (scope, _, _) = Scope(source.Replace("int active;", "int active; string ignored = \"/* @link step Fake; */\";"), "string");
             True(scope.Bindings.All(b => b.Tag.Identity != "Fake"));
         });
         test("unsupported CSharp annotation version rejected explicitly", () =>
         {
-            var (_, _, packet) = Scope(source.Replace("@tla 2", "@tla 1"), "unsupported-version");
-            Equal("failed", packet.LinksStatus); True(packet.Diagnostics.Any(d => d.Message.Contains("Use @tla 2")));
+            var (_, _, packet) = Scope(source.Replace("@link", "@tla 1"), "unsupported-version");
+            Equal("failed", packet.LinksStatus); True(packet.Diagnostics.Any(d => d.Message.Contains("Replace @tla")));
         });
         test("conditional compilation uses supplied symbols", () =>
         {
@@ -345,13 +359,13 @@ public static class CoreTests
         test("calls callbacks await and finally remain explicit review boundaries", () =>
         {
             string text = """
-                /* @tla 2 model M; */
+                /* @link model M; */
                 class C {
                   System.Threading.Tasks.Task Work() => System.Threading.Tasks.Task.CompletedTask;
                   void Run(System.Action action) => action();
                   void Cleanup() {}
                   async System.Threading.Tasks.Task F() {
-                    /* @tla 2 step Block; */
+                    /* @link step Block; */
                     { try { Run(() => Cleanup()); await Work(); } finally { Cleanup(); } }
                   }
                 }
@@ -364,7 +378,7 @@ public static class CoreTests
         });
         test("Unicode prefixes and intervening ordinary comments preserve UTF16 source spans", () =>
         {
-            string text = "/* @tla 2 model M; */ class C { void F() { string x = \"\\u03bb\"; /* @tla 2 step X; */ // comment\n x = \"a\"; } }";
+            string text = "/* @link model M; */ class C { void F() { string x = \"\\u03bb\"; /* @link step X; */ // comment\n x = \"a\"; } }";
             text = text.Replace("\\u03bb", "\u03bb", StringComparison.Ordinal);
             var (scope, _, _) = Scope(text, "unicode");
             Equal("x = \"a\";", scope.Bindings.Single().Endpoint.Source);
@@ -372,7 +386,7 @@ public static class CoreTests
         });
         test("duplicate CSharp stable IDs fail structural review", () =>
         {
-            var (_, _, packet) = Scope(source.Replace("active++;", "active++; /* @tla 2 step Admit; */ active--;"), "duplicate-source");
+            var (_, _, packet) = Scope(source.Replace("active++;", "active++; /* @link step Admit; */ active--;"), "duplicate-source");
             True(packet.Diagnostics.Any(d => d.Code == "TL102"));
             Equal("failed", packet.LinksStatus);
         });

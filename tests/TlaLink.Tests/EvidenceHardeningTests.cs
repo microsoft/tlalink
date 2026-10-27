@@ -51,7 +51,7 @@ public static class EvidenceHardeningTests
             string bindings = Path.Combine(directory, "bindings.json");
             Files.WriteNew(bindings, new IntegratedManifest(Schema.Version, [source], [proof],
                 [new("bad", "Decisions.Bad", "Bad", null, [])], [], []));
-            var run = TestCli.Run(["verify-integrated", "--bindings", bindings, "--dafny", dafny,
+            var run = TestCli.Run(["verify-integrated", "--annotation-version", "2", "--bindings", bindings, "--dafny", dafny,
                 "--output", Path.Combine(directory, "result"), "--timeout", "60"]);
             if (run.Code != 1) throw new InvalidOperationException(run.Json);
             using JsonDocument document = JsonDocument.Parse(run.Json);

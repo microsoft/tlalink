@@ -12,7 +12,7 @@ public static class IntegrationTests
         File.Copy(Path.Combine(root, "examples", "Demo.cs"), source);
         File.Copy(Path.Combine(root, "examples", "Demo.tla"), model);
         string jar = TestTools.Jar(root);
-        string[] Common(string command) => [command, "--source", source, "--model", model, "--jar", jar];
+        string[] Common(string command) => [command, "--annotation-version", "2", "--source", source, "--model", model, "--jar", jar];
         (int Code, string Json) Call(string[] args, int expected)
         {
             var result = TestCli.Run(args);
@@ -74,7 +74,7 @@ public static class IntegrationTests
         test("unsupported TLA annotation version explicitly fails review", () =>
         {
             string original = Files.Read(model);
-            try { File.WriteAllText(model, original.Replace("@tla 2", "@tla 1", StringComparison.Ordinal)); Call(Common("check"), 1); }
+            try { File.WriteAllText(model, original.Replace("@link", "@tla 1", StringComparison.Ordinal)); Call(Common("check"), 1); }
             finally { File.WriteAllText(model, original); }
         });
         test("missing parser input is incomplete", () => Call(["inputs", "--model", Path.Combine(area, "absent.tla"), "--jar", jar], 2));
@@ -83,7 +83,7 @@ public static class IntegrationTests
             string plainSource = Path.Combine(area, "Plain.cs"), plainModel = Path.Combine(area, "Plain.tla");
             File.WriteAllText(plainSource, "class Plain {}");
             File.WriteAllText(plainModel, "---- MODULE Plain ----\nValue == 1\n====\n");
-            var result = Call(["inspect", "--source", plainSource, "--model", plainModel, "--jar", jar], 2);
+            var result = Call(["inspect", "--annotation-version", "2", "--source", plainSource, "--model", plainModel, "--jar", jar], 2);
             using JsonDocument packet = JsonDocument.Parse(result.Json);
             CoreTests.Equal("incomplete", packet.RootElement.GetProperty("links_status").GetString());
             CoreTests.True(packet.RootElement.GetProperty("inventory").EnumerateArray().Any(e => e.GetProperty("name").GetString() == "Value"));
@@ -94,7 +94,7 @@ public static class IntegrationTests
         {
             string invalid = Path.Combine(area, "Invalid.tla");
             File.WriteAllText(invalid, "---- MODULE Invalid ----\nMissing == UndefinedOperator\n====\n");
-            Call(["check", "--source", source, "--model", invalid, "--jar", jar], 2);
+            Call(["check", "--annotation-version", "2", "--source", source, "--model", invalid, "--jar", jar], 2);
         });
         test("stale PlusCal review remains incomplete", () =>
         {

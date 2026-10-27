@@ -29,8 +29,8 @@ public static class StageEvidenceTests
             CoreTests.Equal(new TlcResources(1, 1024), TlcResources.Effective("trace", null));
             foreach (TlcResources invalid in new[] { new TlcResources(0, 512), new(65, 512), new(1, 127), new(1, 65537) })
                 CoreTests.ThrowsAny<InputException>(() => TlcResources.Effective("tlc", invalid));
-            CoreTests.Equal(new TlcResources(2, 2048), TlcResources.FromCli(new(["validate-trace", "--workers", "2", "--max-heap-mib", "2048"])));
-            CoreTests.ThrowsAny<InputException>(() => TlcResources.FromCli(new(["validate-trace", "--workers", "auto"])));
+            CoreTests.Equal(new TlcResources(2, 2048), TlcResources.FromCli(new(["validate-trace", "--annotation-version", "2", "--workers", "2", "--max-heap-mib", "2048"])));
+            CoreTests.ThrowsAny<InputException>(() => TlcResources.FromCli(new(["validate-trace", "--annotation-version", "2", "--workers", "auto"])));
         });
         string fixture = Path.Combine(work, "regression-stage");
         Directory.CreateDirectory(fixture);
@@ -200,6 +200,34 @@ public static class StageEvidenceTests
     public static void RegisterNative(Action<string, Action> test, string root, string work)
     {
         string dafny = TestTools.Dafny(root), jar = TestTools.Jar(root);
+        test("project acceptance distinguishes a completed trace rejection from an incomplete control", () =>
+        {
+            string directory = Directory.CreateDirectory(Path.Combine(work, "trace-rejection-control")).FullName;
+            string lanes = Path.Combine(root, "examples", "Workflow", "src", "Lanes");
+            string config = Path.Combine(lanes, "verification", "Lanes.cfg");
+            string path = Path.Combine(directory, "project.json");
+            AnalysisStage stage = new("control", "trace", [], 60, Sources: [Path.Combine(lanes, "Lanes.cs")],
+                Models: [Path.Combine(lanes, "verification", "Lanes.tla")], Config: config, Arguments: ["corrupt"]);
+            Save(path, new AnalysisProject(Schema.Version, "analysis-project", "trace-control",
+                new(Jar: new(jar, Files.Hash(jar))), new("net10.0", "14", "enable", false, true, []),
+                "requirements.json", [new("control", [stage])], [], "reviews"));
+            string requirements = Path.Combine(directory, "requirements.json");
+            AcceptancePolicy policy = new(Schema.Version, "acceptance-policy", "trace-control",
+                [new("trace-rejection", "control", "control", "rejected", ErrorCode.TraceRejected.Id(),
+                    ConfigSha256: Files.Hash(config))]);
+            Save(requirements, policy);
+            string output = Path.Combine(directory, "run");
+            var run = TestCli.Run(["run", "--project", path, "--scenario", "control", "--output", output]);
+            if (run.Code != 0) throw new InvalidOperationException(run.Json);
+            var accepted = TestCli.Run(["accept", "--project", path, "--run", output]);
+            if (accepted.Code != 0) throw new InvalidOperationException(accepted.Json);
+            Save(requirements, policy with { Requirements = [policy.Requirements[0] with { Diagnostic = "TL510" }] });
+            string wrong = Path.Combine(directory, "wrong-diagnostic-run");
+            CoreTests.Equal(0, TestCli.Run(["run", "--project", path, "--scenario", "control", "--output", wrong]).Code);
+            var rejected = TestCli.Run(["accept", "--project", path, "--run", wrong]);
+            CoreTests.Equal(1, rejected.Code);
+            CoreTests.True(rejected.Json.Contains("diagnostic TL510", StringComparison.Ordinal));
+        });
         test("native proof-only Dafny verifies without C# bindings and independently rereads its audit", () =>
         {
             string output = Path.Combine(work, "native-dafny-good");

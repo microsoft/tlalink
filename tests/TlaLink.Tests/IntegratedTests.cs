@@ -22,7 +22,7 @@ public static class IntegratedTests
         {
             string path = Path.Combine(directory, "bindings.json");
             Files.WriteNew(path, manifest);
-            List<string> args = [command, "--bindings", path, "--dafny", dafny, "--output", Path.Combine(directory, "result"),
+            List<string> args = [command, "--annotation-version", "2", "--bindings", path, "--dafny", dafny, "--output", Path.Combine(directory, "result"),
                 "--jar", jar, "--timeout", "60"];
             if (baseline != null) args.AddRange(["--baseline", baseline]);
             var result = TestCli.Run(args.ToArray());
@@ -179,7 +179,7 @@ public static class IntegratedTests
             string directory = NewDirectory("schema");
             string manifest = Path.Combine(directory, "bindings.json");
             File.WriteAllText(manifest, """{"schema_version":1,"schema_version":1}""");
-            var result = TestCli.Run(["inspect-integrated", "--bindings", manifest, "--dafny", dafny,
+            var result = TestCli.Run(["inspect-integrated", "--annotation-version", "2", "--bindings", manifest, "--dafny", dafny,
                 "--output", Path.Combine(directory, "result")]);
             CoreTests.Equal(2, result.Code);
             CoreTests.True(result.Json.Contains("duplicate", StringComparison.OrdinalIgnoreCase));
@@ -192,7 +192,7 @@ public static class IntegratedTests
             File.AppendAllText(Path.Combine(directory, "Decisions.dfy"), "\n// reviewed input changed\n");
             string baseline = Path.Combine(directory, "result", "result.json");
             string second = Path.Combine(directory, "second.json"); Files.WriteNew(second, manifest);
-            var result = TestCli.Run(["inspect-integrated", "--bindings", Path.Combine(directory, "bindings.json"),
+            var result = TestCli.Run(["inspect-integrated", "--annotation-version", "2", "--bindings", Path.Combine(directory, "bindings.json"),
                 "--dafny", dafny, "--output", Path.Combine(directory, "second-result"), "--baseline", baseline]);
             CoreTests.Equal(2, result.Code); CoreTests.True(result.Json.Contains("DF030", StringComparison.Ordinal));
         });

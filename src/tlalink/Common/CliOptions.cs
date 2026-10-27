@@ -2,6 +2,9 @@ namespace TlaLink;
 
 public sealed class CliOptions
 {
+    internal static readonly string[] AnnotationCommands = [
+        "inspect", "check", "review", "instrument", "validate-trace",
+        "inspect-integrated", "verify-integrated", "test-integrated"];
     private readonly Dictionary<string, List<string>> values = [];
     public string Command { get; }
     public CliOptions(string[] args)
@@ -43,6 +46,8 @@ public sealed class CliOptions
             ["read-integrated"] = ["result", "current", "format", "timeout"]
         };
         if (!allowed.TryGetValue(Command, out string[]? options)) throw new InputException("Unknown command: " + Command);
+        if (AnnotationCommands.Contains(Command, StringComparer.Ordinal))
+            options = [.. options, "annotation-version"];
         HashSet<string> repeated = ["source", "model", "reference", "define", "arg", "evidence"];
         if (Command == "report") repeated.Add("run");
         for (int i = 1; i < args.Length; i += 2)
@@ -65,4 +70,5 @@ public sealed class CliOptions
     public List<string> Many(string name) => values.GetValueOrDefault(name, []);
     public bool Has(string name) => values.ContainsKey(name);
     public int Timeout => int.Parse(Get("timeout", "30"), System.Globalization.CultureInfo.InvariantCulture);
+    public int AnnotationVersion => int.TryParse(Optional("annotation-version"), out int version) ? version : 0;
 }

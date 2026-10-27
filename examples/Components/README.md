@@ -6,6 +6,8 @@ The component owns its model, configurations, review and safety declaration.
 Shared [input sets](verification/inputs.json) and
 [execution profiles](verification/profiles.json) are declared once.
 Every file reference resolves against the file containing it.
+The root declares `annotation_version` once for all components; binding comments
+use `@link` without repeating a grammar version.
 
 From the repository root:
 

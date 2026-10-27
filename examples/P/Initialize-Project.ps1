@@ -30,7 +30,7 @@ $config.engine = "pchecker"
 $config.models = @([IO.Path]::Combine($PSScriptRoot, "ExtraCredit.p"))
 Write-NewJson "extra-credit.json" $config
 Write-NewJson "project.json" @{
-    schema_version = 4; kind = "analysis-project"; id = "p-credit"
+    schema_version = 4; kind = "analysis-project"; annotation_version = 2; id = "p-credit"
     tools = @{ dafny = $null; jar = $null; p = @{ path = $PCompiler; sha256 = (Hash $PCompiler) } }
     compiler = @{
         target_framework = "net10.0"; language_version = "14"; nullable = "enable"

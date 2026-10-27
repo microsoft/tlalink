@@ -40,6 +40,8 @@ public enum ErrorCode
     InvalidInstrumentation,
     [DiagnosticInfo("TL510", IssueSeverity.Error)]
     InvalidTrace,
+    [DiagnosticInfo("TL511", IssueSeverity.Error)]
+    TraceRejected,
     [DiagnosticInfo("TL520", IssueSeverity.Error)]
     InvalidExecution,
     [DiagnosticInfo("CS100", IssueSeverity.Error)]

@@ -11,35 +11,37 @@ public static class TraceTests
         test("same-thread program order is enforced", () => Run(root, Path.Combine(work, "thread"), parallel: false, hidden: false, trajectory: false, expected: "rejected"));
         test("one hidden-state trajectory must explain the entire trace", () => Run(root, Path.Combine(work, "trajectory"), parallel: false, hidden: false, trajectory: true, expected: "rejected"));
         test("explicit justified hidden steps can explain an intervening change", () => Run(root, Path.Combine(work, "hidden"), parallel: false, hidden: true, trajectory: true, expected: "conforms"));
+        test("trace wrapper supplies its own arithmetic imports for a boolean-only model", () =>
+            Run(root, Path.Combine(work, "boolean"), parallel: false, hidden: false, trajectory: false, expected: "conforms", booleanOnly: true));
     }
 
-    private static void Run(string root, string output, bool parallel, bool hidden, bool trajectory, string expected)
+    private static void Run(string root, string output, bool parallel, bool hidden, bool trajectory, string expected, bool booleanOnly = false)
     {
         Directory.CreateDirectory(output);
         string model = Path.Combine(output, "TraceFixture.tla"), source = Path.Combine(output, "Subject.cs");
         string state = trajectory ? """
             readonly object gate = new();
-            /* @tla 2 state Value guard=gate type=int; */
+            /* @link state Value guard=gate type=int; */
             int value;
             """ : "";
         string Statement(string id, int value, int actor) =>
             (trajectory ? "lock (gate) {\n" : "") +
-            $"/* @tla 2 step {id} point=commit classification=transition actor=\"{actor}\" operation=\"1\"" +
+            $"/* @link step {id} point=commit classification=transition actor=\"{actor}\" operation=\"1\"" +
             (trajectory ? " observe=Value" : "") + "; */\n" +
             (trajectory ? $"this.value = {value};\n}}" : "System.GC.KeepAlive(0);");
-        File.WriteAllText(source, "/* @tla 2 model Fixture; */\nclass Subject {\n" + state +
+        File.WriteAllText(source, "/* @link model Fixture; */\nclass Subject {\n" + state +
             "\npublic void A() { " + Statement("A", 1, 1) + " }\npublic void B() { " +
             Statement("B", 4, trajectory ? 1 : 2) + " }\n}");
         string body = trajectory ? """
             VARIABLES x, h, phase
             vars == <<x,h,phase>>
             Init == /\ x = 0 /\ h \in 0..1 /\ phase = 0
-            (* @tla 2 state Value type=int; *)
+            (* @link state Value type=int; *)
             Value == x
-            (* @tla 2 step A; *)
+            (* @link step A; *)
             A == /\ phase = 0 /\ phase' = 1
                  /\ x' = (IF h = 0 THEN 1 ELSE 2) /\ UNCHANGED h
-            (* @tla 2 step B; *)
+            (* @link step B; *)
             B == /\ phase = 1 /\ phase' = 2
                  /\ x' = (IF h = 0 THEN 3 ELSE 4) /\ UNCHANGED h
             HIDDEN_ANNOTATION
@@ -49,18 +51,29 @@ public static class TraceTests
             VARIABLE x
             vars == <<x>>
             Init == x = 0
-            (* @tla 2 step A; *)
+            (* @link step A; *)
             A == x = 0 /\ x' = 1
-            (* @tla 2 step B; *)
+            (* @link step B; *)
             B == x = 1 /\ x' = 2
             Next == A \/ B
             """;
-        body = body.Replace("HIDDEN_ANNOTATION", hidden ? "(* @tla 2 step Flip visibility=hidden justification=\"Internal unobserved choice for this synthetic control\"; *)" : "", StringComparison.Ordinal);
-        File.WriteAllText(model, "---- MODULE TraceFixture ----\nEXTENDS Integers\n(* @tla 2 model Fixture; *)\n" + body + "\nSpec == Init /\\ [][Next]_vars\n====\n");
+        body = body.Replace("HIDDEN_ANNOTATION", hidden ? "(* @link step Flip visibility=hidden justification=\"Internal unobserved choice for this synthetic control\"; *)" : "", StringComparison.Ordinal);
+        if (booleanOnly) body = """
+            VARIABLE flag
+            vars == <<flag>>
+            Init == flag = FALSE
+            (* @link step A; *)
+            A == flag /\ flag' = FALSE
+            (* @link step B; *)
+            B == ~flag /\ flag' = TRUE
+            Next == A \/ B
+            """;
+        File.WriteAllText(model, "---- MODULE TraceFixture ----\n" + (booleanOnly ? "" : "EXTENDS Integers\n") +
+            "(* @link model Fixture; *)\n" + body + "\nSpec == Init /\\ [][Next]_vars\n====\n");
         string config = Path.Combine(output, "fixture.cfg");
         File.WriteAllText(config, "SPECIFICATION Spec\n");
         string generated = Path.Combine(output, "generated"), jar = TestTools.Jar(root);
-        var instrument = TestCli.Run(["instrument", "--source", source, "--model", model, "--jar", jar, "--output", generated]);
+        var instrument = TestCli.Run(["instrument", "--annotation-version", "2", "--source", source, "--model", model, "--jar", jar, "--output", generated]);
         if (instrument.Code != 0) throw new InvalidOperationException(instrument.Json);
         string workload = trajectory ? "subject.A(); subject.B();" : parallel ? """
             using var started = new System.Threading.ManualResetEventSlim();
@@ -83,9 +96,13 @@ public static class TraceTests
             using JsonDocument captured = JsonDocument.Parse(Files.Read(trace));
             CoreTests.Equal("B", captured.RootElement.GetProperty("events")[0].GetProperty("step").GetString());
         }
-        var check = TestCli.Run(["validate-trace", "--model", model, "--jar", jar, "--manifest", manifest, "--trace", trace,
+        var check = TestCli.Run(["validate-trace", "--annotation-version", "2", "--model", model, "--jar", jar, "--manifest", manifest, "--trace", trace,
             "--execution", Path.Combine(execution, "execution.json"), "--config", config, "--output", Path.Combine(output, "validation")]);
         using JsonDocument result = JsonDocument.Parse(check.Json);
         if (result.RootElement.GetProperty("status").GetString() != expected) throw new InvalidOperationException(check.Json);
+        CoreTests.Equal(expected == "rejected" ? 1 : 0, check.Code);
+        if (expected == "rejected")
+            CoreTests.True(result.RootElement.GetProperty("diagnostics").EnumerateArray().Any(d =>
+                d.GetProperty("code").GetString() == ErrorCode.TraceRejected.Id()));
     }
 }

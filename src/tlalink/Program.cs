@@ -13,6 +13,8 @@ public static class Program
         try
         {
             options = new(args);
+            if (CliOptions.AnnotationCommands.Contains(options.Command, StringComparer.Ordinal))
+                Markup.RequireVersion(options.AnnotationVersion);
             if (options.Command == "report") return EvidenceReport.Run(options);
             if (options.Command == "project-schema") return ProjectEditorSchema.Run(options);
             if (options.Command == "gc") return EvidenceGarbageCollection.Run(options);
@@ -96,6 +98,7 @@ public static class Program
         pins["runtime:dotnet"] = RuntimeInformation.FrameworkDescription;
         pins["runtime:architecture"] = RuntimeInformation.ProcessArchitecture.ToString();
         pins["tool:tlalink-schema"] = Schema.Version.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        pins["tool:annotation-version"] = Markup.Version.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     public static void Baseline(string path, Packet packet)

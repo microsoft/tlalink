@@ -2,6 +2,7 @@
   "$schema": "../../schemas/project.schema.json",
   "schema_version": 4,
   "kind": "analysis-project",
+  "annotation_version": 2,
   "id": "apalache-credit",
   "tools": {
     "jar": {
