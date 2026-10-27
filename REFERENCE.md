@@ -967,6 +967,8 @@ Artifact paths in these receipts are native, stage-relative paths.
 Project `report` accepts repeated explicit `--run` directories. It independently
 evaluates each against the selected project/policy and saves normal acceptance
 snapshots, one `evidence-report` manifest (`<output>.json`) and Markdown/Mermaid.
+Command-error summaries retain the single `run` path or ordered `runs` list for
+multiple explicit inputs, without hiding the underlying diagnostic.
 No run is selected implicitly, merged into another, or treated as a theorem
 composition. Presentation freshness does not replace the separately recorded
 per-run archive/applicability/acceptance results. Source dispositions are not

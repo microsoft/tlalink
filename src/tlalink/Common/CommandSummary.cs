@@ -106,7 +106,9 @@ public static class CommandSummary
             result["decision"] = Select(decision, ["obligation", "disposition", "reviewer", "rationale"]);
         if (options.Optional("output") is string output) result["output"] = FilePaths.Full(output);
         if (options.Optional("result") is string receipt) result["result"] = FilePaths.Full(receipt);
-        if (options.Optional("run") is string run) result["run"] = FilePaths.Full(run);
+        List<string> runs = options.Many("run");
+        if (runs.Count == 1) result["run"] = FilePaths.Full(runs[0]);
+        else if (runs.Count > 1) result["runs"] = JsonSerializer.SerializeToNode(runs.Select(run => FilePaths.Full(run)));
         worklist?.Apply(result);
         return result;
     }
