@@ -170,5 +170,69 @@ public static class TlcResultStoreTests
             finally { File.WriteAllText(model, before); }
             CoreTests.Equal(2, Reused(Run("restored")));
         });
+        test("result retention protects live families and guards stale-family deletion", () =>
+        {
+            string store = Path.Combine(fixture, "store", "tlc");
+            string retention = Path.Combine(work, "result-retention.json");
+            Files.WriteNew(retention, new EvidenceRetention(Schema.Version, "evidence-retention", [], [],
+                ResultProjects: [path]));
+            GcPlan Plan() => EvidenceGarbageCollection.Plan(store, retention, 0, DateTimeOffset.UtcNow.AddHours(1));
+            GcPlan initial = Plan();
+            if (initial.Status != "ready") throw new InvalidOperationException(JsonSerializer.Serialize(initial.Diagnostics, Files.Json));
+            CoreTests.Equal(2, initial.Counts.Retained);
+            CoreTests.Equal(2, initial.Counts.Candidates);
+            CoreTests.True(initial.Entries.Where(e => e.Status == "retained").All(e =>
+                e.Reasons.Any(r => r.Contains("Current TLC stage", StringComparison.Ordinal))));
+
+            string live = initial.Entries.First(e => e.Status == "retained").Path;
+            string stale = initial.Entries.First(e => e.Status == "candidate").Path;
+            string corrupt = Directory.GetFiles(stale, "tlc.log", SearchOption.AllDirectories).Single();
+            byte[] original = File.ReadAllBytes(corrupt);
+            try
+            {
+                File.AppendAllText(corrupt, "changed");
+                GcPlan blocked = Plan();
+                CoreTests.Equal("incomplete", blocked.Status);
+                CoreTests.Equal(0, blocked.Counts.Candidates);
+            }
+            finally { File.WriteAllBytes(corrupt, original); }
+            string active = Directory.CreateDirectory(Path.Combine(store, ".work-active")).FullName;
+            CoreTests.Equal("incomplete", Plan().Status);
+            Directory.Delete(active);
+            string manifest = Files.Read(retention);
+            try
+            {
+                File.WriteAllText(retention, JsonSerializer.Serialize(new EvidenceRetention(Schema.Version,
+                    "evidence-retention", [new(stale, "explicit historical pin")], [], ResultProjects: [path]), Files.Json));
+                CoreTests.Equal(3, Plan().Counts.Retained);
+                File.WriteAllText(retention, JsonSerializer.Serialize(new EvidenceRetention(Schema.Version,
+                    "evidence-retention", [], [], ResultProjects: [Path.Combine(work, "missing-project.json")]), Files.Json));
+                CoreTests.Equal(0, Plan().Counts.Candidates);
+            }
+            finally { File.WriteAllText(retention, manifest); }
+            if (OperatingSystem.IsWindows())
+            {
+                string saved = Path.Combine(work, "result-gc-plan.json");
+                var plan = TestCli.Run(["gc", "--store", store, "--pins", retention, "--grace-hours", "0", "--output", saved]);
+                if (plan.Code != 0) throw new InvalidOperationException(plan.Json);
+                byte[] projectBytes = File.ReadAllBytes(path);
+                try
+                {
+                    File.AppendAllText(path, "\n");
+                    var changed = TestCli.Run(["gc", "--apply", saved, "--exclusive", "true",
+                        "--output", Path.Combine(work, "result-gc-stale-receipt.json")]);
+                    CoreTests.True(changed.Code != 0);
+                    CoreTests.True(Directory.Exists(stale));
+                }
+                finally { File.WriteAllBytes(path, projectBytes); }
+                var apply = TestCli.Run(["gc", "--apply", saved, "--exclusive", "true",
+                    "--output", Path.Combine(work, "result-gc-receipt.json")]);
+                if (apply.Code != 0) throw new InvalidOperationException(apply.Json);
+                CoreTests.True(Directory.Exists(live));
+                CoreTests.True(!Directory.Exists(stale));
+                CoreTests.Equal(2, Reused(Run("after-gc")));
+                CoreTests.Equal(0, Accept("after-gc"));
+            }
+        });
     }
 }
