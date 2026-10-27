@@ -105,6 +105,10 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   MSBuild workspace; unresolved context blocks instrumentation.
 - Follow calls, competing accesses, awaits, cancellation, cleanup and external
   effects beyond the supplied scope. Symbol resolution does not prove atomicity.
+- Use `inspect-source` with explicit sources/references/defines for a current
+  Roslyn inventory before assigning source dispositions. Its calls and lock/
+  await/access facts are not validated code, runtime dispatch or model coverage;
+  review implicit disposal, async machinery and external effects separately.
 - Use only `@link`, with `"annotation_version": 2` declared once in the root
   project. Components inherit it and must not override it. Standalone annotation
   commands require `--annotation-version 2`; never guess a version, restore

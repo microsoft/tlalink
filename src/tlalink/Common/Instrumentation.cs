@@ -185,6 +185,13 @@ public static class Instrumentation
         if (symbol is IFieldSymbol { IsReadOnly: false } mutable &&
             (!binding.Tag.Options.TryGetValue("guard", out string? guard) || !Held(binding, ResolveGuard(binding, guard))))
             throw new InputException(ErrorCode.InvalidInstrumentation, $"Mutable identity field {mutable.Name} requires an explicit held guard.");
+        if (identity && type is INamedTypeSymbol { TypeKind: TypeKind.Enum, EnumUnderlyingType: { } underlying })
+        {
+            if (underlying.SpecialType == SpecialType.System_UInt64)
+                throw new InputException(ErrorCode.InvalidInstrumentation, "UInt64-backed enum identities cannot be represented losslessly as signed trace integers.");
+            _ = TypeName(underlying);
+            return "((long)(" + expression + "))";
+        }
         if (type is null || identity && TypeName(type) == "bool") throw new InputException(ErrorCode.InvalidInstrumentation, "Identity requires int or string.");
         _ = TypeName(type);
         return expression;
@@ -214,7 +221,9 @@ public static class Instrumentation
     }
 
     private static bool Held(SourceBinding binding, IFieldSymbol guard) =>
-        binding.Node.Ancestors().OfType<LockStatementSyntax>().Any(l =>
+        binding.Node.Ancestors()
+        .TakeWhile(n => n is not (AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax))
+        .OfType<LockStatementSyntax>().Any(l =>
         {
             ExpressionSyntax expression = l.Expression;
             while (expression is ParenthesizedExpressionSyntax parentheses) expression = parentheses.Expression;

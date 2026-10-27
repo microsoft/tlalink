@@ -23,6 +23,7 @@ root-relative because this document lives beside the README.
 - [Evidence retention and recheck planning](#evidence-retention-and-recheck-planning)
 - [Integrated TLA+ and Dafny workflow](#integrated-tla-and-dafny-workflow)
 - [Review commands](#review-commands)
+- [Current C# source inventory](#current-c-source-inventory)
 - [Source annotation grammar](#one-maintained-markup-link)
 - [Instrumentation and trace validation](#instrument-execute-validate)
 - [Tests and evidence](#tests-and-evidence)
@@ -1410,6 +1411,34 @@ each group's fixture bytes and retains all test outcomes in the final report.
 The session-wide immutable-tool hashes and read leases remain active until the
 whole run finishes; checker coverage and evidence validation are unchanged.
 
+## Current C# source inventory
+
+`inspect-source` produces a schema-4 `source-inventory` from Roslyn without a
+formal backend. Supply the actual source scope and any additional references
+and replacement defines explicitly:
+
+```powershell
+.\TlaLink.ps1 inspect-source --annotation-version 2 --source .\examples\Demo.cs --output .\Results\demo-source-inventory.json --format summary
+```
+
+The full inventory includes declared methods, constructors, properties, events
+and fields, with resolved explicit calls, declared dispatch kind, nested-function
+markers, locks, awaits, throws, using scopes and candidate field accesses.
+Field initializers have their own regions. It pins source/reference bytes, the
+selected defines, producing tool and runtime. Output is exclusive; use a new
+path for each inventory.
+
+Compiler errors, unresolved call targets and unsupported top-level scopes return
+2 with an incomplete inventory, rather than a success-shaped empty result.
+Summary output retains status, diagnostics and source/member/call/await counts;
+use full JSON or the saved file for individual regions.
+
+This is an inventory under the supplied C# compiler context, not an MSBuild
+workspace, coverage disposition or proof. Declared call targets do not establish
+runtime dispatch. Implicit disposal calls, compiler-generated async machinery,
+generated members and external behavior still need review. A resolved source
+region is not validated code and does not discharge correspondence gates.
+
 ## Review commands
 
 ```powershell
@@ -1456,7 +1485,7 @@ All imported components, C# sources and annotated TLA+ modules use that grammar;
 components cannot select or override it. JSON `schema_version` remains 4 and
 is independent of the annotation grammar version.
 
-Standalone `inspect`, `check`, `review`, `instrument`, `validate-trace` and the
+Standalone `inspect-source`, `inspect`, `check`, `review`, `instrument`, `validate-trace` and the
 three integrated analysis commands require `--annotation-version 2`. Project
 workflows pass their declared version to child commands. Missing or unsupported
 versions fail explicitly; neither filenames nor comments select a version.
@@ -1509,6 +1538,17 @@ Acquire == ...
 
 Each annotated C# type has one model namespace; nested types may override it.
 Review-only `model`, `state` and `step` bindings do not need executable options.
+Review-only steps can also attach directly to invocation expressions, for
+example inside an expression-bodied cancellation callback:
+
+```csharp
+token.Register(() => /* @link step CancelCallback; */ canceled.TrySetCanceled(token));
+```
+
+Invocation-expression bindings cannot declare an executable `point`; automatic
+capture still requires a supported statement. Locks enclosing a callback's
+creation site are not treated as held when its body runs. A callback must
+acquire its own guard for generated shared-field capture.
 State options are `guard`, `type` (`int`, `bool`, `string`) and `units`.
 Step options:
 
@@ -1533,6 +1573,9 @@ Step options:
 
 Model actions currently take zero arguments, actor, or actor+operation in that
 order. Capture expressions exclude calls, getters, indexers and mutations.
+Enum-valued identities are lowered to their integral value; UInt64-backed enums
+are rejected because trace integers are signed. Mutable enum identity fields
+still require an actually held guard. Enum state observations are not supported.
 Observed primitive fields must share an actually held readonly reference-field
 lock. Cross-lock snapshots are rejected. This does not prove that *all other*
 accesses obey that lock.

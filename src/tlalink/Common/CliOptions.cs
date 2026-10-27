@@ -3,17 +3,18 @@ namespace TlaLink;
 public sealed class CliOptions
 {
     internal static readonly string[] AnnotationCommands = [
-        "inspect", "check", "review", "instrument", "validate-trace",
+        "inspect-source", "inspect", "check", "review", "instrument", "validate-trace",
         "inspect-integrated", "verify-integrated", "test-integrated"];
     private readonly Dictionary<string, List<string>> values = [];
     public string Command { get; }
     public CliOptions(string[] args)
     {
-        if (args.Length == 0) throw new InputException("Usage: TlaLink <report|gc|expand|project-schema|doctor|plan|run|check-stage|accept|explain|inspect|check|review|inputs|instrument|execute|validate-trace|check-regression|read-regression|check-dafny|read-dafny|check-apalache|read-apalache|inspect-integrated|verify-integrated|test-integrated|read-integrated> [--option value ...]");
+        if (args.Length == 0) throw new InputException("Usage: TlaLink <report|gc|expand|project-schema|doctor|plan|run|check-stage|accept|explain|inspect-source|inspect|check|review|inputs|instrument|execute|validate-trace|check-regression|read-regression|check-dafny|read-dafny|check-apalache|read-apalache|inspect-integrated|verify-integrated|test-integrated|read-integrated> [--option value ...]");
         Command = args[0];
         Dictionary<string, string[]> allowed = new()
         {
             ["report"] = ["manifest", "project", "run", "output", "format"],
+            ["inspect-source"] = ["source", "reference", "define", "output", "format"],
             ["check-dafny"] = ["config", "dafny", "output", "timeout", "format"],
             ["read-dafny"] = ["result", "current", "format"],
             ["check-regression"] = ["config", "output", "timeout", "format"],

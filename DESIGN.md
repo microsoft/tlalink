@@ -66,6 +66,7 @@ and freshness handling are in a separate partial frontend under `PlusCal`.
 | `Contracts.cs` | Evidence records, strict decoding, original-byte hashes, exclusive writes |
 | `ErrorCode.cs` / `DiagnosticCatalog.cs` | Attributed diagnostic IDs/default severities, validated cached metadata and stable string output |
 | `Markup.cs` | The single maintained `@link` grammar/comment envelopes; project-level annotation version |
+| `SourceInventory.cs` | Current Roslyn source/member/call/lock/await facts under explicit compiler scope; no coverage or atomicity verdict |
 | `CSharpFrontend.cs` | Explicit Roslyn compilation, attachments, field symbols and boundaries |
 | `TlaBackend.cs` | Bounded fresh Java processes, normalized spans, dependencies and freshness |
 | `TlaIndex.java` | Authoritative SANY/PlusCal adapter |
