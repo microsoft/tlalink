@@ -29,8 +29,8 @@ public static class StageEvidenceTests
             CoreTests.Equal(new TlcResources(1, 1024), TlcResources.Effective("trace", null));
             foreach (TlcResources invalid in new[] { new TlcResources(0, 512), new(65, 512), new(1, 127), new(1, 65537) })
                 CoreTests.ThrowsAny<InputException>(() => TlcResources.Effective("tlc", invalid));
-            CoreTests.Equal(new TlcResources(2, 2048), TlcResources.FromCli(new(["validate-trace", "--annotation-version", "3", "--workers", "2", "--max-heap-mib", "2048"])));
-            CoreTests.ThrowsAny<InputException>(() => TlcResources.FromCli(new(["validate-trace", "--annotation-version", "3", "--workers", "auto"])));
+            CoreTests.Equal(new TlcResources(2, 2048), TlcResources.FromCli(new(["validate-trace", "--annotation-version", "4", "--workers", "2", "--max-heap-mib", "2048"])));
+            CoreTests.ThrowsAny<InputException>(() => TlcResources.FromCli(new(["validate-trace", "--annotation-version", "4", "--workers", "auto"])));
         });
         string fixture = Path.Combine(work, "regression-stage");
         Directory.CreateDirectory(fixture);
@@ -88,7 +88,7 @@ public static class StageEvidenceTests
             CSharpRegressionResult result = ProjectInputs.Read<CSharpRegressionResult>(resultPath);
             string source = result.Build.CompileInputs.Keys.Single(p => p.EndsWith(".AssemblyInfo.cs", StringComparison.Ordinal));
             string inventoryPath = Path.Combine(work, "observed-inventory.json");
-            var response = TestCli.Run(["inspect-source", "--annotation-version", "3", "--source", source,
+            var response = TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", source,
                 "--regression-result", resultPath, "--output", inventoryPath]);
             if (response.Code != 0) throw new InvalidOperationException(response.Json);
             SourceInventoryResult inventory = ProjectInputs.Read<SourceInventoryResult>(inventoryPath);
@@ -98,16 +98,16 @@ public static class StageEvidenceTests
             CoreTests.Equal(source, inventory.Sources.Single());
             CoreTests.Equal(Files.Hash(resultPath), inventory.Fingerprints[resultPath]);
             foreach (var pin in result.Build.References) CoreTests.Equal(pin.Value, inventory.Fingerprints[pin.Key]);
-            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "3", "--source", source,
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", source,
                 "--regression-result", resultPath, "--define", "OTHER"]).Code);
             string unobserved = Path.Combine(work, "unobserved.cs");
             File.WriteAllText(unobserved, "class Unobserved {}");
-            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "3", "--source", unobserved,
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", unobserved,
                 "--regression-result", resultPath]).Code);
             string damaged = Path.Combine(work, "inventory-context-damaged");
             Copy(output, damaged);
             File.AppendAllText(Path.Combine(damaged, "build", "context.txt"), "changed");
-            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "3", "--source", source,
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", source,
                 "--regression-result", Path.Combine(damaged, "result.json")]).Code);
         });
         void Mutate(string name, Action<JsonObject, JsonObject> change)

@@ -5,7 +5,12 @@ using Microsoft.CodeAnalysis.CSharp;
 
 namespace TlaLink;
 
-public sealed record PDeclaration(string Name, string Kind, string Path, int Line, int EndLine);
+public sealed record PDeclaration(string Name, string Kind, string Path, int Line, int EndLine)
+{
+    public int Start { get; init; }
+    public int End { get; init; }
+    public int Column { get; init; } = 1;
+}
 
 /// <summary>Source inventory only; native code generation and model checking are separate stages.</summary>
 public static class PFrontend

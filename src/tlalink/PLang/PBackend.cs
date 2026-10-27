@@ -90,6 +90,13 @@ public static class PBackend
             packet.Diagnostics.AddRange(source.Diagnostics);
             foreach (var pin in source.Fingerprints) Files.Pin(packet.Fingerprints, pin.Key, pin.Value);
             var symbols = IntegratedReview.SourceSymbols(source);
+            List<FormalLinkDeclaration> formal = FormalCorrespondence.P(packet.Inventory, packet.Fingerprints);
+            List<Issue> pairing = [];
+            foreach (var group in config.Bindings.GroupBy(b => Markup.Name(b.Id).Alias, StringComparer.Ordinal))
+                FormalCorrespondence.Match(source, formal, group.Key, group.Select(b => b.Id), pairing);
+            packet.Diagnostics.AddRange(pairing);
+            if (pairing.Count != 0)
+                throw new InputException(ErrorCode.InvalidPBinding, string.Join("; ", pairing.Select(d => d.Message)));
             foreach (PBinding binding in config.Bindings)
             {
                 List<SourceBinding> matches = source.Bindings.Where(b => b.BindingId == binding.Id).ToList();

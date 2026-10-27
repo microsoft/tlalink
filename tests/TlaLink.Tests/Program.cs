@@ -103,6 +103,7 @@ public static class Program
             }
             if (selection == "--trace")
             {
+                Suite("paired-native", directory => PairedCorrespondenceTests.RegisterNative(Test, root, directory));
                 Suite("arguments-core", directory => ActionArgumentTests.Register(Test, directory));
                 Suite("entities", directory => EntityTraceTests.Register(Test, root, directory));
                 Suite("arguments-native", directory => ActionArgumentTests.RegisterNative(Test, root, directory));
@@ -118,6 +119,7 @@ public static class Program
                 return Finish();
             }
             Suite("core", directory => CoreTests.Register(Test, directory));
+            Suite("paired-native", directory => PairedCorrespondenceTests.RegisterNative(Test, root, directory));
             Suite("tlc-store-core", directory => TlcResultStoreTests.RegisterCore(Test, directory));
             Suite("reports", directory => EvidenceReportTests.Register(Test, directory));
             Suite("retention", directory => EvidenceRetentionTests.Register(Test, directory));

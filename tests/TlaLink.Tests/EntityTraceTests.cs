@@ -30,11 +30,11 @@ public static class EntityTraceTests
                 readonly object gate = new();
                 readonly int id = 1;
                 int Identity => id;
-                /* @link {"bind":[{"id":"Value","target":"Fixture::Value"}],"capture":[{"binding":"Value","guard":"gate","type":"int"}]} */
+                /* @link {"bind":[{"id":"Fixture::Value"}],"capture":[{"binding":"Fixture::Value","guard":"gate","type":"int"}]} */
                 int value;
                 void Move() {
                     lock (gate) {
-                        /* @link {"bind":[{"id":"Move","target":"Fixture::Move"}],"capture":[{"binding":"Move","actor":"1","operation":"1","entity":"id","point":"commit","classification":"transition","observe":["Value"]}]} */
+                        /* @link {"bind":[{"id":"Fixture::Move"}],"capture":[{"binding":"Fixture::Move","actor":"1","operation":"1","entity":"id","point":"commit","classification":"transition","observe":["Fixture::Value"]}]} */
                         value = 1;
                     }
                 }
@@ -64,7 +64,8 @@ public static class EntityTraceTests
     {
         Directory.CreateDirectory(output);
         InstrumentManifest manifest = new(Schema.Version, "", [], [], [
-            new("Fixture", "Move", "Move", 1, "commit", "transition", [new("Value", "Value", "int", 1)], true)
+            new("Fixture", "Fixture::Move", "Move", 1, "commit", "transition", [new("Fixture::Value", "Value", "int", 1)], true)
+                { Binding = "Fixture::Move" }
         ], "synthetic decoding control");
         manifest = manifest with { BindingId = Files.HashText(JsonSerializer.Serialize(new { manifest.Fingerprints, manifest.Events }, Files.Json)) };
         string path = Path.Combine(output, "bindings.json");
@@ -112,14 +113,14 @@ public static class EntityTraceTests
             {
                 readonly object gate = new();
                 readonly int id;
-                /* @link {"bind":[{"id":"Value","target":"EntityFixture::Value"}],"capture":[{"binding":"Value","guard":"gate","type":"int"}]} */
+                /* @link {"bind":[{"id":"EntityFixture::Value"}],"capture":[{"binding":"EntityFixture::Value","guard":"gate","type":"int"}]} */
                 int value;
                 public Lane(int id) { this.id = id; }
                 public void Move()
                 {
                     lock (gate)
                     {
-                        /* @link {"bind":[{"id":"Move","target":"EntityFixture::Move"}],"capture":[{"binding":"Move","actor":"1","operation":"1","entity":"id","point":"commit","classification":"transition","observe":["Value"]}]} */
+                        /* @link {"bind":[{"id":"EntityFixture::Move"}],"capture":[{"binding":"EntityFixture::Move","actor":"1","operation":"1","entity":"id","point":"commit","classification":"transition","observe":["EntityFixture::Value"]}]} */
                         value = MUTATION;
                     }
                 }
@@ -147,7 +148,7 @@ public static class EntityTraceTests
         File.WriteAllText(config, "SPECIFICATION Spec\n");
         string generated = Path.Combine(output, "generated");
         string jar = TestTools.Jar(root);
-        var instrument = TestCli.Tla(["instrument", "--annotation-version", "3", "--source", source, "--model", model, "--jar", jar, "--output", generated]);
+        var instrument = TestCli.Tla(["instrument", "--annotation-version", "4", "--source", source, "--model", model, "--jar", jar, "--output", generated]);
         if (instrument.Code != 0) throw new InvalidOperationException(instrument.Json);
         string first = mode is "reverse" or "unordered" ? "b" : "a";
         string second = mode is "reverse" or "unordered" ? "a" : "b";
@@ -199,7 +200,7 @@ public static class EntityTraceTests
         CoreTests.Equal(handoff ? 1 : 0, causes.Length);
         if (handoff) CoreTests.Equal(1L, causes[0]);
         else CoreTests.Equal(0, events[1].GetProperty("predecessors").GetArrayLength());
-        var check = TestCli.Tla(["validate-trace", "--annotation-version", "3", "--model", model, "--jar", jar, "--manifest", manifest, "--trace", trace,
+        var check = TestCli.Tla(["validate-trace", "--annotation-version", "4", "--model", model, "--jar", jar, "--manifest", manifest, "--trace", trace,
             "--execution", Path.Combine(execution, "execution.json"), "--config", config, "--output", Path.Combine(output, "validation")]);
         if (mode == "guard")
         {

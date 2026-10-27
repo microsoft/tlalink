@@ -621,7 +621,7 @@
         },
         "annotation_version": {
           "type": "integer",
-          "const": 3
+          "const": 4
         }
       },
       "required": [
@@ -1240,7 +1240,7 @@
         },
         "annotation_version": {
           "type": "integer",
-          "const": 3
+          "const": 4
         },
         "targets": {
           "type": "array",

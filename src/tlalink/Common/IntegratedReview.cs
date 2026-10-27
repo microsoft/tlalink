@@ -35,6 +35,16 @@ public static class IntegratedReview
             backend.Initialize();
             DafnyIndexResult index = backend.Index(manifest.Proofs);
             packet.Inventory.AddRange(index.Declarations);
+            List<FormalLinkDeclaration> formal = FormalCorrespondence.Dafny(index.Declarations, packet.Fingerprints);
+            List<Issue> pairing = [];
+            foreach (var group in manifest.Bindings.GroupBy(b => Markup.Name(b.Id).Alias, StringComparer.Ordinal))
+                FormalCorrespondence.Match(source, formal, group.Key, group.Select(b => b.Id), pairing);
+            packet.Diagnostics.AddRange(pairing);
+            if (pairing.Count != 0)
+                throw new InputException(ErrorCode.InvalidIntegratedBinding, string.Join("; ", pairing.Select(d => d.Message)));
+            manifest = manifest with { Bindings = manifest.Bindings.Select(b => b with {
+                Dafny = source.Bindings.Single(s => s.BindingId == b.Id).NativeEndpoint
+            }).ToList() };
             List<(ISymbol Symbol, Endpoint Endpoint)> symbols = SourceSymbols(source);
             packet.SourceInventory.AddRange(symbols.Select(s => s.Endpoint));
             foreach (DafnyBinding binding in manifest.Bindings)

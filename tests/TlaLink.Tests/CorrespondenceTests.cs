@@ -11,16 +11,16 @@ public static class CorrespondenceTests
         {
             List<LocatedAnnotation> parsed = Markup.Parse("""
                 @link {
-                  "bind": [{"id":"change","target":"lamp::Set"}],
-                  "capture": [{"binding":"change","point":"commit","classification":"transition",
-                    "actor":"this","operation":"$call","arguments":["requested"],"observe":["enabled"]}],
+                  "bind": [{"id":"lamp::change"}],
+                  "capture": [{"binding":"lamp::change","point":"commit","classification":"transition",
+                    "actor":"this","operation":"$call","arguments":["requested"],"observe":["lamp::enabled"]}],
                   "exclude": [{"id":"diagnostics","from":["lamp"],"reason":"Diagnostic output only."}]
                 }
                 """, 4, 8);
             BindAnnotation binding = (BindAnnotation)parsed[0].Declaration;
             CaptureAnnotation capture = (CaptureAnnotation)parsed[1].Declaration;
             ExcludeAnnotation exclusion = (ExcludeAnnotation)parsed[2].Declaration;
-            CoreTests.Equal(new NativeReference("lamp", "Set"), binding.Target);
+            CoreTests.Equal(new NativeReference("lamp", "change"), Markup.Name(binding.Id));
             CoreTests.Equal(CapturePoint.Commit, capture.Point);
             CoreTests.Equal(CaptureClassification.Transition, capture.Classification);
             CoreTests.True(capture.Arguments!.SequenceEqual(["requested"]));
@@ -44,7 +44,7 @@ public static class CorrespondenceTests
                 CoreTests.ThrowsAny<InputException>(() => Markup.Parse("@link " + payload, 0, 0)));
         test("generated JSON escapes comment terminators without changing binding reasons", () =>
         {
-            AnnotationPayload payload = new() { Bind = [new("change", new("lamp", "Set"), "contains */ text")] };
+            AnnotationPayload payload = new() { Bind = [new("lamp::change", "contains */ text")] };
             string json = Markup.Encode(payload);
             CoreTests.True(!json.Contains("*/", StringComparison.Ordinal));
             CoreTests.Equal("contains */ text", ((BindAnnotation)Markup.Parse("@link " + json, 0, 0)[0].Declaration).Reason);
@@ -68,7 +68,7 @@ public static class CorrespondenceTests
             File.WriteAllText(path, "class Lamp {}");
             CSharpScope source = CSharpScope.Parse([path]);
             CorrespondenceConfiguration config = new(Schema.Version, "correspondence-scope", Markup.Version,
-                [new("lamp", "tla", ["not-opened-before-source-presence-check.tla"], RequiredBindings: ["change"])], []);
+                [new("lamp", "tla", ["not-opened-before-source-presence-check.tla"], RequiredBindings: ["lamp::change"])], []);
             ModelScope model = new();
             model.BindSources(source, config, "lamp");
             CoreTests.True(model.Diagnostics.Any(d => d.Is(ErrorCode.MissingModelEndpoint) &&
@@ -79,9 +79,7 @@ public static class CorrespondenceTests
             string path = Path.Combine(work, "multiple-correspondences.cs");
             File.WriteAllText(path, """
                 class Lamp {
-                  /* @link {"bind":[
-                    {"id":"arithmetic","target":"proof::Math.Desired"},
-                    {"id":"protocol","target":"protocol::Lamp.Desired"}]} */
+                  /* @link {"bind":[{"id":"proof::arithmetic"},{"id":"protocol::protocol"}]} */
                   static bool Desired(bool value) => value;
                 }
                 """);
@@ -89,7 +87,7 @@ public static class CorrespondenceTests
             CoreTests.Equal(2, source.Bindings.Count);
             CoreTests.True(source.Bindings.All(b => b.Kind == SourceBindingKind.Declaration && b.Capture == null));
             CoreTests.True(source.Diagnostics.All(d => d.Severity != "error"));
-            CoreTests.Equal(new NativeReference("proof", "Math.Desired"), source.Bindings[0].Declaration.Target);
+            CoreTests.Equal(new NativeReference("proof", "arithmetic"), Markup.Name(source.Bindings[0].Declaration.Id));
         });
         test("one JSON argument entry cannot expand into several CSharp arguments", () =>
         {
@@ -97,18 +95,14 @@ public static class CorrespondenceTests
             File.WriteAllText(path, """
                 class Lamp {
                   void Apply() {
-                    /* @link {
-                      "bind":[{"id":"change","target":"lamp::Set"}],
-                      "capture":[{"binding":"change","point":"commit","classification":"transition",
-                        "actor":"1","operation":"1","arguments":["1,true"]}]
-                    } */
+                    /* @link {"bind":[{"id":"lamp::change"}],"capture":[{"binding":"lamp::change","point":"commit","classification":"transition","actor":"1","operation":"1","arguments":["1,true"]}]} */
                     System.GC.KeepAlive(0);
                   }
                 }
                 """);
             CSharpScope source = CSharpScope.Parse([path]);
             List<ModelBinding> models = source.Bindings.Select(b => new ModelBinding(b.Model, b.Tag,
-                new(b.NativeEndpoint, "Lamp", "operator", new("synthetic.tla", 1, 1), ""), 4)).ToList();
+                new("Set", "Lamp", "operator", new("synthetic.tla", 1, 1), ""), 4)).ToList();
             Packet packet = Review.Build("instrument", source, models, [], []);
             CoreTests.ThrowsAny<InputException>(() =>
                 Instrumentation.Generate(source, models, packet, Path.Combine(work, "argument-entry-output")));
@@ -119,7 +113,7 @@ public static class CorrespondenceTests
             const string text = """
                 class Lamp {
                   readonly object gate = new();
-                  /* @link {"bind":[{"id":"state","target":"lamp::Enabled"}]} */
+                  /* @link {"bind":[{"id":"lamp::state"}]} */
                   bool enabled;
                   static void Log(int marker) {}
                   void Set() { Log(ARGUMENT); }
@@ -152,7 +146,7 @@ public static class CorrespondenceTests
             File.WriteAllText(path, text.Replace("ARGUMENT", "1").Replace("Log(1);", """
                 /* @link {"exclude":[{"id":"excluded","from":["lamp"],"reason":"Diagnostic block."}]} */
                 {
-                  /* @link {"bind":[{"id":"conflict","target":"lamp::Set"}]} */
+                  /* @link {"bind":[{"id":"lamp::conflict"}]} */
                   Log(1);
                 }
                 """));

@@ -55,7 +55,7 @@ public static class CorrespondenceInputs
             if (target.Language == "tla")
             {
                 if (target.RequiredBindings is not { Count: > 0 and <= 1000 } ||
-                    target.RequiredBindings.Any(id => !Schema.IsStableId(id)) ||
+                    target.RequiredBindings.Any(id => !Markup.IsCorrespondenceId(id) || Markup.Name(id).Alias != target.Id) ||
                     target.RequiredBindings.Distinct(StringComparer.Ordinal).Count() != target.RequiredBindings.Count)
                     throw new InputException(ErrorCode.InvalidAnnotation, "TLA+ targets require explicit unique required_bindings IDs.");
             }

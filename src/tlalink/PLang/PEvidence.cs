@@ -107,6 +107,8 @@ public static class PEvidence
                 CorrespondenceConfiguration? scope = config.Bindings.Count == 0 ? null :
                     CorrespondenceEvidence.Scope(ProjectInputs.Resolve(packet.Config, config.Scope ??
                         throw new InputException(ErrorCode.InvalidPEvidence, "Missing correspondence scope.")), Recorded);
+                List<FormalLinkDeclaration> formal = config.Bindings.Count == 0 ? [] :
+                    FormalCorrespondence.P(packet.Inventory, packet.Fingerprints, Recorded);
                 foreach (PSourceLink link in packet.Links)
                 {
                     if (!packet.Inventory.Contains(link.Specification) ||
@@ -114,9 +116,9 @@ public static class PEvidence
                         Error("Link endpoints are not in the pinned source/native inventory.");
                     PBinding binding = config.Bindings.Single(b => b.Id == link.Id);
                     if (!inline.TryGetValue(link.Id, out ArchivedSourceBinding? declaration) ||
-                        declaration.Declaration.Target.Endpoint != link.Specification.Name ||
+                        formal.Count(f => f.Binding.Id == link.Id && f.Endpoint.Name == link.Specification.Name) != 1 ||
                         declaration.Location != link.Implementation.Location ||
-                        !scope!.Targets.Any(t => t.Id == declaration.Declaration.Target.Alias && t.Language == "p") ||
+                        !scope!.Targets.Any(t => t.Id == Markup.Name(link.Id).Alias && t.Language == "p") ||
                         link.Relation != binding.Relation ||
                         !link.Assumptions.SequenceEqual(binding.Assumptions))
                         Error("P source relation differs from the archived binding.");

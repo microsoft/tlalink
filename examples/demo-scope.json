@@ -1,9 +1,20 @@
 {
   "schema_version": 4,
   "kind": "correspondence-scope",
-  "annotation_version": 3,
+  "annotation_version": 4,
   "targets": [
-    { "id": "demo", "language": "tla", "inputs": ["Demo.tla"], "required_bindings": ["active", "Admit", "Release"] }
+    {
+      "id": "demo",
+      "language": "tla",
+      "inputs": [
+        "Demo.tla"
+      ],
+      "required_bindings": [
+        "demo::active",
+        "demo::Admit",
+        "demo::Release"
+      ]
+    }
   ],
   "omissions": []
 }

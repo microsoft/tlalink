@@ -1,7 +1,7 @@
 # Source vocabulary: synthetic conformance cases
 
 Status: conformance design matrix for the [vocabulary](source-correspondence.md).
-The snippets use annotation-version-3 JSON. This document is not an executable
+The snippets use annotation-version-4 JSON. This document is not an executable
 suite, native test result or evidence; executable core/native regressions live
 in the console test project. The matrix also records controls to preserve when
 extending those suites.
@@ -28,10 +28,13 @@ Do not copy an expected outcome into a success-shaped receipt.
 
 Each case must supply its real explicit C# compiler context, complete native
 input closure and pinned prerequisites. The table is not a manifest.
-TLA+ targets also declare the required inline IDs: `lamp-tla` selects
-`lamp-value`/`lamp-change`, `lamp-detail` selects `lamp-change-detail`, and
-`lamp-pcal` selects `lamp-start`. Missing IDs are structural failures, not an
-automatically reduced claim.
+TLA+ scopes also declare the required inline IDs: `lamp-tla` selects
+`lamp-tla::lamp-value`/`lamp-tla::lamp-change`, `lamp-detail` selects
+`lamp-detail::lamp-change-detail`, and `lamp-pcal` selects
+`lamp-pcal::lamp-start`. Missing IDs are structural failures, not an
+automatically reduced claim. Case descriptions below abbreviate IDs to their
+local names when the scope is unambiguous; authored annotations and selectors
+always use the full `scope::name`.
 
 ### Common C# input
 
@@ -47,13 +50,12 @@ public sealed class Lamp
     /* @link {
   "bind": [
     {
-      "id": "lamp-value",
-      "target": "lamp-tla::Enabled"
+      "id": "lamp-tla::lamp-value"
     }
   ],
   "capture": [
     {
-      "binding": "lamp-value",
+      "binding": "lamp-tla::lamp-value",
       "guard": "gate",
       "type": "bool"
     }
@@ -64,8 +66,7 @@ public sealed class Lamp
     /* @link {
   "bind": [
     {
-      "id": "lamp-command",
-      "target": "lamp-p::eSet"
+      "id": "lamp-p::lamp-command"
     }
   ]
 } */
@@ -76,17 +77,15 @@ public sealed class Lamp
             /* @link {
   "bind": [
     {
-      "id": "lamp-change",
-      "target": "lamp-tla::Set"
+      "id": "lamp-tla::lamp-change"
     },
     {
-      "id": "lamp-change-detail",
-      "target": "lamp-detail::Set"
+      "id": "lamp-detail::lamp-change-detail"
     }
   ],
   "capture": [
     {
-      "binding": "lamp-change",
+      "binding": "lamp-tla::lamp-change",
       "point": "commit",
       "classification": "transition",
       "actor": "actorId",
@@ -95,7 +94,7 @@ public sealed class Lamp
         "requested"
       ],
       "observe": [
-        "lamp-value"
+        "lamp-tla::lamp-value"
       ]
     }
   ]
@@ -109,12 +108,10 @@ public sealed class Lamp
     /* @link {
   "bind": [
     {
-      "id": "lamp-decision",
-      "target": "lamp-dafny::LampMath.Desired"
+      "id": "lamp-dafny::lamp-decision"
     },
     {
-      "id": "lamp-protocol-decision",
-      "target": "lamp-p::Lamp.Desired"
+      "id": "lamp-p::lamp-protocol-decision"
     }
   ]
 } */
@@ -181,6 +178,7 @@ separate assessments. A positive omission classification is not human approval.
 ---------------------------- MODULE Lamp ----------------------------
 VARIABLE
   \* @type: Bool;
+  (* @link {"bind":[{"id":"lamp-tla::lamp-value"}]} *)
   enabled
 
 vars == <<enabled>>
@@ -188,6 +186,7 @@ Init == enabled = FALSE
 Enabled == enabled
 
 \* @type: (Int, Int, Bool) => Bool;
+(* @link {"bind":[{"id":"lamp-tla::lamp-change"},{"id":"lamp-detail::lamp-change-detail"}]} *)
 Set(actor, operation, requested) == enabled' = requested
 
 Next == Set(1, 1, TRUE) \/ Set(1, 1, FALSE)
@@ -220,7 +219,7 @@ be tied to observed compiler inputs and a loaded binary before validation.
 | T03 | Run native TLC with baseline configuration | Completed finite-model invariant result, not a C# conformance claim |
 | T04 | Execute/capture the two-call workload and validate the whole trace | One consistent witness with observed values `TRUE`, then `FALSE`; no reset-per-event model state |
 | T05 | In a declared copied control, replace only `enabled = requested` with `enabled = !requested` | Capture still resolves and compiles; completed whole-trace rejection, not parser failure |
-| T06 | Change target to nonexistent `lamp-tla::Missing` | Structural failure before instrumentation |
+| T06 | Change only the source ID to `lamp-tla::Missing` | Both unmatched endpoints are reported before instrumentation |
 | T07 | Capture observed field outside `gate` | Guard validation failure; no cross-lock or unlocked snapshot fallback |
 | T08 | Change arguments to `Diagnostics.Write(1)` | Invalid capture expression; logging rule cannot legalize it |
 | T09 | Add `AlwaysOff` as the selected TLC invariant | Native completed property rejection, distinct from trace rejection |
@@ -242,6 +241,7 @@ EXTENDS Naturals
 (* --algorithm LampOnce
 variables enabled = FALSE;
 begin
+(* @link {"bind":[{"id":"lamp-pcal::lamp-start"}]} *)
 SetOn:
     enabled := TRUE;
 end algorithm; *)
@@ -266,8 +266,7 @@ public sealed class LampStartup
         /* @link {
   "bind": [
     {
-      "id": "lamp-start",
-      "target": "lamp-pcal::SetOn"
+      "id": "lamp-pcal::lamp-start"
     }
   ]
 } */
@@ -280,7 +279,7 @@ public sealed class LampStartup
 |---|---|---|
 | L01 | Resolve `lamp-start` against an explicitly translated, current input | Structural label correspondence, not an execution witness |
 | L02 | Change the algorithm after translation without retranslating | Freshness blocks analysis; do not edit the generated body to compensate |
-| L03 | Rename the target to an absent label | Native endpoint resolution fails; no label-name regex fallback |
+| L03 | Change only the source ID, leaving the label's formal ID unchanged | Missing paired endpoints; no label-name guessing or regex fallback |
 | L04 | Run without the selected native frontend prerequisite | Incomplete, not a structural pass or alternate-engine result |
 
 ## Apalache cases
@@ -312,6 +311,7 @@ boundary.
 
 ```dafny
 module LampMath {
+  /* @link {"bind":[{"id":"lamp-dafny::lamp-decision"}]} */
   function Desired(requested: bool): bool
     ensures Desired(requested) == requested
   {
@@ -343,9 +343,9 @@ repeating its source and target endpoints.
 | D03 | Run both explicit oracle cases | Matching outputs for the two cases, separate from verification |
 | D04 | Copy C# helper and change its result to `!requested`; leave Dafny unchanged | Completed oracle mismatch, not a native Dafny proof failure |
 | D05 | Copy Dafny function and return `!requested`, preserving its postcondition | Native verification rejection; do not remove the postcondition |
-| D06 | Add a review-only binding to `LampMath.DesiredIsRequested` | Ghost lemma resolves, but is not made executable |
+| D06 | Add the same new review-only ID to the C# helper and `LampMath.DesiredIsRequested` | Ghost lemma resolves, but is not made executable |
 | D07 | Ask to execute that lemma as an oracle | Explicit unsupported executable-target failure |
-| D08 | Add `capture lamp-decision ...` to the helper | Unsupported capture adapter, not an automatic conversion to an oracle |
+| D08 | Add a JSON `capture` entry referencing `lamp-dafny::lamp-decision` to the helper | Unsupported capture adapter, not an automatic conversion to an oracle |
 | D09 | Select instance `Set` as a direct Boolean oracle without an explicit compatible adapter | Unsupported signature/adapter failure, not inferred adaptation |
 | D10 | Attach an existing source premise to `lamp-decision` by ID | Preserve its own supported-shape validation and independent result; a bind does not discharge it |
 
@@ -358,6 +358,7 @@ existing focused obligation suites.
 ### Native P input
 
 ```p
+/* @link {"bind":[{"id":"lamp-p::lamp-command"}]} */
 event eSet: bool;
 
 machine Lamp {
@@ -375,6 +376,7 @@ machine Lamp {
         }
     }
 
+    /* @link {"bind":[{"id":"lamp-p::lamp-protocol-decision"}]} */
     fun Desired(requested: bool): bool {
         return requested;
     }

@@ -50,8 +50,8 @@ public static class EvidenceHardeningTests
             File.WriteAllText(proof, "method Bad(canceled: bool) returns (result: bool)\n ensures result == !canceled\n{ result := canceled; }\n");
             string bindings = Path.Combine(directory, "bindings.json");
             BindingFixtures.WriteIntegrated(bindings, new IntegratedManifest(Schema.Version, [source], [proof],
-                [new("bad", "Decisions.Bad", "Bad", null, [])], [], []));
-            var run = TestCli.Run(["verify-integrated", "--annotation-version", "3", "--bindings", bindings, "--dafny", dafny,
+                [new("bad", "Decisions.Bad", "Bad", null, [])], [], []), dafny);
+            var run = TestCli.Run(["verify-integrated", "--annotation-version", "4", "--bindings", bindings, "--dafny", dafny,
                 "--output", Path.Combine(directory, "result"), "--timeout", "60"]);
             if (run.Code != 1) throw new InvalidOperationException(run.Json);
             using JsonDocument document = JsonDocument.Parse(run.Json);

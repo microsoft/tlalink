@@ -2,6 +2,8 @@ namespace TlaLink;
 
 public enum ErrorCode
 {
+    [DiagnosticInfo("SC003", IssueSeverity.Error)]
+    MissingImplementationEndpoint,
     [DiagnosticInfo("SC001", IssueSeverity.Error)]
     OmissionBoundaryConflict,
     [DiagnosticInfo("SC002", IssueSeverity.Warning)]

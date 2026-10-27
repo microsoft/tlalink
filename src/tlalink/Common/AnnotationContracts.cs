@@ -9,23 +9,9 @@ public enum CapturedType { Int, Bool, String }
 public enum SchedulingHook { Before, After }
 public enum SourceBindingKind { State, Step, Declaration }
 
-[JsonConverter(typeof(NativeReferenceConverter))]
 public sealed record NativeReference(string Alias, string Endpoint)
 {
     public override string ToString() => Alias + "::" + Endpoint;
-}
-
-public sealed class NativeReferenceConverter : JsonConverter<NativeReference>
-{
-    public override NativeReference Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-    {
-        if (reader.TokenType != JsonTokenType.String) throw new JsonException("target requires a qualified string.");
-        (string alias, string endpoint) = Markup.Target(reader.GetString()!);
-        return new(alias, endpoint);
-    }
-
-    public override void Write(Utf8JsonWriter writer, NativeReference value, JsonSerializerOptions options) =>
-        writer.WriteStringValue(value.ToString());
 }
 
 public abstract record SourceAnnotation
@@ -34,7 +20,7 @@ public abstract record SourceAnnotation
     public abstract string Identity { get; }
 }
 
-public sealed record BindAnnotation(string Id, NativeReference Target, string? Reason = null) : SourceAnnotation
+public sealed record BindAnnotation(string Id, string? Reason = null) : SourceAnnotation
 {
     public override string Identity => Id;
 }
@@ -85,3 +71,4 @@ public sealed record AnnotationPayload
 public sealed record LocatedAnnotation(SourceAnnotation Declaration, int Start, int End);
 public sealed record SourceLinkDeclaration(BindAnnotation Binding, CaptureAnnotation? Capture,
     SourceBindingKind SourceKind, Place Location);
+public sealed record FormalLinkDeclaration(BindAnnotation Binding, Endpoint Endpoint, int Arity);

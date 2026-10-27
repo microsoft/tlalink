@@ -5,8 +5,10 @@ VARIABLE x
 vars == <<x>>
 Init == x = [lane \in 1..2 |-> 0]
 
+(* @link {"bind":[{"id":"WorkflowLanes::Value"}]} *)
 Value(entity) == x[entity]
 
+(* @link {"bind":[{"id":"WorkflowLanes::Move"}]} *)
 Move == \E lane \in 1..2:
           /\ x[lane] = 0
           /\ (lane = 1 \/ x[1] = 1)

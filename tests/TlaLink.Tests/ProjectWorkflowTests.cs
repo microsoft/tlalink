@@ -322,17 +322,17 @@ public static class ProjectWorkflowTests
             try
             {
                 AnalysisRequirement requirement = policy.Requirements[0];
-                Save(policyPath, policy with { Requirements = [requirement with { Cases = [.. requirement.Cases!, "credit-return/missing"] }, .. policy.Requirements.Skip(1)] });
+                Save(policyPath, policy with { Requirements = [requirement with { Cases = [.. requirement.Cases!, "decisions-spec::credit-return/missing"] }, .. policy.Requirements.Skip(1)] });
                 var rejected = TestCli.Run(["accept", "--project", path, "--run", output]);
                 CoreTests.True(rejected.Code != 0);
-                CoreTests.True(rejected.Json.Contains("credit-return/missing", StringComparison.Ordinal));
+                CoreTests.True(rejected.Json.Contains("decisions-spec::credit-return/missing", StringComparison.Ordinal));
                 var summary = TestCli.Run(["accept", "--project", path, "--run", output, "--format", "summary"]);
                 CoreTests.Equal(rejected.Code, summary.Code);
                 using JsonDocument grouped = JsonDocument.Parse(summary.Json);
                 CoreTests.True(grouped.RootElement.GetProperty("worklist").GetProperty("groups").EnumerateArray()
                     .Any(g => g.GetProperty("kind").GetString() == "requirements" &&
                         g.GetProperty("items").EnumerateArray().Any(item => item.GetProperty("missing").EnumerateArray()
-                            .Any(reason => reason.GetString() == "case credit-return/missing"))));
+                            .Any(reason => reason.GetString() == "case decisions-spec::credit-return/missing"))));
             }
             finally { Save(policyPath, policy); }
         });

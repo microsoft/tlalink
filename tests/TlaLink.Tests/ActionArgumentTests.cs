@@ -16,7 +16,7 @@ public static class ActionArgumentTests
                 int Property => field;
                 public void Run(int amount, bool enabled, string label) {
                     int delta = amount;
-                    /* @link {"bind":[{"id":"Apply","target":"ArgumentModel::Apply"}],"capture":[{"binding":"Apply","actor":"this","operation":"$call","arguments":["ARGUMENTS"],"point":"commit","classification":"transition"}]} */
+                    /* @link {"bind":[{"id":"ArgumentModel::Apply"}],"capture":[{"binding":"ArgumentModel::Apply","actor":"this","operation":"$call","arguments":["ARGUMENTS"],"point":"commit","classification":"transition"}]} */
                     GC.KeepAlive(0);
                 }
             }
@@ -66,7 +66,7 @@ public static class ActionArgumentTests
 
                 class Subject {
                     public void Apply(int amount, bool enabled, string label) {
-                        /* @link {"bind":[{"id":"Apply","target":"Arguments::Apply"}],"capture":[{"binding":"Apply","actor":"this","operation":"$call","arguments":["amount","enabled","label"],"point":"commit","classification":"transition"}]} */
+                        /* @link {"bind":[{"id":"Arguments::Apply"}],"capture":[{"binding":"Arguments::Apply","actor":"this","operation":"$call","arguments":["amount","enabled","label"],"point":"commit","classification":"transition"}]} */
                         System.GC.KeepAlive(0);
                     }
                 }
@@ -88,7 +88,7 @@ public static class ActionArgumentTests
                 ====
                 """);
             string generated = Path.Combine(directory, "generated"), jar = TestTools.Jar(root);
-            var instrument = TestCli.Tla(["instrument", "--annotation-version", "3", "--source", source,
+            var instrument = TestCli.Tla(["instrument", "--annotation-version", "4", "--source", source,
                 "--model", model, "--jar", jar, "--output", generated]);
             if (instrument.Code != 0) throw new InvalidOperationException(instrument.Json);
             File.WriteAllText(Path.Combine(generated, "Program.cs"), """
@@ -116,7 +116,7 @@ public static class ActionArgumentTests
             {
                 string config = Path.Combine(directory, "expected-" + expected + ".cfg");
                 File.WriteAllText(config, "SPECIFICATION Spec\nCONSTANT Expected = " + expected + "\n");
-                var check = TestCli.Tla(["validate-trace", "--annotation-version", "3", "--model", model, "--jar", jar,
+                var check = TestCli.Tla(["validate-trace", "--annotation-version", "4", "--model", model, "--jar", jar,
                     "--manifest", binding, "--trace", trace, "--execution", Path.Combine(execution, "execution.json"),
                     "--config", config, "--output", Path.Combine(directory, "validation-" + expected)]);
                 if (check.Code != (expected == 3 ? 0 : 1)) throw new InvalidOperationException(check.Json);

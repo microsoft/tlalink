@@ -20,7 +20,7 @@ public static class ProjectCompositionTests
             Save(f.Path, root);
             CoreTests.ThrowsAny<InputException>(() => ProjectComposition.Read(f.Path));
             File.WriteAllText(f.Path, original);
-            CoreTests.Equal(3, ProjectComposition.Read(f.Path).AnnotationVersion);
+            CoreTests.Equal(4, ProjectComposition.Read(f.Path).AnnotationVersion);
             JsonObject component = JsonNode.Parse(File.ReadAllText(f.ComponentPath))!.AsObject();
             component["annotation_version"] = 2;
             Save(f.ComponentPath, component);

@@ -180,6 +180,8 @@ public static class IntegratedEvidence
                         policy.Sources.Select(p => ProjectInputs.Resolve(manifestPath, p)), recordedPins, Recorded);
                     CorrespondenceConfiguration scope = CorrespondenceEvidence.Scope(
                         ProjectInputs.Resolve(manifestPath, policy.Scope), Recorded);
+                    List<FormalLinkDeclaration> formal = FormalCorrespondence.Dafny(
+                        result.GetProperty("inventory").Deserialize<List<DafnyDeclaration>>(Files.Json)!, recordedPins, Recorded);
                     bool hasTla = result.TryGetProperty("tla", out JsonElement tla) && tla.ValueKind == JsonValueKind.Object;
                     if (hasTla != (policy.TlaTargets.Count > 0) || hasTla &&
                         (!tla.TryGetProperty("selected_targets", out JsonElement selectedTargets) ||
@@ -192,9 +194,9 @@ public static class IntegratedEvidence
                         string id = Text(link, "id") ?? "";
                         if (!inline.TryGetValue(id, out ArchivedSourceBinding? declaration) ||
                             !policy.Bindings.Any(b => b.Id == id) ||
-                            Text(link.GetProperty("specification"), "name") != declaration.Declaration.Target.Endpoint ||
+                            formal.Count(f => f.Binding.Id == id && f.Endpoint.Name == Text(link.GetProperty("specification"), "name")) != 1 ||
                             link.GetProperty("implementation").GetProperty("location").Deserialize<Place>(Files.Json) != declaration.Location ||
-                            !scope.Targets.Any(t => t.Id == declaration.Declaration.Target.Alias && t.Language == "dafny"))
+                            !scope.Targets.Any(t => t.Id == Markup.Name(id).Alias && t.Language == "dafny"))
                             Error("Recorded link differs from its pinned inline binding: " + id);
                     }
                 }

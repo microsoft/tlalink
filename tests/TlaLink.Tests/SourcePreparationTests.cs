@@ -8,7 +8,7 @@ namespace TlaLink.Tests;
 public static class SourcePreparationTests
 {
     private static CompilerProfile Compiler => new("net10.0", "14", "enable", false, true, []);
-    private static AnnotationPayload Payload(string id) => new() { Bind = [new(id, new("sample", id))] };
+    private static AnnotationPayload Payload(string id) => new() { Bind = [new("sample::" + id)] };
 
     public static void Register(Action<string, Action> test, string work)
     {

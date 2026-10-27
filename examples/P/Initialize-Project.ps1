@@ -37,7 +37,7 @@ Write-NewJson "extra-scope.json" $scope
 $config.scope = "extra-scope.json"
 Write-NewJson "extra-credit.json" $config
 Write-NewJson "project.json" @{
-    schema_version = 4; kind = "analysis-project"; annotation_version = 3; id = "p-credit"
+    schema_version = 4; kind = "analysis-project"; annotation_version = 4; id = "p-credit"
     tools = @{ dafny = $null; jar = $null; p = @{ path = $PCompiler; sha256 = (Hash $PCompiler) } }
     compiler = @{
         target_framework = "net10.0"; language_version = "14"; nullable = "enable"
@@ -54,9 +54,9 @@ Write-NewJson "requirements.json" @{
     schema_version = 4; kind = "acceptance-policy"; project = "p-credit"
     requirements = @(
         @{ id = "links"; scenario = "credit"; stage = "links"; expected = "passed"
-           claim = "structural-links"; bindings = @("credit-return"); config_sha256 = (Hash ([IO.Path]::Combine($Output, "inspect.json"))) },
+           claim = "structural-links"; bindings = @("credit-p::credit-return"); config_sha256 = (Hash ([IO.Path]::Combine($Output, "inspect.json"))) },
         @{ id = "healthy"; scenario = "credit"; stage = "healthy"; expected = "passed"
-           claim = "explored-schedules"; bindings = @("credit-return"); config_sha256 = (Hash ([IO.Path]::Combine($Output, "credit.json"))) },
+           claim = "explored-schedules"; bindings = @("credit-p::credit-return"); config_sha256 = (Hash ([IO.Path]::Combine($Output, "credit.json"))) },
         @{ id = "extra-credit"; scenario = "credit"; stage = "extra-credit"; expected = "rejected"
            diagnostic = "PL100"; claim = "model-counterexample"; config_sha256 = (Hash ([IO.Path]::Combine($Output, "extra-credit.json"))) }
     )

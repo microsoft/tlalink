@@ -99,7 +99,7 @@ public static class PInputs
         }
         HashSet<string> ids = new(StringComparer.Ordinal);
         foreach (PBinding binding in config.Bindings)
-            if (binding is null || !Schema.IsStableId(binding.Id) || !ids.Add(binding.Id) || string.IsNullOrWhiteSpace(binding.Relation) ||
+            if (binding is null || !Markup.IsCorrespondenceId(binding.Id) || !ids.Add(binding.Id) || string.IsNullOrWhiteSpace(binding.Relation) ||
                 binding.Assumptions.Count == 0 || binding.Assumptions.Any(string.IsNullOrWhiteSpace))
                 throw new InputException(ErrorCode.InvalidPInput, "Bindings require unique IDs, explicit endpoints, relation and assumptions.");
         if (config.Bindings.Count > 0 && config.Sources.Count == 0)

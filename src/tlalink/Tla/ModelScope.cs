@@ -3,6 +3,7 @@ namespace TlaLink;
 public sealed class ModelScope
 {
     public List<ModelBinding> Bindings { get; } = [];
+    public List<FormalLinkDeclaration> Declarations { get; } = [];
     public List<Issue> Diagnostics { get; } = [];
     public List<TlaDocument> Documents { get; } = [];
     public List<Endpoint> Inventory { get; } = [];
@@ -22,12 +23,20 @@ public sealed class ModelScope
             result.Diagnostics.AddRange(document.Diagnostics.Select(d => new Issue(d.Code, d.Severity, d.Message,
                 d.Path is null ? null : new Place(d.Path, d.Line ?? 1, d.Line ?? 1))));
             if (!annotations) continue;
-            foreach (var comment in Markup.TlaComments(document.Text))
-                if (comment.Content.TrimStart().StartsWith("@link", StringComparison.Ordinal) ||
-                    comment.Content.TrimStart().StartsWith("@tla", StringComparison.Ordinal))
-                    result.Diagnostics.Add(new(ErrorCode.InvalidAnnotation,
-                        "Formal endpoints use native declaration identities; remove old model/state/step markup.",
-                        Files.At(path, document.Text, comment.Start, comment.End)));
+            List<(int Start, int End, string Content)> comments = Markup.TlaComments(document.Text);
+            foreach (var algorithm in comments.Where(c => c.Content.TrimStart().StartsWith("--algorithm", StringComparison.Ordinal) ||
+                c.Content.TrimStart().StartsWith("--fair algorithm", StringComparison.Ordinal)).ToList())
+                comments.AddRange(Markup.TlaComments(algorithm.Content).Select(c =>
+                    (c.Start + algorithm.Start + 2, c.End + algorithm.Start + 2, c.Content)));
+            try
+            {
+                result.Declarations.AddRange(FormalCorrespondence.Attach(path, document.Text,
+                    document.Endpoints.Select(e => new NativeDeclarationSpan(
+                        new(e.Name, e.Scope, e.Kind, new(path, e.Line, e.EndLine, e.Column),
+                            document.Text[e.Start..e.End]), e.Start, e.End,
+                        e.Kind == "label" ? document.Endpoints.Single(o => o.Kind == "operator" && o.Name == e.Name).Arity : e.Arity)), comments));
+            }
+            catch (InputException error) { result.Diagnostics.Add(new(error.Code ?? ErrorCode.InvalidModelBinding, error.Message)); }
         }
         return result;
     }
@@ -35,13 +44,13 @@ public sealed class ModelScope
     public void BindSources(CSharpScope source, CorrespondenceConfiguration config, string? selected = null)
     {
         foreach (FormalTarget target in config.Targets.Where(t => t.Language == "tla" && (selected == null || t.Id == selected)))
-            foreach (string id in target.RequiredBindings ?? [])
-                if (!source.Bindings.Any(b => b.Model == target.Id && b.BindingId == id))
-                    Diagnostics.Add(new(ErrorCode.MissingModelEndpoint, $"Missing required inline binding {target.Id}::{id}."));
-        foreach (SourceBinding binding in source.Bindings.Where(b =>
-            config.Targets.Any(t => t.Id == b.Model && t.Language == "tla") &&
-            (selected == null || b.Model == selected)))
-            Add(config, binding.Model, binding.Tag, binding.NativeEndpoint);
+        {
+            List<string> ids = Declarations.Where(d => Markup.Name(d.Binding.Id).Alias == target.Id).Select(d => d.Binding.Id)
+                .Concat(source.Bindings.Where(b => b.Model == target.Id).Select(b => b.BindingId))
+                .Concat(target.RequiredBindings ?? []).Distinct(StringComparer.Ordinal).ToList();
+            foreach (ResolvedCorrespondence pair in FormalCorrespondence.Match(source, Declarations, target.Id, ids, Diagnostics))
+                Bindings.Add(new(target.Id, pair.Implementation.Tag, pair.Specification.Endpoint, pair.Specification.Arity));
+        }
         AddHidden(config, selected);
     }
 
@@ -49,13 +58,25 @@ public sealed class ModelScope
     {
         foreach (EventBinding binding in manifest.Events)
         {
-            Add(config, binding.Model, new("step", binding.Step, [], 0, 0), binding.Operator);
+            AddDeclared(binding.Model, new("step", binding.Step, [], 0, 0), binding.Binding, binding.Operator);
             foreach (Observation observation in binding.Observations)
                 if (!Bindings.Any(b => b.Model == binding.Model && b.Tag.Kind == "state" && b.Tag.Identity == observation.Id))
-                    Add(config, binding.Model, new("state", observation.Id, [], 0, 0), observation.Operator);
+                    AddDeclared(binding.Model, new("state", observation.Id, [], 0, 0), observation.Id, observation.Operator);
         }
+
         foreach (string alias in manifest.Events.Select(e => e.Model).Distinct(StringComparer.Ordinal))
             AddHidden(config, alias);
+    }
+
+    private void AddDeclared(string alias, Tag tag, string id, string recordedOperator)
+    {
+        List<FormalLinkDeclaration> matches = Declarations.Where(d => d.Binding.Id == id && Markup.Name(id).Alias == alias).ToList();
+        if (matches.Count != 1 || matches[0].Endpoint.Name != recordedOperator)
+        {
+            Diagnostics.Add(new(ErrorCode.MissingModelEndpoint, "Recorded event disagrees with paired formal endpoint: " + id));
+            return;
+        }
+        Bindings.Add(new(alias, tag, matches[0].Endpoint, matches[0].Arity));
     }
 
     private void AddHidden(CorrespondenceConfiguration config, string? selected)

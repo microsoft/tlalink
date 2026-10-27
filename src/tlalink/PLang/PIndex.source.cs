@@ -101,7 +101,8 @@ internal static class PIndex
             if (!paths.Contains(path, pathComparer))
                 throw new InvalidOperationException("Native inventory escaped explicit source scope: " + path);
             int endLine = context.Stop.Line + (context.Stop.Text?.Count(character => character == '\n') ?? 0);
-            declarations.Add(new(name, kind, path, location.Line, Math.Max(location.Line, endLine)));
+            declarations.Add(new(name, kind, path, location.Line, Math.Max(location.Line, endLine),
+                context.Start.StartIndex, context.Stop.StopIndex + 1, context.Start.Column + 1));
         }
         foreach (Machine machine in scope.Machines)
         {
@@ -120,5 +121,6 @@ internal static class PIndex
             .ThenBy(item => item.Name, StringComparer.Ordinal).ToList();
     }
 
-    private sealed record Declaration(string Name, string Kind, string Path, int Line, int EndLine);
+    private sealed record Declaration(string Name, string Kind, string Path, int Line, int EndLine,
+        int Start, int End, int Column);
 }

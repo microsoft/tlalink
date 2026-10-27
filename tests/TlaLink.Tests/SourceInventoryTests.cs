@@ -81,19 +81,19 @@ public static class SourceInventoryTests
         test("source inventory CLI retains context and diagnostics without claiming model coverage", () =>
         {
             string output = Path.Combine(directory, "inventory.json");
-            var response = TestCli.Run(["inspect-source", "--annotation-version", "3", "--source", source,
+            var response = TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", source,
                 "--output", output, "--format", "summary"]);
             if (response.Code != 0) throw new InvalidOperationException(response.Json);
             using JsonDocument document = JsonDocument.Parse(response.Json);
             CoreTests.Equal("source-inventory", document.RootElement.GetProperty("result_kind").GetString());
             CoreTests.True(!document.RootElement.TryGetProperty("members", out _));
-            CoreTests.Equal(3, document.RootElement.GetProperty("annotation_version").GetInt32());
+            CoreTests.Equal(4, document.RootElement.GetProperty("annotation_version").GetInt32());
             SourceInventoryResult saved = ProjectInputs.Read<SourceInventoryResult>(output);
             CoreTests.True(saved.Boundaries.Any(b => b.Contains("not model coverage", StringComparison.Ordinal)));
-            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "3", "--source", source, "--output", output]).Code);
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", source, "--output", output]).Code);
             string unresolved = Path.Combine(directory, "Unresolved.cs");
             File.WriteAllText(unresolved, "class Unresolved { MissingType Run() => null; }");
-            var bad = TestCli.Run(["inspect-source", "--annotation-version", "3", "--source", unresolved]);
+            var bad = TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", unresolved]);
             CoreTests.Equal(2, bad.Code);
             using JsonDocument incomplete = JsonDocument.Parse(bad.Json);
             CoreTests.Equal("incomplete", incomplete.RootElement.GetProperty("status").GetString());
@@ -110,7 +110,7 @@ public static class SourceInventoryTests
                 #endif
                 """);
             string reference = typeof(object).Assembly.Location;
-            var response = TestCli.Run(["inspect-source", "--annotation-version", "3", "--source", path,
+            var response = TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", path,
                 "--framework-references", "explicit", "--reference", reference, "--nullable", "disable",
                 "--define", "CONTEXT", "--format", "summary"]);
             if (response.Code != 0) throw new InvalidOperationException(response.Json);
@@ -125,9 +125,9 @@ public static class SourceInventoryTests
             CSharpScope scope = CSharpScope.Parse([path], [reference], ["CONTEXT"],
                 Microsoft.CodeAnalysis.NullableContextOptions.Disable, false);
             CoreTests.Equal(reference, scope.Compilation.References.Single().Display);
-            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "3", "--source", path,
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", path,
                 "--framework-references", "explicit"]).Code);
-            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "3", "--source", path,
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", path,
                 "--nullable", "guess"]).Code);
         });
         test("review-only invocation links identify callbacks without inheriting their creation lock", () =>
@@ -142,9 +142,9 @@ public static class SourceInventoryTests
                     Action callback = () => {};
                     void Setup(CancellationToken token) {
                         lock (gate) {
-                            callback = () => /* @link {"bind":[{"id":"Callback","target":"Calls::Callback"}]} */ GC.KeepAlive(1);
+                            callback = () => /* @link {"bind":[{"id":"Calls::Callback"}]} */ GC.KeepAlive(1);
                         }
-                        using (/* @link {"bind":[{"id":"Register","target":"Calls::Register"}]} */ token.Register(callback)) {}
+                        using (/* @link {"bind":[{"id":"Calls::Register"}]} */ token.Register(callback)) {}
                     }
                 }
                 """;
@@ -152,9 +152,9 @@ public static class SourceInventoryTests
             CSharpScope scope = CSharpScope.Parse([path]);
             CoreTests.True(scope.Diagnostics.All(d => d.Severity != "error"));
             CoreTests.Equal(2, scope.Bindings.Count);
-            CoreTests.Equal(0, scope.Bindings.Single(b => b.Tag.Identity == "Callback").Locks.Count);
-            File.WriteAllText(path, text.Replace("\"target\":\"Calls::Callback\"}]}",
-                "\"target\":\"Calls::Callback\"}],\"capture\":[{\"binding\":\"Callback\",\"point\":\"commit\",\"classification\":\"transition\",\"actor\":\"1\",\"operation\":\"1\"}]}"));
+            CoreTests.Equal(0, scope.Bindings.Single(b => b.BindingId == "Calls::Callback").Locks.Count);
+            File.WriteAllText(path, text.Replace("\"id\":\"Calls::Callback\"}]}",
+                "\"id\":\"Calls::Callback\"}],\"capture\":[{\"binding\":\"Calls::Callback\",\"point\":\"commit\",\"classification\":\"transition\",\"actor\":\"1\",\"operation\":\"1\"}]}"));
             CoreTests.True(CSharpScope.Parse([path]).Diagnostics.Any(d => d.Severity == "error"));
         });
         test("automatic capture cannot claim a lock held only when the callback was created", () =>
@@ -165,13 +165,13 @@ public static class SourceInventoryTests
 
                 class CallbackCapture {
                     readonly object gate = new();
-                    /* @link {"bind":[{"id":"Value","target":"CallbackCapture::Value"}],"capture":[{"binding":"Value","guard":"gate","type":"int"}]} */
+                    /* @link {"bind":[{"id":"CallbackCapture::Value"}],"capture":[{"binding":"CallbackCapture::Value","guard":"gate","type":"int"}]} */
                     int value;
                     Action callback = () => {};
                     void Setup() {
                         lock (gate) {
                             callback = () => {
-                                /* @link {"bind":[{"id":"Change","target":"CallbackCapture::Change"}],"capture":[{"binding":"Change","point":"commit","actor":"1","operation":"1","classification":"transition","observe":["Value"]}]} */
+                                /* @link {"bind":[{"id":"CallbackCapture::Change"}],"capture":[{"binding":"CallbackCapture::Change","point":"commit","actor":"1","operation":"1","classification":"transition","observe":["CallbackCapture::Value"]}]} */
                                 value++;
                             };
                         }
@@ -194,11 +194,11 @@ public static class SourceInventoryTests
                 class EnumIdentity {
                     readonly object gate = new();
                     readonly Role role = Role.Client;
-                    /* @link {"bind":[{"id":"Value","target":"EnumIdentity::Value"}],"capture":[{"binding":"Value","guard":"gate","type":"int"}]} */
+                    /* @link {"bind":[{"id":"EnumIdentity::Value"}],"capture":[{"binding":"EnumIdentity::Value","guard":"gate","type":"int"}]} */
                     int value;
                     void Change() {
                         lock (gate) {
-                            /* @link {"bind":[{"id":"Change","target":"EnumIdentity::Change"}],"capture":[{"binding":"Change","point":"commit","actor":"role","entity":"role","operation":"1","classification":"transition","observe":["Value"]}]} */
+                            /* @link {"bind":[{"id":"EnumIdentity::Change"}],"capture":[{"binding":"EnumIdentity::Change","point":"commit","actor":"role","entity":"role","operation":"1","classification":"transition","observe":["EnumIdentity::Value"]}]} */
                             value = 1;
                         }
                     }
@@ -234,11 +234,11 @@ public static class SourceInventoryTests
 
                 class Locals {
                     readonly object gate = new();
-                    /* @link {"bind":[{"id":"Value","target":"Locals::Value"}],"capture":[{"binding":"Value","guard":"gate","type":"int"}]} */
+                    /* @link {"bind":[{"id":"Locals::Value"}],"capture":[{"binding":"Locals::Value","guard":"gate","type":"int"}]} */
                     int value;
                     void Change() {
                         lock (gate) {
-                            /* @link {"bind":[{"id":"Change","target":"Locals::Change"}],"capture":[{"binding":"Change","point":"commit","actor":"this","operation":"1","classification":"transition","observe":["Value"]}]} */
+                            /* @link {"bind":[{"id":"Locals::Change"}],"capture":[{"binding":"Locals::Change","point":"commit","actor":"this","operation":"1","classification":"transition","observe":["Locals::Value"]}]} */
                             int result = value = 1;
                         }
                     }
@@ -269,13 +269,13 @@ public static class SourceInventoryTests
                 class Calls {
                     string __tlalinkOperation0 = "";
                     readonly object gate = new();
-                    /* @link {"bind":[{"id":"Value","target":"Calls::Value"}],"capture":[{"binding":"Value","guard":"gate","type":"int"}]} */
+                    /* @link {"bind":[{"id":"Calls::Value"}],"capture":[{"binding":"Calls::Value","guard":"gate","type":"int"}]} */
                     int value;
                     void Change() {
                         lock (gate) {
-                            /* @link {"bind":[{"id":"First","target":"Calls::First"}],"capture":[{"binding":"First","actor":"this","operation":"$call","point":"commit","classification":"transition","observe":["Value"]}]} */
+                            /* @link {"bind":[{"id":"Calls::First"}],"capture":[{"binding":"Calls::First","actor":"this","operation":"$call","point":"commit","classification":"transition","observe":["Calls::Value"]}]} */
                             value = 1;
-                            /* @link {"bind":[{"id":"Second","target":"Calls::Second"}],"capture":[{"binding":"Second","actor":"this","operation":"$call","point":"commit","classification":"transition","observe":["Value"]}]} */
+                            /* @link {"bind":[{"id":"Calls::Second"}],"capture":[{"binding":"Calls::Second","actor":"this","operation":"$call","point":"commit","classification":"transition","observe":["Calls::Value"]}]} */
                             value++;
                         }
                     }
@@ -298,13 +298,13 @@ public static class SourceInventoryTests
 
                 class Router {
                     void Route(Target target, bool fail) {
-                        /* @link {"bind":[{"id":"Choose","target":"Routes::Choose"}],"capture":[{"binding":"Choose","actor":"this","operation":"$call","entity":"target","point":"invoke","classification":"transition"}]} */
+                        /* @link {"bind":[{"id":"Routes::Choose"}],"capture":[{"binding":"Routes::Choose","actor":"this","operation":"$call","entity":"target","point":"invoke","classification":"transition"}]} */
                         switch (fail) {
                             case true:
-                                /* @link {"bind":[{"id":"Reject","target":"Routes::Reject"}],"capture":[{"binding":"Reject","actor":"this","operation":"$call","entity":"target","point":"invoke","classification":"transition"}]} */
+                                /* @link {"bind":[{"id":"Routes::Reject"}],"capture":[{"binding":"Routes::Reject","actor":"this","operation":"$call","entity":"target","point":"invoke","classification":"transition"}]} */
                                 throw new System.InvalidOperationException();
                             default:
-                                /* @link {"bind":[{"id":"Return","target":"Routes::Return"}],"capture":[{"binding":"Return","actor":"this","operation":"$call","entity":"target","point":"invoke","classification":"transition"}]} */
+                                /* @link {"bind":[{"id":"Routes::Return"}],"capture":[{"binding":"Routes::Return","actor":"this","operation":"$call","entity":"target","point":"invoke","classification":"transition"}]} */
                                 return;
                         }
                     }

@@ -2,7 +2,7 @@
   "$schema": "../../schemas/project.schema.json",
   "schema_version": 4,
   "kind": "analysis-project",
-  "annotation_version": 3,
+  "annotation_version": 4,
   "id": "evidence-stages",
   "tools": {
     "dafny": {
@@ -20,6 +20,15 @@
   },
   "requirements": "verification/requirements.json",
   "review_directory": "verification/reviews",
-  "components": ["src/Increment/verification/component.json"],
-  "scenarios": [{ "id": "arithmetic", "components": ["increment"] }]
+  "components": [
+    "src/Increment/verification/component.json"
+  ],
+  "scenarios": [
+    {
+      "id": "arithmetic",
+      "components": [
+        "increment"
+      ]
+    }
+  ]
 }

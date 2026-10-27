@@ -91,19 +91,21 @@ public static class PTests
             File.WriteAllText(Path.Combine(directory, "Panel.cs"), """
                 namespace PanelCases;
                 public static class Panel {
-                  /* @link {"bind":[{"id":"command","target":"panel::eSet"}]} */
+                  /* @link {"bind":[{"id":"panel::command"}]} */
                   public static void Send(bool requested) {}
-                  /* @link {"bind":[{"id":"decision","target":"panel::Panel.Apply"}]} */
+                  /* @link {"bind":[{"id":"panel::decision"}]} */
                   public static bool Apply(bool requested) => requested;
                 }
                 """);
             File.WriteAllText(Path.Combine(directory, "Panel.p"), """
+                /* @link {"bind":[{"id":"panel::command"}]} */
                 event eSet: bool;
                 machine Panel {
                   start state Ready {
                     entry { assert Apply(true), "requested-on"; }
                     on eSet do (requested: bool) { assert Apply(requested) == requested, "set-result"; }
                   }
+                  /* @link {"bind":[{"id":"panel::decision"}]} */
                   fun Apply(requested: bool): bool { return requested; }
                 }
                 test tcPanel [main = Panel]: { Panel };
@@ -113,16 +115,16 @@ public static class PTests
                     [new("panel", "p", ["Panel.p"])], []));
             Files.WriteNew(Path.Combine(directory, "analysis.json"),
                 new PAnalysis(Schema.Version, "p-analysis", "Panel", "inspect", ["Panel.p"], ["Panel.cs"],
-                    [new("command", "", "", "Authored command correspondence.", ["No C# execution claim."]),
-                     new("decision", "", "", "Authored decision correspondence.", ["No refinement claim."])],
+                    [new("panel::command", "", "", "Authored command correspondence.", ["No C# execution claim."]),
+                     new("panel::decision", "", "", "Authored decision correspondence.", ["No refinement claim."])],
                     [], Scope: "scope.json"));
             string output = Path.Combine(directory, "result");
             var response = TestCli.Run(["inspect-p", "--config", Path.Combine(directory, "analysis.json"),
                 "--p", compiler, "--output", output, "--timeout", "60"]);
             if (response.Code != 0) throw new InvalidOperationException(response.Json);
             PPacket packet = ProjectInputs.Read<PPacket>(Path.Combine(output, "result.json"));
-            CoreTests.Equal("event", packet.Links.Single(l => l.Id == "command").Specification.Kind);
-            CoreTests.Equal("function", packet.Links.Single(l => l.Id == "decision").Specification.Kind);
+            CoreTests.Equal("event", packet.Links.Single(l => l.Id == "panel::command").Specification.Kind);
+            CoreTests.Equal("function", packet.Links.Single(l => l.Id == "panel::decision").Specification.Kind);
             CoreTests.Equal(0, TestCli.Run(["read-p", "--result", Path.Combine(output, "result.json")]).Code);
         });
         test("P configuration rejects unknown fields duplicate IDs and missing external artifacts", () =>
@@ -186,7 +188,7 @@ public static class PTests
             string originalSource = Files.Read(source);
             try
             {
-                File.WriteAllText(source, originalSource.Replace("credit-p::Credit.ReturnCredit", "credit-p::Credit.Missing", StringComparison.Ordinal));
+                File.WriteAllText(source, originalSource.Replace("credit-p::credit-return", "credit-p::missing", StringComparison.Ordinal));
                 Run(original, 2);
             }
             finally { File.WriteAllText(source, originalSource); }
@@ -249,7 +251,7 @@ public static class PTests
                 new("net10.0", "14", "enable", false, true, null, []), "requirements.json",
                 [new("credit", [new("model", "p-pchecker", [], 60, Config: "credit.json")])], [], "reviews");
             AcceptancePolicy policy = new(Schema.Version, "acceptance-policy", "p-credit",
-                [new("sample", "credit", "model", "passed", Bindings: ["credit-return"], ConfigSha256: Files.Hash(configPath), Claim: "explored-schedules")]);
+                [new("sample", "credit", "model", "passed", Bindings: ["credit-p::credit-return"], ConfigSha256: Files.Hash(configPath), Claim: "explored-schedules")]);
             Save(projectPath, project); Save(policyPath, policy);
             CoreTests.Equal(0, TestCli.Run(["doctor", "--project", projectPath]).Code);
             string output = Path.Combine(work, "p-workflow");

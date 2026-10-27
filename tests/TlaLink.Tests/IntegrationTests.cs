@@ -14,7 +14,7 @@ public static class IntegrationTests
         string scope = Path.Combine(area, "scope.json");
         File.Copy(Path.Combine(root, "examples", "demo-scope.json"), scope);
         string jar = TestTools.Jar(root);
-        string[] Common(string command) => [command, "--annotation-version", "3", "--source", source,
+        string[] Common(string command) => [command, "--annotation-version", "4", "--source", source,
             "--scope", scope, "--target", "demo", "--model", model, "--jar", jar];
         (int Code, string Json) Call(string[] args, int expected)
         {
@@ -31,7 +31,7 @@ public static class IntegrationTests
             CoreTests.Equal("not-run", packet.RootElement.GetProperty("conformance_status").GetString());
             CoreTests.Equal(before, Files.Hash(model));
         });
-        test("review selection resolves explicit PlusCal label", () => Call([.. Common("review"), "--step", "Admit"], 0));
+        test("review selection resolves explicit PlusCal label", () => Call([.. Common("review"), "--step", "demo::Admit"], 0));
         test("review ambiguous or absent selection is incomplete", () => Call([.. Common("review"), "--step", "Missing"], 2));
         string baseline = Path.Combine(area, "baseline.json");
         test("snapshot baseline compares identical fingerprints", () =>
@@ -89,8 +89,8 @@ public static class IntegrationTests
             File.WriteAllText(plainModel, "---- MODULE Plain ----\nValue == 1\n====\n");
             string plainScope = Path.Combine(area, "plain-scope.json");
             Files.WriteNew(plainScope, new CorrespondenceConfiguration(Schema.Version, "correspondence-scope", Markup.Version,
-                [new("plain", "tla", [plainModel], RequiredBindings: ["value"])], []));
-            var result = Call(["inspect", "--annotation-version", "3", "--source", plainSource,
+                [new("plain", "tla", [plainModel], RequiredBindings: ["plain::value"])], []));
+            var result = Call(["inspect", "--annotation-version", "4", "--source", plainSource,
                 "--scope", plainScope, "--target", "plain", "--model", plainModel, "--jar", jar], 1);
             using JsonDocument packet = JsonDocument.Parse(result.Json);
             CoreTests.Equal("failed", packet.RootElement.GetProperty("links_status").GetString());
@@ -104,8 +104,8 @@ public static class IntegrationTests
             File.WriteAllText(invalid, "---- MODULE Invalid ----\nMissing == UndefinedOperator\n====\n");
             string invalidScope = Path.Combine(area, "invalid-scope.json");
             Files.WriteNew(invalidScope, new CorrespondenceConfiguration(Schema.Version, "correspondence-scope", Markup.Version,
-                [new("demo", "tla", [invalid], RequiredBindings: ["active", "Admit", "Release"])], []));
-            var result = Call(["check", "--annotation-version", "3", "--source", source,
+                [new("demo", "tla", [invalid], RequiredBindings: ["demo::active", "demo::Admit", "demo::Release"])], []));
+            var result = Call(["check", "--annotation-version", "4", "--source", source,
                 "--scope", invalidScope, "--target", "demo", "--model", invalid, "--jar", jar], 2);
             CoreTests.True(result.Json.Contains("UndefinedOperator", StringComparison.Ordinal));
         });

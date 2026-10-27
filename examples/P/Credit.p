@@ -4,6 +4,7 @@ machine Credit {
             assert ReturnCredit(0) == 1, "credit-return";
         }
     }
+    /* @link {"bind":[{"id":"credit-p::credit-return"}]} */
     fun ReturnCredit(available: int): int {
         assert available >= 0 && available < 2, "credit-range";
         return available + 1;

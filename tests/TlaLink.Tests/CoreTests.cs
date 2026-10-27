@@ -8,6 +8,7 @@ public static class CoreTests
     public static void Register(Action<string, Action> test, string work)
     {
         CorrespondenceTests.Register(test, work);
+        PairedCorrespondenceTests.Register(test, work);
         SourcePreparationTests.Register(test, work);
         ActionArgumentTests.Register(test, work);
         AcceptanceSummaryTests.Register(test, work);
@@ -186,8 +187,8 @@ public static class CoreTests
             "@link;", "@link nonsense A;", "@link state \"not an ID\";"
         }) test("grammar rejects " + text, () => Throws(() => Markup.Parse(text, 0, text.Length)));
         test("typed JSON contains several annotation entries", () => Equal(3, Markup.Parse("""
-            @link {"bind":[{"id":"Active","target":"M::Active"},{"id":"Admit","target":"M::Admit"}],
-            "capture":[{"binding":"Active","guard":"this.gate","type":"int","units":"frames"}]}
+            @link {"bind":[{"id":"M::Active"},{"id":"M::Admit"}],
+            "capture":[{"binding":"M::Active","guard":"this.gate","type":"int","units":"frames"}]}
             """, 0, 1).Count));
         test("comment-looking nonannotation ignored", () => Equal(0, Markup.Parse("hello @link model A;", 0, 1).Count));
         test("annotation commands require explicit supported context", () =>
@@ -201,7 +202,7 @@ public static class CoreTests
                 Equal(2, unsupported.Code);
                 True(unsupported.Json.Contains("TL001", StringComparison.Ordinal));
             }
-            Markup.RequireVersion(3);
+            Markup.RequireVersion(4);
             Equal(0, Markup.Parse("@linkage is unrelated", 0, 1).Count);
         });
         test("TLA nested comments and strings", () => Equal(2, Markup.TlaComments("\"(* not a comment *)\"\n(* outer (* nested *) *)\n\\* line").Count));
@@ -243,10 +244,10 @@ public static class CoreTests
 
             class C {
               readonly object gate = new();
-              /* @link {"bind":[{"id":"Active","target":"M::Active"}],"capture":[{"binding":"Active","guard":"gate","type":"int"}]} */
+              /* @link {"bind":[{"id":"M::Active"}],"capture":[{"binding":"M::Active","guard":"gate","type":"int"}]} */
               int active;
               void Admit() { lock (gate) {
-                /* @link {"bind":[{"id":"Admit","target":"M::Admit"}],"capture":[{"binding":"Admit","actor":"1","operation":"1","point":"commit","classification":"transition","observe":["Active"]}]} */
+                /* @link {"bind":[{"id":"M::Admit"}],"capture":[{"binding":"M::Admit","actor":"1","operation":"1","point":"commit","classification":"transition","observe":["M::Active"]}]} */
                 active++;
               }}
             }
@@ -301,14 +302,14 @@ public static class CoreTests
         });
         test("model namespace uses nearest annotated type", () =>
         {
-            string text = source.Replace("void Admit()", " class Nested { /* @link {\"bind\":[{\"id\":\"Count\",\"target\":\"Inner::Count\"}]} */ int count; }\nvoid Admit()");
+            string text = source.Replace("void Admit()", " class Nested { /* @link {\"bind\":[{\"id\":\"Inner::Count\"}]} */ int count; }\nvoid Admit()");
             var (scope, _, _) = Scope(text, "nested");
-            Equal("Inner", scope.Bindings.Single(b => b.Tag.Identity == "Count").Model);
+            Equal("Inner", scope.Bindings.Single(b => b.BindingId == "Inner::Count").Model);
         });
         test("duplicate binding identities cannot retarget the same source point", () =>
         {
-            var (_, _, packet) = Scope(source.Replace("\"id\":\"Active\",\"target\":\"M::Active\"",
-                "\"id\":\"Active\",\"target\":\"M::Active\"},{\"id\":\"Active\",\"target\":\"Other::Active\""), "ambiguous-namespace");
+            var (_, _, packet) = Scope(source.Replace("\"id\":\"M::Active\"",
+                "\"id\":\"M::Active\"},{\"id\":\"M::Active\""), "ambiguous-namespace");
             Equal("failed", packet.LinksStatus); True(packet.Diagnostics.Any(d => d.Code == "TL102"));
         });
         test("string cannot create CSharp annotations", () =>
@@ -331,7 +332,7 @@ public static class CoreTests
         test("selection requires one linked step", () =>
         {
             var (scope, models, _) = Scope(source, "selection");
-            Equal(1, Review.Build("review", scope, models, [], [], "Admit").Links.Count);
+            Equal(1, Review.Build("review", scope, models, [], [], "M::Admit").Links.Count);
             Throws(() => Review.Build("review", scope, models, [], [], "Missing"));
         });
         test("duplicate model stable IDs rejected", () =>
@@ -345,7 +346,7 @@ public static class CoreTests
             ("mutable guard", source.Replace("readonly object gate", "object gate")),
             ("wrong observation type", source.Replace("\"type\":\"int\"", "\"type\":\"bool\"")),
             ("unresolved classification", source.Replace("\"classification\":\"transition\"", "\"classification\":\"unresolved\"")),
-            ("unknown observation", source.Replace("\"observe\":[\"Active\"]", "\"observe\":[\"Unknown\"]")),
+            ("unknown observation", source.Replace("\"observe\":[\"M::Active\"]", "\"observe\":[\"M::Unknown\"]")),
             ("missing actor", source.Replace("\"actor\":\"1\",", "")),
             ("missing operation", source.Replace("\"operation\":\"1\",", "")),
             ("getter identity", source.Replace("class C {", "class C { int Identity => 1;").Replace("\"actor\":\"1\"", "\"actor\":\"Identity\"")),
@@ -356,7 +357,7 @@ public static class CoreTests
             ("call identity", source.Replace("\"actor\":\"1\"", "\"actor\":\"GetHashCode()\"")),
             ("hook inside lock", source.Replace("\"point\":\"commit\"", "\"hook\":\"before\",\"point\":\"commit\"")),
             ("fault capture", source.Replace("\"point\":\"commit\"", "\"point\":\"fault\"")),
-            ("duplicate observation", source.Replace("\"observe\":[\"Active\"]", "\"observe\":[\"Active\",\"Active\"]"))
+            ("duplicate observation", source.Replace("\"observe\":[\"M::Active\"]", "\"observe\":[\"M::Active\",\"M::Active\"]"))
         }) test("instrumentation rejects " + name, () =>
         {
             var (scope, models, packet) = Scope(candidate, "reject-" + name.Replace(' ', '-'));
@@ -376,7 +377,7 @@ public static class CoreTests
                   void Run(System.Action action) => action();
                   void Cleanup() {}
                   async System.Threading.Tasks.Task F() {
-                    /* @link {"bind":[{"id":"Block","target":"M::Block"}]} */
+                    /* @link {"bind":[{"id":"M::Block"}]} */
                     { try { Run(() => Cleanup()); await Work(); } finally { Cleanup(); } }
                   }
                 }
@@ -389,7 +390,7 @@ public static class CoreTests
         });
         test("Unicode prefixes and intervening ordinary comments preserve UTF16 source spans", () =>
         {
-            string text = " class C { void F() { string x = \"\\u03bb\"; /* @link {\"bind\":[{\"id\":\"X\",\"target\":\"M::X\"}]} */ // comment\n x = \"a\"; } }";
+            string text = " class C { void F() { string x = \"\\u03bb\"; /* @link {\"bind\":[{\"id\":\"M::X\"}]} */ // comment\n x = \"a\"; } }";
             text = text.Replace("\\u03bb", "\u03bb", StringComparison.Ordinal);
             var (scope, _, _) = Scope(text, "unicode");
             Equal("x = \"a\";", scope.Bindings.Single().Endpoint.Source);
@@ -397,7 +398,7 @@ public static class CoreTests
         });
         test("duplicate CSharp stable IDs fail structural review", () =>
         {
-            var (_, _, packet) = Scope(source.Replace("active++;", "active++; /* @link {\"bind\":[{\"id\":\"Admit\",\"target\":\"M::Admit\"}]} */ active--;"), "duplicate-source");
+            var (_, _, packet) = Scope(source.Replace("active++;", "active++; /* @link {\"bind\":[{\"id\":\"M::Admit\"}]} */ active--;"), "duplicate-source");
             True(packet.Diagnostics.Any(d => d.Code == "TL102"));
             Equal("failed", packet.LinksStatus);
         });

@@ -25,8 +25,8 @@ public static class IntegratedTests
         (int Code, JsonElement Result) Run(string directory, IntegratedManifest manifest, string command = "test-integrated", string? baseline = null)
         {
             string path = Path.Combine(directory, "bindings.json");
-            BindingFixtures.WriteIntegrated(path, manifest);
-            List<string> args = [command, "--annotation-version", "3", "--bindings", path, "--dafny", dafny, "--output", Path.Combine(directory, "result"),
+            BindingFixtures.WriteIntegrated(path, manifest, dafny);
+            List<string> args = [command, "--annotation-version", "4", "--bindings", path, "--dafny", dafny, "--output", Path.Combine(directory, "result"),
                 "--jar", jar, "--timeout", "60"];
             if (baseline != null) args.AddRange(["--baseline", baseline]);
             var result = TestCli.Run(args.ToArray());
@@ -45,21 +45,22 @@ public static class IntegratedTests
                 public static class Callback {
                   public static void Register() {
                     System.Action run = () =>
-                      /* @link {"bind":[{"id":"callback","target":"proof::Claim"}]} */
+                      /* @link {"bind":[{"id":"proof::callback"}]} */
                       System.GC.KeepAlive(1);
                     run();
                   }
                 }
                 """);
-            File.WriteAllText(Path.Combine(directory, "Claim.dfy"), "lemma Claim() ensures 1 == 1 {}");
+            File.WriteAllText(Path.Combine(directory, "Claim.dfy"),
+                "/* @link {\"bind\":[{\"id\":\"proof::callback\"}]} */\nlemma Claim() ensures 1 == 1 {}");
             Files.WriteNew(Path.Combine(directory, "scope.json"),
                 new CorrespondenceConfiguration(Schema.Version, "correspondence-scope", Markup.Version,
                     [new("proof", "dafny", ["Claim.dfy"])], []));
             Files.WriteNew(Path.Combine(directory, "bindings.json"),
                 new IntegratedManifest(Schema.Version, ["Callback.cs"], [],
-                    [new("callback", "", "", null, [])], [], []) { Scope = "scope.json" });
+                    [new("proof::callback", "", "", null, [])], [], []) { Scope = "scope.json" });
             string output = Path.Combine(directory, "result");
-            var response = TestCli.Run(["inspect-integrated", "--annotation-version", "3",
+            var response = TestCli.Run(["inspect-integrated", "--annotation-version", "4",
                 "--bindings", Path.Combine(directory, "bindings.json"), "--dafny", dafny, "--output", output]);
             if (response.Code != 0) throw new InvalidOperationException(response.Json);
             JsonElement packet = ProjectInputs.Read<JsonElement>(Path.Combine(output, "result.json"));
@@ -113,7 +114,7 @@ public static class IntegratedTests
             string directory = NewDirectory("source-project");
             File.WriteAllText(Path.Combine(directory, "Notification.cs"), SourceObligationTests.Fixture);
             File.WriteAllText(Path.Combine(directory, "Claim.dfy"), "lemma Claim() ensures 1 == 1 {}");
-            BindingFixtures.WriteIntegrated(Path.Combine(directory, "bindings.json"), SourceObligationTests.Manifest("Notification.cs"));
+            BindingFixtures.WriteIntegrated(Path.Combine(directory, "bindings.json"), SourceObligationTests.Manifest("Notification.cs"), dafny);
             string project = Path.Combine(directory, "project.json");
             Files.WriteNew(project, new AnalysisProject(Schema.Version, "analysis-project", "notification",
                 new(Dafny: new(dafny, Files.Hash(dafny))), new("net10.0", "14", "enable", false, true, []),
@@ -259,7 +260,7 @@ public static class IntegratedTests
             string source = Path.Combine(directory, "Decisions.cs");
             File.WriteAllText(source, Files.Read(source).Replace("public static class Decisions", "public static partial class Decisions", StringComparison.Ordinal) +
                 "\npublic static partial class Decisions { public static void Invert(int value, out int result) { result = -value; } }\n");
-            DafnyBinding binding = manifest.Bindings.Single(b => b.Id == "boolean-function") with {
+            DafnyBinding binding = manifest.Bindings.Single(b => b.Id == "decisions-spec::boolean-function") with {
                 Source = "M:Decisions.Invert(System.Boolean,System.Boolean@)", Adapter = null
             };
             var (code, packet) = Run(directory, manifest with { Bindings = [binding] }, "inspect-integrated");
@@ -293,7 +294,7 @@ public static class IntegratedTests
             string directory = NewDirectory("schema");
             string manifest = Path.Combine(directory, "bindings.json");
             File.WriteAllText(manifest, """{"schema_version":1,"schema_version":1}""");
-            var result = TestCli.Run(["inspect-integrated", "--annotation-version", "3", "--bindings", manifest, "--dafny", dafny,
+            var result = TestCli.Run(["inspect-integrated", "--annotation-version", "4", "--bindings", manifest, "--dafny", dafny,
                 "--output", Path.Combine(directory, "result")]);
             CoreTests.Equal(2, result.Code);
             CoreTests.True(result.Json.Contains("duplicate", StringComparison.OrdinalIgnoreCase));
@@ -306,7 +307,7 @@ public static class IntegratedTests
             File.AppendAllText(Path.Combine(directory, "Decisions.dfy"), "\n// reviewed input changed\n");
             string baseline = Path.Combine(directory, "result", "result.json");
             string second = Path.Combine(directory, "second.json"); Files.WriteNew(second, manifest);
-            var result = TestCli.Run(["inspect-integrated", "--annotation-version", "3", "--bindings", Path.Combine(directory, "bindings.json"),
+            var result = TestCli.Run(["inspect-integrated", "--annotation-version", "4", "--bindings", Path.Combine(directory, "bindings.json"),
                 "--dafny", dafny, "--output", Path.Combine(directory, "second-result"), "--baseline", baseline]);
             CoreTests.Equal(2, result.Code); CoreTests.True(result.Json.Contains("DF030", StringComparison.Ordinal));
         });

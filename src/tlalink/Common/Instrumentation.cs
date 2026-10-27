@@ -12,7 +12,11 @@ public sealed record Observation(string Id, string Operator, string Type, [prope
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record EventBinding(string Model, string Step, string Operator, int Arity, string Point,
     string Classification, List<Observation> Observations, [property: JsonRequired] bool Entity = false,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] List<string>? ArgumentTypes = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] List<string>? ArgumentTypes = null)
+{
+    [JsonRequired]
+    public string Binding { get; init; } = "";
+}
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record InstrumentManifest(int SchemaVersion, string BindingId, Dictionary<string, string> Fingerprints,
     Dictionary<string, string> GeneratedFiles, List<EventBinding> Events, string Boundary)
@@ -39,6 +43,8 @@ public static class Instrumentation
             throw new InputException(ErrorCode.InvalidTrace, "Binding manifest identity or event uniqueness is invalid.");
         foreach (EventBinding binding in manifest.Events)
         {
+            if (!Markup.IsCorrespondenceId(binding.Binding) || Markup.Name(binding.Binding).Alias != binding.Model)
+                throw new InputException(ErrorCode.InvalidTrace, "An event must identify its paired correspondence.");
             int count = binding.ArgumentTypes?.Count ?? 0, identities = binding.Arity - count;
             if (binding.ArgumentTypes != null && (count is < 1 or > 8 ||
                 binding.ArgumentTypes.Any(t => t is not ("int" or "bool" or "string"))) ||
@@ -179,7 +185,8 @@ public static class Instrumentation
             if (tag.Options.ContainsKey("hook") && binding.Locks.Count != 0)
                 throw new InputException(ErrorCode.InvalidInstrumentation, "Scheduling hooks inside held source locks are not generated.");
             EventBinding eventBinding = new(binding.Model, tag.Identity, action?.Endpoint.Name ?? "", action?.Arity ?? 0,
-                point, classification, observed, entity is not null, argumentTypes.Count == 0 ? null : argumentTypes);
+                point, classification, observed, entity is not null, argumentTypes.Count == 0 ? null : argumentTypes)
+                { Binding = binding.BindingId };
             events.Add(eventBinding);
             string method = arguments.Count > 0 ? "EmitArguments" : entity is null ? "Emit" : "EmitEntity";
             string extra = arguments.Count > 0 ? (entity ?? "null") + ", new object[] { " + string.Join(", ", arguments) + " }, " :

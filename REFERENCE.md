@@ -1177,7 +1177,7 @@ All public manifests, receipts, traces, packets, plans, reviews and reports use
 `schema_version: 4` plus a `kind` discriminator. Each kind has a specific shape;
 tool-specific evidence is not flattened into a generic proof claim. Unknown
 versions, kinds, duplicate fields and unknown project options are errors.
-Source annotations use `@link` with root `annotation_version: 3`; that grammar number is not a JSON
+Source annotations use `@link` with root `annotation_version: 4`; that grammar number is not a JSON
 schema version. Native backend output and .NET runtime/project configuration
 retain their upstream formats.
 
@@ -1365,9 +1365,9 @@ alone is not sufficient. No package installation or public service is involved.
 Using the repository-local tool cache:
 
 ```powershell
-.\TlaLink.ps1 inspect-integrated --annotation-version 3 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-review-new
-.\TlaLink.ps1 verify-integrated --annotation-version 3 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-proof-new
-.\TlaLink.ps1 test-integrated --annotation-version 3 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-test-new --timeout 60
+.\TlaLink.ps1 inspect-integrated --annotation-version 4 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-review-new
+.\TlaLink.ps1 verify-integrated --annotation-version 4 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-proof-new
+.\TlaLink.ps1 test-integrated --annotation-version 4 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-test-new --timeout 60
 .\TlaLink.ps1 read-integrated --result .\Results\integrated-test-new\result.json --current true
 ```
 
@@ -1550,7 +1550,7 @@ formal backend. Supply the actual source scope and any additional references
 and replacement defines explicitly:
 
 ```powershell
-.\TlaLink.ps1 inspect-source --annotation-version 3 --source .\examples\Demo.cs --output .\Results\demo-source-inventory.json --format summary
+.\TlaLink.ps1 inspect-source --annotation-version 4 --source .\examples\Demo.cs --output .\Results\demo-source-inventory.json --format summary
 ```
 
 The full inventory includes declared methods, constructors, properties, events
@@ -1610,7 +1610,7 @@ searches, surrounding lines or newline spelling:
 ```
 
 The strict manifest is schema 4, kind `source-preparation`, with one required
-`annotation_version: 3`, a supported standalone `compiler` profile and explicit
+`annotation_version: 4`, a supported standalone `compiler` profile and explicit
 `files`. Each file declares `source`, approved `sha256` and output-relative
 `destination`. Supply real approved hashes, not placeholders chosen to clear
 drift. Paths resolve against the manifest; destinations must remain inside a
@@ -1623,7 +1623,7 @@ For example, independently authored code containing `class Gadget`,
 {
   "schema_version": 4,
   "kind": "source-preparation",
-  "annotation_version": 3,
+  "annotation_version": 4,
   "compiler": {
     "target_framework": "net10.0", "language_version": "14",
     "nullable": "enable", "checked": false, "allow_unsafe": true,
@@ -1635,16 +1635,16 @@ For example, independently authored code containing `class Gadget`,
     "destination": "scope/Gadget.cs",
     "annotations": [
       { "target": { "symbol": "T:Gadget" },
-        "payload": { "bind": [{ "id": "gadget", "target": "sample::Gadget" }] } },
+        "payload": { "bind": [{ "id": "sample::gadget" }] } },
       { "target": { "symbol": "F:Gadget.total" },
-        "payload": { "bind": [{ "id": "total", "target": "sample::Total" }] } },
+        "payload": { "bind": [{ "id": "sample::total" }] } },
       {
         "target": {
           "symbol": "M:Gadget.Apply",
           "syntax": "ExpressionStatement",
           "tokens": "total = 1;"
         },
-        "payload": { "bind": [{ "id": "update", "target": "sample::Update" }] }
+        "payload": { "bind": [{ "id": "sample::update" }] }
       }
     ]
   }]
@@ -1703,10 +1703,10 @@ acceptance. Use the normal review/instrumentation workflow afterward.
 ## Review commands
 
 ```powershell
-.\TlaLink.ps1 inspect --annotation-version 3 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar
-.\TlaLink.ps1 review --annotation-version 3 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
-.\TlaLink.ps1 check --annotation-version 3 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --snapshot .\review-new.json
-.\TlaLink.ps1 check --annotation-version 3 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --baseline .\review-new.json
+.\TlaLink.ps1 inspect --annotation-version 4 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar
+.\TlaLink.ps1 review --annotation-version 4 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step demo::Admit
+.\TlaLink.ps1 check --annotation-version 4 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --snapshot .\review-new.json
+.\TlaLink.ps1 check --annotation-version 4 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --baseline .\review-new.json
 .\TlaLink.ps1 inputs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar
 ```
 
@@ -1726,7 +1726,7 @@ Common options:
 | `--jar` | Required trusted local JAR |
 | `--reference` | Additional C# metadata reference; repeatable |
 | `--define` | Full replacement preprocessor-symbol set; repeatable |
-| `--step` | One step ID or `model:step:ID`, required for `review` |
+| `--step` | One qualified common step ID (`scope::name`), required for `review` |
 | `--baseline` | Conservative added/removed/changed-input detection |
 | `--snapshot` | Exclusive new report, never overwrite |
 | `--format` | `json` (default), `text`, or `summary` |
@@ -1749,13 +1749,13 @@ and its [synthetic conformance cases](docs/proposals/source-correspondence-cases
 The conformance matrix includes design controls as well as behavior exercised
 by the executable suites; it is not itself a test result.
 
-Declare `"annotation_version": 3` once in the root `analysis-project`.
-All imported components and C# source comments use that grammar;
+Declare `"annotation_version": 4` once in the root `analysis-project`.
+All imported components, C# source comments and formal endpoint comments use that grammar;
 components cannot select or override it. JSON `schema_version` remains 4 and
 is independent of the annotation grammar version.
 
 Standalone `inspect-source`, `inspect`, `check`, `review`, `instrument`, `validate-trace` and the
-three integrated analysis commands require `--annotation-version 3`. Project
+three integrated analysis commands require `--annotation-version 4`. Project
 workflows pass their declared version to child commands. Missing or unsupported
 versions fail explicitly; neither filenames nor comments select a version.
 Commands such as `inputs`, which do not interpret bindings, need no annotation
@@ -1763,14 +1763,16 @@ version. The marker denotes correspondence, not general implementation-language
 support: the source integration remains C#, and native checker configurations
 and claims remain backend-specific.
 
-Version 2's `model`/`state`/`step` syntax and old `@tla` headers are rejected.
-Migrate owned C# links inline and name native endpoints explicitly. Formal
-files need no duplicate source-link annotations; do not edit generated PlusCal
-bodies. Regenerate instrumented copies and collect new successor evidence,
+Version 2's `model`/`state`/`step` syntax, version 3's source-side `target`
+references and old `@tla` headers are rejected. Both sides independently declare
+the same unique `scope::name` ID. Attach formal markers to authored declarations
+or PlusCal labels, never generated translation bodies. Regenerate translations
+explicitly and collect new successor evidence,
 preserving historical receipts and independent configuration/requirement pins.
 
-Use a C# block comment containing `@link` followed by a standard JSON object.
-Only `bind`, `capture` and `exclude` arrays are accepted. `System.Text.Json`
+Use a native block comment containing `@link` followed by a standard JSON object.
+`bind` participates on either side; `capture` and `exclude` are C# only.
+`System.Text.Json`
 deserializes strict typed records, including enum-valued capture choices;
 unknown fields, duplicate properties, malformed JSON and invalid array entries
 fail explicitly. No XML or semicolon-language alternative is accepted.
@@ -1779,18 +1781,43 @@ fail explicitly. No XML or semicolon-language alternative is accepted.
 class Lane {
     readonly object gate = new();
     /* @link {
-      "bind": [{"id":"available","target":"credit::Available"}],
-      "capture": [{"binding":"available","guard":"gate","type":"int","units":"frames"}]
-    } */
+  "bind": [
+    {
+      "id": "credit::available"
+    }
+  ],
+  "capture": [
+    {
+      "binding": "credit::available",
+      "guard": "gate",
+      "type": "int",
+      "units": "frames"
+    }
+  ]
+} */
     int available;
 
     void Acquire() {
         lock (gate) {
             /* @link {
-              "bind": [{"id":"acquire","target":"credit::Acquire"}],
-              "capture": [{"binding":"acquire","actor":"1","operation":"1",
-                "point":"commit","classification":"transition","observe":["available"]}]
-            } */
+  "bind": [
+    {
+      "id": "credit::acquire"
+    }
+  ],
+  "capture": [
+    {
+      "binding": "credit::acquire",
+      "actor": "1",
+      "operation": "1",
+      "point": "commit",
+      "classification": "transition",
+      "observe": [
+        "credit::available"
+      ]
+    }
+  ]
+} */
             available--;
         }
     }
@@ -1803,10 +1830,10 @@ Declare formal aliases once in a schema-4 `correspondence-scope`:
 {
   "schema_version": 4,
   "kind": "correspondence-scope",
-  "annotation_version": 3,
+  "annotation_version": 4,
   "targets": [
     {"id":"credit","language":"tla","inputs":["Credit.tla"],
-     "required_bindings":["available","acquire"]}
+     "required_bindings":["credit::available","credit::acquire"]}
   ],
   "omissions": []
 }
@@ -1817,9 +1844,12 @@ scope document; TLA+ selects exactly one root and pins its native import closure
 TLA+ targets declare `required_bindings` so deleting one inline mapping cannot
 silently reduce the selected correspondence. Dafny/P select required IDs in
 their backend configurations instead.
-Bindings use `alias::native-endpoint`, resolved by SANY/PlusCal, Dafny's resolved
-AST or the authoritative P frontend. A class can link to several aliases with
-independent binding IDs. There is no implicit active model or cross-model proof.
+Bindings use the same unique `alias::correspondence-name` on both sides.
+Each side's attachment is resolved independently by Roslyn, SANY/PlusCal,
+Dafny's resolved AST or the authoritative P frontend. Declaration spelling need
+not match the correspondence name. Missing and duplicate counterparts fail.
+A class can participate in several independent correspondences; there is no
+implicit active model or cross-model proof.
 
 TLA review/instrumentation commands require `--scope` and `--target`; optional
 `--model` must agree with the selected target. `validate-trace` reuses the exact

@@ -53,28 +53,29 @@ execution result.
 
 Binding comments use `@link` without an embedded version. The root project's
 required `annotation_version` selects one grammar for all components and
-annotated C# inputs. Standalone annotation commands require explicit
+annotated C# and formal inputs. Standalone annotation commands require explicit
 version context instead. This keeps source comments focused on correspondence
 and makes version changes project-wide migrations, not mixed per-comment
-interpretations. Only annotation version 3 is supported; JSON schema 4 is
+interpretations. Only annotation version 4 is supported; JSON schema 4 is
 independent. Payloads are standard JSON deserialized into strict typed binding,
 capture and exclusion records, not a bespoke token language or free-form JSON
 objects. Old `@tla` markers and version-2 directives are rejected. The neutral
 marker does not unify backend semantics; source resolution remains C#-specific.
 
 One schema-4 `correspondence-scope` names explicit language/input aliases and
-symbol-resolved routine omission rules. Inline C# owns source/native endpoints;
-native manifests reference IDs and own their cases, assumptions and checks.
+symbol-resolved routine omission rules. Each side owns an endpoint declared by
+the same unique `scope::name` ID. Native manifests select IDs and own their cases,
+assumptions and checks; C# does not spell native declaration names.
 SANY/PlusCal, Dafny's resolved AST and P's authoritative frontend resolve native
-endpoints without duplicate formal-file source annotations. Several independent
+endpoints from authoritative declaration spans and their annotations. Several independent
 bindings may attach to one C# node. Only the TLC adapter currently consumes
 `capture`; no generic native execution/refinement capability is inferred.
 
 Exclusions and logging omissions are correspondence dispositions, not code
 removal or safety exemptions. Receiver/argument evaluation, competing accesses,
 awaits, disposal and unresolved callee effects remain explicit. All scope and
-source bytes stay fingerprinted. Archive readers check recorded inline targets
-against archived source and scope bytes without depending on live sources.
+source bytes stay fingerprinted. Archive readers reconstruct paired declarations
+from archived source/formal bytes and native inventories without live sources.
 
 Source preparation is authoring infrastructure, separate from instrumentation
 and execution evidence. One strict schema-4 manifest pins explicit source bytes,

@@ -19,9 +19,9 @@ confidence.
 TlaLink is a local .NET 10 command-line tool that keeps that link explicit and
 checkable:
 
-- **Links live in your code.** The agent annotates the C# to show which code
-  each model step and variable represents. TlaLink checks that every link
-  still resolves to real code and model declarations.
+- **Both sides declare their links.** The agent marks a C# location and its
+  formal counterpart with the same unique name. TlaLink independently resolves
+  both endpoints and rejects missing or duplicate counterparts.
   Selected source premises can also be checked, such as whether only the
   authorized gate outcome reaches an effect. These checks do not prove that
   the implementation matches the model.
@@ -68,10 +68,25 @@ says the increment under the lock is the model step `Admit`:
 lock (this.gate)
 {
     /* @link {
-      "bind": [{"id":"admit","target":"lifecycle::Admit","reason":"Update under the gate."}],
-      "capture": [{"binding":"admit","actor":"1","operation":"1",
-        "point":"commit","classification":"transition","observe":["active"]}]
-    } */
+  "bind": [
+    {
+      "id": "lifecycle::admit",
+      "reason": "Update under the gate."
+    }
+  ],
+  "capture": [
+    {
+      "binding": "lifecycle::admit",
+      "actor": "1",
+      "operation": "1",
+      "point": "commit",
+      "classification": "transition",
+      "observe": [
+        "lifecycle::active"
+      ]
+    }
+  ]
+} */
     this.active++;
 }
 ```

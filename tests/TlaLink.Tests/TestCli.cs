@@ -21,6 +21,20 @@ public static class TestCli
                 args.Contains("--define", StringComparer.Ordinal) ? Many("--define") : null);
             alias = source.Bindings.Select(b => b.Model).Distinct(StringComparer.Ordinal).Single();
             bindingIds = source.Bindings.Select(b => b.BindingId).Distinct(StringComparer.Ordinal).ToList();
+            TlaDocument native = TlaBackend.Parse(model, Value("--jar"), 60);
+            string text = Files.Read(model);
+            foreach (string id in bindingIds)
+            {
+                if (text.Contains("\"" + id + "\"", StringComparison.Ordinal)) continue;
+                string name = Markup.Name(id).Endpoint;
+                var candidates = native.Endpoints.Where(e => e.Name == name).ToList();
+                if (candidates.Any(e => e.Kind == "label")) candidates = candidates.Where(e => e.Kind == "label").ToList();
+                if (candidates.Count != 1) throw new InvalidOperationException("Fixture needs an explicit formal endpoint: " + id);
+                var endpoint = candidates[0];
+                text = text.Insert(endpoint.Start, "(* @link " + Markup.Encode(new() { Bind = [new(id)] }) + " *) ");
+                File.WriteAllText(model, text);
+                native = TlaBackend.Parse(model, Value("--jar"), 60);
+            }
         }
         else
         {

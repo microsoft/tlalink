@@ -9,8 +9,10 @@ public sealed record SourceBinding(BindAnnotation Declaration, CaptureAnnotation
     SourceBindingKind Kind, int Start, int End, string EventIdentity, SyntaxNode Node, ISymbol? Symbol,
     SemanticModel Semantics, string Path, string Text)
 {
-    public string Model => Declaration.Target.Alias;
-    public string NativeEndpoint => Declaration.Target.Endpoint;
+    public string Model => Markup.Name(Declaration.Id).Alias;
+    public FormalLinkDeclaration? Formal { get; set; }
+    public string NativeEndpoint => Formal?.Endpoint.Name ??
+        throw new InputException(ErrorCode.MissingModelEndpoint, "Formal endpoint is not resolved for " + BindingId);
     public string BindingId => Declaration.Id;
     public Tag Tag
     {
@@ -21,7 +23,7 @@ public sealed record SourceBinding(BindAnnotation Declaration, CaptureAnnotation
             return new(Kind.ToString().ToLowerInvariant(), EventIdentity, options, Start, End);
         }
     }
-    public string Key => $"{Model}:{Tag.Kind}:{Tag.Identity}";
+    public string Key => EventIdentity;
     public Endpoint Endpoint => new(Symbol?.Name ?? Node.Kind().ToString(),
         Symbol?.ContainingType?.ToDisplayString() ?? Node.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault()?.Identifier.Text ?? "",
         Tag.Kind, Files.At(Path, Text, Node.SpanStart, Node.Span.End), Text[Node.SpanStart..Node.Span.End]);

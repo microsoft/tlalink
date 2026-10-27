@@ -1,47 +1,124 @@
 {
   "schema_version": 4,
   "kind": "integrated-bindings",
-  "sources": ["Decisions.cs"],
+  "sources": [
+    "Decisions.cs"
+  ],
   "scope": "scope.json",
-  "tla_targets": ["CreditDecision"],
+  "tla_targets": [
+    "CreditDecision"
+  ],
   "bindings": [
     {
-      "id": "credit-return",
+      "id": "decisions-spec::credit-return",
       "adapter": null,
       "cases": [
-        {"id": "return-one", "inputs": [1, 0, 1]},
-        {"id": "reject-overflow", "inputs": [1, 0, 2]},
-        {"id": "reject-zero", "inputs": [1, 0, 0]},
-        {"id": "reject-negative", "inputs": [1, 0, -2147483648]},
-        {"id": "full-window", "inputs": [2147483647, 0, 2147483647]}
+        {
+          "id": "return-one",
+          "inputs": [
+            1,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "reject-overflow",
+          "inputs": [
+            1,
+            0,
+            2
+          ]
+        },
+        {
+          "id": "reject-zero",
+          "inputs": [
+            1,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "reject-negative",
+          "inputs": [
+            1,
+            0,
+            -2147483648
+          ]
+        },
+        {
+          "id": "full-window",
+          "inputs": [
+            2147483647,
+            0,
+            2147483647
+          ]
+        }
       ]
     },
     {
-      "id": "record-append",
+      "id": "decisions-spec::record-append",
       "adapter": null,
       "cases": [
-        {"id": "accept", "inputs": [10, 2, 12]},
-        {"id": "reject", "inputs": [10, 3, 12]},
-        {"id": "maximum", "inputs": [2147483647, 1, 2147483647]}
+        {
+          "id": "accept",
+          "inputs": [
+            10,
+            2,
+            12
+          ]
+        },
+        {
+          "id": "reject",
+          "inputs": [
+            10,
+            3,
+            12
+          ]
+        },
+        {
+          "id": "maximum",
+          "inputs": [
+            2147483647,
+            1,
+            2147483647
+          ]
+        }
       ]
     },
     {
-      "id": "boolean-function",
+      "id": "decisions-spec::boolean-function",
       "adapter": null,
       "cases": [
-        {"id": "true", "inputs": [true]},
-        {"id": "false", "inputs": [false]}
+        {
+          "id": "true",
+          "inputs": [
+            true
+          ]
+        },
+        {
+          "id": "false",
+          "inputs": [
+            false
+          ]
+        }
       ]
     }
   ],
   "correspondences": [
     {
       "id": "accepted-unit-return",
-      "tla_step": "CreditDecision:step:Return",
-      "dafny_binding": "credit-return",
+      "tla_step": "CreditDecision::Return",
+      "dafny_binding": "decisions-spec::credit-return",
       "relation": "TLA available equals the Dafny available/next values before/after an accepted unit return.",
-      "assumptions": ["Window agrees in both models.", "count is one and the return is accepted."],
-      "obligations": ["Establish the C# observation/linearization point.", "Rejected and non-unit returns require separate correspondence.", "Review competing accesses and external effects."]
+      "assumptions": [
+        "Window agrees in both models.",
+        "count is one and the return is accepted."
+      ],
+      "obligations": [
+        "Establish the C# observation/linearization point.",
+        "Rejected and non-unit returns require separate correspondence.",
+        "Review competing accesses and external effects."
+      ]
     }
   ]
 }

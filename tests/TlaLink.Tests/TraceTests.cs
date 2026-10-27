@@ -30,10 +30,10 @@ public static class TraceTests
 
             class Subject {
                 public async Task Run(Task release) {
-                    /* @link {"bind":[{"id":"BeginCall","target":"Calls::BeginCall"}],"capture":[{"binding":"BeginCall","actor":"this","operation":"$call","point":"commit","classification":"transition"}]} */
+                    /* @link {"bind":[{"id":"Calls::BeginCall"}],"capture":[{"binding":"Calls::BeginCall","actor":"this","operation":"$call","point":"commit","classification":"transition"}]} */
                     System.GC.KeepAlive(0);
                     await release;
-                    /* @link {"bind":[{"id":"EndCall","target":"Calls::EndCall"}],"capture":[{"binding":"EndCall","actor":"this","operation":"$call","point":"commit","classification":"transition"}]} */
+                    /* @link {"bind":[{"id":"Calls::EndCall"}],"capture":[{"binding":"Calls::EndCall","actor":"this","operation":"$call","point":"commit","classification":"transition"}]} */
                     System.GC.KeepAlive(0);
                 }
             }
@@ -78,7 +78,7 @@ public static class TraceTests
                 """);
         }
         string generated = Path.Combine(output, "generated"), jar = TestTools.Jar(root);
-        var instrument = TestCli.Tla(["instrument", "--annotation-version", "3", "--source", source,
+        var instrument = TestCli.Tla(["instrument", "--annotation-version", "4", "--source", source,
             "--model", model, "--jar", jar, "--output", generated]);
         if (instrument.Code != 0) throw new InvalidOperationException(instrument.Json);
         File.WriteAllText(Path.Combine(generated, "Program.cs"), """
@@ -111,11 +111,11 @@ public static class TraceTests
         using JsonDocument captured = JsonDocument.Parse(Files.Read(trace));
         JsonElement[] events = captured.RootElement.GetProperty("events").EnumerateArray().ToArray();
         CoreTests.Equal(4, events.Length);
-        CoreTests.True(events.Take(2).All(e => e.GetProperty("step").GetString() == "BeginCall"));
+        CoreTests.True(events.Take(2).All(e => e.GetProperty("step").GetString() == "Calls::BeginCall"));
         CoreTests.Equal(2, events.GroupBy(e => e.GetProperty("operation").GetString()).Count());
         string config = Path.Combine(output, "calls.cfg");
         File.WriteAllText(config, "SPECIFICATION Spec\n");
-        var check = TestCli.Tla(["validate-trace", "--annotation-version", "3", "--model", model, "--jar", jar,
+        var check = TestCli.Tla(["validate-trace", "--annotation-version", "4", "--model", model, "--jar", jar,
             "--manifest", manifest, "--trace", trace, "--execution", Path.Combine(execution, "execution.json"),
             "--config", config, "--output", Path.Combine(output, "validation")]);
         if (check.Code != 0) throw new InvalidOperationException(check.Json);
@@ -128,16 +128,16 @@ public static class TraceTests
         string model = Path.Combine(output, "TraceFixture.tla"), source = Path.Combine(output, "Subject.cs");
         string state = trajectory ? """
             readonly object gate = new();
-            /* @link {"bind":[{"id":"Value","target":"TraceFixture::Value"}],"capture":[{"binding":"Value","guard":"gate","type":"int"}]} */
+            /* @link {"bind":[{"id":"TraceFixture::Value"}],"capture":[{"binding":"TraceFixture::Value","guard":"gate","type":"int"}]} */
             int value;
             """ : "";
         string Statement(string id, int value, int actor)
         {
             AnnotationPayload annotations = new() {
-                Bind = [new(id, new("TraceFixture", id))],
-                Capture = [new(id, CapturePoint.Commit, CaptureClassification.Transition,
+                Bind = [new("TraceFixture::" + id)],
+                Capture = [new("TraceFixture::" + id, CapturePoint.Commit, CaptureClassification.Transition,
                     referenceActor ? "this" : actor.ToString(System.Globalization.CultureInfo.InvariantCulture), "1",
-                    Observe: trajectory ? ["Value"] : null)]
+                    Observe: trajectory ? ["TraceFixture::Value"] : null)]
             };
             return (trajectory ? "lock (gate) {\n" : "") + "/* @link " + Markup.Encode(annotations) + " */\n" +
                 (trajectory ? $"this.value = {value};\n}}" : "System.GC.KeepAlive(0);");
@@ -186,7 +186,7 @@ public static class TraceTests
         string config = Path.Combine(output, "fixture.cfg");
         File.WriteAllText(config, "SPECIFICATION Spec\n");
         string generated = Path.Combine(output, "generated"), jar = TestTools.Jar(root);
-        var instrument = TestCli.Tla(["instrument", "--annotation-version", "3", "--source", source, "--model", model, "--jar", jar, "--output", generated],
+        var instrument = TestCli.Tla(["instrument", "--annotation-version", "4", "--source", source, "--model", model, "--jar", jar, "--output", generated],
             hidden ? [new("Flip", "Explicit intervening-state control.")] : null);
         if (instrument.Code != 0) throw new InvalidOperationException(instrument.Json);
         string workload = trajectory ? "subject.A(); subject.B();" : parallel ? """
@@ -208,9 +208,9 @@ public static class TraceTests
         if (parallel)
         {
             using JsonDocument captured = JsonDocument.Parse(Files.Read(trace));
-            CoreTests.Equal("B", captured.RootElement.GetProperty("events")[0].GetProperty("step").GetString());
+            CoreTests.Equal("TraceFixture::B", captured.RootElement.GetProperty("events")[0].GetProperty("step").GetString());
         }
-        var check = TestCli.Tla(["validate-trace", "--annotation-version", "3", "--model", model, "--jar", jar, "--manifest", manifest, "--trace", trace,
+        var check = TestCli.Tla(["validate-trace", "--annotation-version", "4", "--model", model, "--jar", jar, "--manifest", manifest, "--trace", trace,
             "--execution", Path.Combine(execution, "execution.json"), "--config", config, "--output", Path.Combine(output, "validation")]);
         using JsonDocument result = JsonDocument.Parse(check.Json);
         if (result.RootElement.GetProperty("status").GetString() != expected) throw new InvalidOperationException(check.Json);

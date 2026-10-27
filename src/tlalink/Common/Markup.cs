@@ -4,7 +4,7 @@ namespace TlaLink;
 
 public static class Markup
 {
-    public const int Version = 3;
+    public const int Version = 4;
 
     public static void RequireVersion(int version)
     {
@@ -42,13 +42,13 @@ public static class Markup
                 throw new JsonException("Annotation entries cannot be null.");
             foreach (BindAnnotation binding in document.Bind)
             {
-                RequireId(binding.Id);
+                Name(binding.Id);
                 if (binding.Reason != null && string.IsNullOrWhiteSpace(binding.Reason)) throw new JsonException("Empty binding reason.");
                 result.Add(new(binding, start, end));
             }
             foreach (CaptureAnnotation capture in document.Capture)
             {
-                RequireId(capture.Binding);
+                Name(capture.Binding);
                 ValidateList(capture.Observe, identifiers: true);
                 ValidateList(capture.Arguments, identifiers: false);
                 if (new[] { capture.Actor, capture.Operation, capture.Connection, capture.Entity, capture.Guard, capture.Units, capture.Reason }
@@ -58,7 +58,7 @@ public static class Markup
             foreach (ExcludeAnnotation exclusion in document.Exclude)
             {
                 RequireId(exclusion.Id);
-                ValidateList(exclusion.From, identifiers: true);
+                ValidateList(exclusion.From, identifiers: true, qualified: false);
                 if (exclusion.From.Count == 0 || string.IsNullOrWhiteSpace(exclusion.Reason)) throw new JsonException("Exclusion needs targets and a reason.");
                 result.Add(new(exclusion, start, end));
             }
@@ -76,11 +76,12 @@ public static class Markup
         if (!Schema.IsStableId(value)) throw new JsonException("Expected a stable annotation ID.");
     }
 
-    private static void ValidateList(List<string>? values, bool identifiers)
+    private static void ValidateList(List<string>? values, bool identifiers, bool qualified = true)
     {
         if (values == null) return;
         if (values.Count == 0 || values.Any(string.IsNullOrWhiteSpace) ||
-            identifiers && (values.Any(v => !Schema.IsStableId(v)) || values.Distinct(StringComparer.Ordinal).Count() != values.Count))
+            identifiers && (values.Any(v => qualified ? !IsCorrespondenceId(v) : !Schema.IsStableId(v)) ||
+                values.Distinct(StringComparer.Ordinal).Count() != values.Count))
             throw new JsonException("Expected a nonempty string array; ID arrays must contain unique stable IDs.");
     }
 
@@ -95,14 +96,18 @@ public static class Markup
         return json;
     }
 
-    public static (string Alias, string Endpoint) Target(string value)
+    public static bool IsCorrespondenceId(string value)
     {
         int separator = value.IndexOf("::", StringComparison.Ordinal);
-        if (separator <= 0 || !Schema.IsStableId(value[..separator]) ||
-            string.IsNullOrWhiteSpace(value[(separator + 2)..]) ||
-            value[(separator + 2)..] != value[(separator + 2)..].Trim())
-            throw new InputException(ErrorCode.InvalidAnnotation, "Expected target=\"alias::native-endpoint\".");
-        return (value[..separator], value[(separator + 2)..]);
+        return separator > 0 && Schema.IsStableId(value[..separator]) && Schema.IsStableId(value[(separator + 2)..]);
+    }
+
+    public static NativeReference Name(string value)
+    {
+        int separator = value.IndexOf("::", StringComparison.Ordinal);
+        if (!IsCorrespondenceId(value))
+            throw new InputException(ErrorCode.InvalidAnnotation, "A correspondence ID must be scope::name, with two stable names.");
+        return new(value[..separator], value[(separator + 2)..]);
     }
 
     public static List<(int Start, int End, string Content)> TlaComments(string text)

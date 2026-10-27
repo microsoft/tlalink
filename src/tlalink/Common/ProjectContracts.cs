@@ -287,11 +287,13 @@ public static class ProjectInputs
                     throw new InputException(ErrorCode.InvalidWorkflowInput, "Binding coverage needs an oracle or P stage; case coverage needs an oracle stage.");
             if ((requirement.Bindings ?? []).Concat(requirement.Cases ?? []).Any(string.IsNullOrWhiteSpace))
                 throw new InputException(ErrorCode.InvalidWorkflowInput, "Required binding/case IDs cannot be empty.");
-            foreach (string binding in requirement.Bindings ?? []) Id(binding);
+            foreach (string binding in requirement.Bindings ?? [])
+                if (!Markup.IsCorrespondenceId(binding))
+                    throw new InputException(ErrorCode.InvalidWorkflowInput, "Required bindings use scope::name IDs.");
             foreach (string selector in requirement.Cases ?? [])
             {
                 string[] parts = selector.Split('/');
-                if (parts.Length != 2 || parts.Any(p => !Schema.IsStableId(p)))
+                if (parts.Length != 2 || !Markup.IsCorrespondenceId(parts[0]) || !Schema.IsStableId(parts[1]))
                     throw new InputException(ErrorCode.InvalidWorkflowInput, "Case requirements use exactly binding-id/case-id.");
             }
         }

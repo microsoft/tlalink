@@ -31,13 +31,13 @@ public static class CleanupInstrumentationTests
             }
             public static async Task<string> Run(string mode) {
                 try {
-                    /* @link {"bind":[{"id":"FirstCleanup","target":"Lifetime::FirstCleanup"}],"capture":[{"binding":"FirstCleanup","actor":"1","operation":"$call","point":"cleanup","classification":"transition"}]} */
+                    /* @link {"bind":[{"id":"Lifetime::FirstCleanup"}],"capture":[{"binding":"Lifetime::FirstCleanup","actor":"1","operation":"$call","point":"cleanup","classification":"transition"}]} */
                     using var first = new Tracked("first");
-                    /* @link {"bind":[{"id":"SecondCleanup","target":"Lifetime::SecondCleanup"},{"id":"SecondFault","target":"Lifetime::SecondFault"}],"capture":[{"binding":"SecondCleanup","actor":"1","operation":"$call","point":"cleanup","classification":"transition"},{"binding":"SecondFault","actor":"1","operation":"$call","point":"fault","classification":"transition"}]} */
+                    /* @link {"bind":[{"id":"Lifetime::SecondCleanup"},{"id":"Lifetime::SecondFault"}],"capture":[{"binding":"Lifetime::SecondCleanup","actor":"1","operation":"$call","point":"cleanup","classification":"transition"},{"binding":"Lifetime::SecondFault","actor":"1","operation":"$call","point":"fault","classification":"transition"}]} */
                     using var second = Create(mode);
-                    /* @link {"bind":[{"id":"PauseBegin","target":"Lifetime::PauseBegin"},{"id":"PauseEnd","target":"Lifetime::PauseEnd"},{"id":"PauseFault","target":"Lifetime::PauseFault"}],"capture":[{"binding":"PauseBegin","actor":"1","operation":"$call","point":"invoke","classification":"transition"},{"binding":"PauseEnd","actor":"1","operation":"$call","point":"complete","classification":"transition"},{"binding":"PauseFault","actor":"1","operation":"$call","point":"fault","classification":"transition"}]} */
+                    /* @link {"bind":[{"id":"Lifetime::PauseBegin"},{"id":"Lifetime::PauseEnd"},{"id":"Lifetime::PauseFault"}],"capture":[{"binding":"Lifetime::PauseBegin","actor":"1","operation":"$call","point":"invoke","classification":"transition"},{"binding":"Lifetime::PauseEnd","actor":"1","operation":"$call","point":"complete","classification":"transition"},{"binding":"Lifetime::PauseFault","actor":"1","operation":"$call","point":"fault","classification":"transition"}]} */
                     await Pause(mode);
-                    /* @link {"bind":[{"id":"ThirdCleanup","target":"Lifetime::ThirdCleanup"},{"id":"ThirdFault","target":"Lifetime::ThirdFault"}],"capture":[{"binding":"ThirdCleanup","actor":"1","operation":"$call","point":"cleanup","classification":"transition"},{"binding":"ThirdFault","actor":"1","operation":"$call","point":"fault","classification":"transition"}]} */
+                    /* @link {"bind":[{"id":"Lifetime::ThirdCleanup"},{"id":"Lifetime::ThirdFault"}],"capture":[{"binding":"Lifetime::ThirdCleanup","actor":"1","operation":"$call","point":"cleanup","classification":"transition"},{"binding":"Lifetime::ThirdFault","actor":"1","operation":"$call","point":"fault","classification":"transition"}]} */
                     using (var third = new Tracked("third", mode == "disposer-fault")) {
                         if (mode == "body-fault") throw new InvalidOperationException("body");
                         if (mode == "return") return "returned";
@@ -97,7 +97,7 @@ public static class CleanupInstrumentationTests
                     "null" => ["PauseBegin", "PauseEnd", "ThirdCleanup", "FirstCleanup"],
                     _ => ["PauseBegin", "PauseEnd", "ThirdCleanup", "SecondCleanup", "FirstCleanup"]
                 };
-                CoreTests.True(steps.SequenceEqual(expected));
+                CoreTests.True(steps.SequenceEqual(expected.Select(id => "Lifetime::" + id)));
                 CoreTests.Equal(1, events.Select(e => e.GetProperty("operation").GetString()).Distinct().Count());
                 string[] disposed = ((IEnumerable<string>)subject.GetField("Log")!.GetValue(null)!).ToArray();
                 CoreTests.True(disposed.SequenceEqual(mode switch {
@@ -126,7 +126,7 @@ public static class CleanupInstrumentationTests
                     readonly object gate = new();
                     void Run() {
                         lock (gate) {
-                            /* @link {"bind":[{"id":"Cleanup","target":"Lifetime::Cleanup"}],"capture":[{"binding":"Cleanup","actor":"1","operation":"$call","point":"cleanup","classification":"transition"}]} */
+                            /* @link {"bind":[{"id":"Lifetime::Cleanup"}],"capture":[{"binding":"Lifetime::Cleanup","actor":"1","operation":"$call","point":"cleanup","classification":"transition"}]} */
                             using var resource = new System.IO.MemoryStream();
                         }
                     }

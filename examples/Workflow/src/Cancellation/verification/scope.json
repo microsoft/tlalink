@@ -1,10 +1,22 @@
 {
   "schema_version": 4,
   "kind": "correspondence-scope",
-  "annotation_version": 3,
+  "annotation_version": 4,
   "targets": [
-    { "id": "cancellation-spec", "language": "dafny", "inputs": ["Cancellation.dfy"] },
-    { "id": "rejection-spec", "language": "dafny", "inputs": ["Rejected.dfy"] }
+    {
+      "id": "cancellation-spec",
+      "language": "dafny",
+      "inputs": [
+        "Cancellation.dfy"
+      ]
+    },
+    {
+      "id": "rejection-spec",
+      "language": "dafny",
+      "inputs": [
+        "Rejected.dfy"
+      ]
+    }
   ],
   "omissions": []
 }

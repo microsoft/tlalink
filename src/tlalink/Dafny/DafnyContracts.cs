@@ -5,7 +5,12 @@ namespace TlaLink;
 
 public sealed record DafnyParameter(string Name, string Type, bool Ghost);
 public sealed record DafnyDeclaration(string Name, string Module, string Kind, string Path, int Line, int EndLine,
-    bool IsStatic, bool Ghost, bool HasBody, List<DafnyParameter> Inputs, List<DafnyParameter> Outputs);
+    bool IsStatic, bool Ghost, bool HasBody, List<DafnyParameter> Inputs, List<DafnyParameter> Outputs)
+{
+    public int Start { get; init; }
+    public int End { get; init; }
+    public int Column { get; init; } = 1;
+}
 public sealed record DafnyIndexResult(List<DafnyDeclaration> Declarations, List<string> Dependencies);
 public sealed record ConformanceCase(string Id, List<JsonElement> Inputs);
 public sealed record DafnyBindingSelection(string Id, string? Adapter, List<ConformanceCase> Cases);
@@ -120,7 +125,7 @@ public static class IntegratedInputs
         HashSet<string> ids = new(StringComparer.Ordinal);
         foreach (DafnyBinding binding in manifest.Bindings)
         {
-            if (!Schema.IsStableId(binding.Id) || !ids.Add(binding.Id))
+            if (!Markup.IsCorrespondenceId(binding.Id) || !ids.Add(binding.Id))
                 throw new InputException(ErrorCode.InvalidIntegratedInput, "Binding IDs must be nonempty/unique.");
             if (binding.Cases.Count > 1000 || binding.Cases.Any(c => c is null || !Schema.IsStableId(c.Id)) ||
                 binding.Cases.Select(c => c.Id).Distinct(StringComparer.Ordinal).Count() != binding.Cases.Count)
@@ -155,7 +160,7 @@ public static class IntegratedInputs
             SourceBinding inline = matches[0];
             CorrespondenceInputs.Target(manifest.Configuration!, inline.Model, "dafny");
             string sourceId = CSharpScope.DeclarationId(inline);
-            bindings.Add(binding with { Source = sourceId, Dafny = inline.NativeEndpoint });
+            bindings.Add(binding with { Source = sourceId });
         }
 
         HashSet<string> aliases = source.Bindings.Where(b => bindings.Any(d => d.Id == b.BindingId))

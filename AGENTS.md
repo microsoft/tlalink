@@ -56,12 +56,14 @@ namespace and flat deployed bridge-asset names when moving implementation.
 
 ## Model authoring and self-checks
 
-- Use annotation version 3 with standard JSON inside C# `@link` block comments:
+- Use annotation version 4 with standard JSON inside C# `@link` block comments:
   typed `bind`, `capture` and `exclude` arrays. Do not introduce XML, another
   tokenizer, raw JSON binding stores or version-2 acceptance branches. Formal
   aliases and exact logging API omissions use one schema-4
-  `correspondence-scope`. Keep source/native endpoints inline; native manifests
-  reference binding IDs and retain backend-specific execution/claim semantics.
+  `correspondence-scope`. Both source and formal code declare the same unique
+  `scope::name` binding ID; each owns its appropriate native attachment. Never
+  restore source-side `target` names or infer pairs from declaration spelling.
+  Native manifests select IDs and retain backend-specific execution/claim semantics.
   Exclusions never remove runtime code, input pins or relevant argument/callee
   effects. See the [vocabulary](docs/proposals/source-correspondence.md).
 - Prepare immutable annotation copies with one schema-4 `source-preparation`
@@ -144,7 +146,7 @@ dotnet build .\TlaLink.sln
 dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --core
 .\TlaLink.ps1 doctor --project .\examples\Workflow\tlalink.project.json --scenario lanes
 .\TlaLink.ps1 plan --project .\examples\Workflow\tlalink.project.json --scenario lanes
-.\TlaLink.ps1 review --annotation-version 3 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
+.\TlaLink.ps1 review --annotation-version 4 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step demo::Admit
 ```
 
 The core suite needs no external backends. The example preflight/review
@@ -181,9 +183,9 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   Roslyn inventory before assigning source dispositions. Its calls and lock/
   await/access facts are not validated code, runtime dispatch or model coverage;
   review implicit disposal, async machinery and external effects separately.
-- Use only `@link`, with `"annotation_version": 3` declared once in the root
+- Use only `@link`, with `"annotation_version": 4` declared once in the root
   project. Components inherit it and must not override it. Standalone annotation
-  commands require `--annotation-version 3`; never guess a version, restore
+  commands require `--annotation-version 4`; never guess a version, restore
   per-comment version headers or add compatibility parsing for `@tla`.
   Review-only bindings need not have executable metadata.
 - Instrument separate copied sources, never product code or frozen profiles.

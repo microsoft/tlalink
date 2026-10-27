@@ -1,10 +1,25 @@
 {
   "schema_version": 4,
   "kind": "correspondence-scope",
-  "annotation_version": 3,
+  "annotation_version": 4,
   "targets": [
-    { "id": "decisions-spec", "language": "dafny", "inputs": ["Decisions.dfy"] },
-    { "id": "CreditDecision", "language": "tla", "inputs": ["Credits.tla"], "required_bindings": ["Return"] }
+    {
+      "id": "decisions-spec",
+      "language": "dafny",
+      "inputs": [
+        "Decisions.dfy"
+      ]
+    },
+    {
+      "id": "CreditDecision",
+      "language": "tla",
+      "inputs": [
+        "Credits.tla"
+      ],
+      "required_bindings": [
+        "CreditDecision::Return"
+      ]
+    }
   ],
   "omissions": []
 }

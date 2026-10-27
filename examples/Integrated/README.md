@@ -20,9 +20,9 @@ that the C# is correct for every input.
 ## Run it
 
 ```powershell
-.\TlaLink.ps1 inspect-integrated --annotation-version 3 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-review-new
-.\TlaLink.ps1 verify-integrated --annotation-version 3 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-proof-new
-.\TlaLink.ps1 test-integrated --annotation-version 3 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-test-new --timeout 60
+.\TlaLink.ps1 inspect-integrated --annotation-version 4 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-review-new
+.\TlaLink.ps1 verify-integrated --annotation-version 4 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-proof-new
+.\TlaLink.ps1 test-integrated --annotation-version 4 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-test-new --timeout 60
 ```
 
 `inspect-integrated` checks the links, `verify-integrated` runs the Dafny
