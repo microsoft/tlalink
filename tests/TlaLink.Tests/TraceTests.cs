@@ -11,9 +11,11 @@ public static class TraceTests
         test("same-thread program order is enforced", () => Run(root, Path.Combine(work, "thread"), parallel: false, hidden: false, trajectory: false, expected: "rejected"));
         test("one hidden-state trajectory must explain the entire trace", () => Run(root, Path.Combine(work, "trajectory"), parallel: false, hidden: false, trajectory: true, expected: "rejected"));
         test("explicit justified hidden steps can explain an intervening change", () => Run(root, Path.Combine(work, "hidden"), parallel: false, hidden: true, trajectory: true, expected: "conforms"));
+        test("trace wrapper supplies its own arithmetic imports for a boolean-only model", () =>
+            Run(root, Path.Combine(work, "boolean"), parallel: false, hidden: false, trajectory: false, expected: "conforms", booleanOnly: true));
     }
 
-    private static void Run(string root, string output, bool parallel, bool hidden, bool trajectory, string expected)
+    private static void Run(string root, string output, bool parallel, bool hidden, bool trajectory, string expected, bool booleanOnly = false)
     {
         Directory.CreateDirectory(output);
         string model = Path.Combine(output, "TraceFixture.tla"), source = Path.Combine(output, "Subject.cs");
@@ -56,7 +58,18 @@ public static class TraceTests
             Next == A \/ B
             """;
         body = body.Replace("HIDDEN_ANNOTATION", hidden ? "(* @link step Flip visibility=hidden justification=\"Internal unobserved choice for this synthetic control\"; *)" : "", StringComparison.Ordinal);
-        File.WriteAllText(model, "---- MODULE TraceFixture ----\nEXTENDS Integers\n(* @link model Fixture; *)\n" + body + "\nSpec == Init /\\ [][Next]_vars\n====\n");
+        if (booleanOnly) body = """
+            VARIABLE flag
+            vars == <<flag>>
+            Init == flag = FALSE
+            (* @link step A; *)
+            A == flag /\ flag' = FALSE
+            (* @link step B; *)
+            B == ~flag /\ flag' = TRUE
+            Next == A \/ B
+            """;
+        File.WriteAllText(model, "---- MODULE TraceFixture ----\n" + (booleanOnly ? "" : "EXTENDS Integers\n") +
+            "(* @link model Fixture; *)\n" + body + "\nSpec == Init /\\ [][Next]_vars\n====\n");
         string config = Path.Combine(output, "fixture.cfg");
         File.WriteAllText(config, "SPECIFICATION Spec\n");
         string generated = Path.Combine(output, "generated"), jar = TestTools.Jar(root);
@@ -87,5 +100,9 @@ public static class TraceTests
             "--execution", Path.Combine(execution, "execution.json"), "--config", config, "--output", Path.Combine(output, "validation")]);
         using JsonDocument result = JsonDocument.Parse(check.Json);
         if (result.RootElement.GetProperty("status").GetString() != expected) throw new InvalidOperationException(check.Json);
+        CoreTests.Equal(expected == "rejected" ? 1 : 0, check.Code);
+        if (expected == "rejected")
+            CoreTests.True(result.RootElement.GetProperty("diagnostics").EnumerateArray().Any(d =>
+                d.GetProperty("code").GetString() == ErrorCode.TraceRejected.Id()));
     }
 }

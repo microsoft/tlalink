@@ -147,7 +147,7 @@ public static class TraceValidation
         }
         string code = $$"""
             ---------------- MODULE TlaLinkTraceCheck ----------------
-            EXTENDS {{module}}, FiniteSets
+            EXTENDS {{module}}, Naturals, FiniteSets
             VARIABLE tlalinkSeen
             TLPrerequisites == <<{{string.Join(",", prerequisites)}}>>
             TLMatch(i) == CASE {{string.Join(" [] ", matches.Select((m, i) => $"i = {i + 1} -> {m}"))}}
@@ -221,6 +221,9 @@ public static class TraceValidation
             RequestedResources = requestedResources, Resources = resources, TimeoutSeconds = timeout,
             Invocation = new { Executable = java.Java, Arguments = arguments, WorkingDirectory = output },
             Mapping = new { Init = init, Next = next, Hidden = hidden },
+            Diagnostics = rejected
+                ? new[] { new Issue(ErrorCode.TraceRejected, "The complete recorded execution has no witness in the selected model and hidden-step assumptions.") }
+                : Array.Empty<Issue>(),
             WrapperSHA256 = Files.Hash(Path.Combine(output, "TlaLinkTraceCheck.tla")),
             ConfigSHA256 = Files.Hash(Path.Combine(output, "trace.cfg")),
             Fingerprints = pins, LogSHA256 = Files.Hash(Path.Combine(output, "TLC.log")),

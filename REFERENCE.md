@@ -1539,6 +1539,12 @@ accesses obey that lock.
 
 ## Instrument, execute, validate
 
+The generated TLC trace wrapper imports its own arithmetic and finite-set
+operators; the user's model need not import them. A completed whole-trace
+rejection reports diagnostic `TL511`. Project negative controls can require
+`"expected": "rejected", "diagnostic": "TL511"`; syntax/tool/deadline failures
+remain incomplete and cannot satisfy that control.
+
 For a runnable example, use the `lanes` [project workflow](#project-workflow).
 Its trace stage runs all three low-level commands and generates/restores the
 standalone capture project automatically:
