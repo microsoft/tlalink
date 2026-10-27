@@ -12,7 +12,9 @@ public sealed record SourceBinding(string Model, Tag Tag, SyntaxNode Node, ISymb
     public Endpoint Endpoint => new(Symbol?.Name ?? Node.Kind().ToString(),
         Symbol?.ContainingType?.ToDisplayString() ?? Node.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault()?.Identifier.Text ?? "",
         Tag.Kind, Files.At(Path, Text, Node.SpanStart, Node.Span.End), Text[Node.SpanStart..Node.Span.End]);
-    public List<string> Locks => Node.Ancestors().OfType<LockStatementSyntax>().Reverse().Select(n => n.Expression.ToString()).ToList();
+    public List<string> Locks => Node.Ancestors()
+        .TakeWhile(n => n is not (AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax))
+        .OfType<LockStatementSyntax>().Reverse().Select(n => n.Expression.ToString()).ToList();
 }
 
 public sealed class CSharpScope
@@ -59,7 +61,7 @@ public sealed class CSharpScope
                 result.Diagnostics.Add(new(ErrorCode.CSharpSyntaxError, syntaxError.GetMessage(),
                     new(path, location.StartLinePosition.Line + 1, location.EndLinePosition.Line + 1, location.StartLinePosition.Character + 1)));
             }
-            List<SyntaxNode> targets = root.DescendantNodes().Where(n => n is TypeDeclarationSyntax or FieldDeclarationSyntax or StatementSyntax)
+            List<SyntaxNode> targets = root.DescendantNodes().Where(n => n is TypeDeclarationSyntax or FieldDeclarationSyntax or StatementSyntax or InvocationExpressionSyntax)
                 .OrderBy(n => n.SpanStart).ThenByDescending(n => n.Span.Length).ToList();
             List<(Tag Tag, SyntaxNode Node)> attached = [];
             foreach (SyntaxTrivia trivia in root.DescendantTrivia(descendIntoTrivia: false))
@@ -75,8 +77,9 @@ public sealed class CSharpScope
                         if (target is null ||
                             tag.Kind == "model" && target is not TypeDeclarationSyntax ||
                             tag.Kind == "state" && (target is not FieldDeclarationSyntax field || field.Declaration.Variables.Count != 1) ||
-                            tag.Kind == "step" && target is not StatementSyntax)
-                            throw new InputException(ErrorCode.InvalidAttachment, $"Invalid {tag.Kind} attachment; steps attach to statements, state to a single field, model to a type.");
+                            tag.Kind == "step" && target is not (StatementSyntax or InvocationExpressionSyntax) ||
+                            tag.Kind == "step" && target is InvocationExpressionSyntax && tag.Options.ContainsKey("point"))
+                            throw new InputException(ErrorCode.InvalidAttachment, $"Invalid {tag.Kind} attachment; steps attach to statements or review-only invocation expressions, state to a single field, model to a type.");
                         if (tag.Options.ContainsKey("visibility")) throw new InputException(ErrorCode.InvalidAttachment, "visibility is a model-only hidden-action declaration.");
                         attached.Add((tag, target));
                     }

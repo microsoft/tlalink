@@ -8,6 +8,7 @@ public static class CoreTests
     public static void Register(Action<string, Action> test, string work)
     {
         AcceptanceSummaryTests.Register(test, work);
+        SourceInventoryTests.Register(test, work);
         ProjectCompositionTests.RegisterCore(test, work);
         test("suite fixtures are released after success and failure without removing shared assets", () =>
         {

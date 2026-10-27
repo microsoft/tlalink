@@ -16,7 +16,8 @@ public static class CommandSummary
             "acceptance_status", "claim", "mode", "links_status", "proof_status", "audit_status",
             "conformance_status", "coverage_status", "correspondence_status", "provenance_status",
             "directory", "path", "boundary", "boundaries", "diagnostics", "next_actions", "statistics",
-            "nodes", "code_regions", "input_files", "requested_resources", "resources", "annotation_version"]);
+            "nodes", "code_regions", "input_files", "requested_resources", "resources", "annotation_version",
+            "source_count", "member_count", "call_count", "await_count"]);
         if (source["kind"]?.GetValue<string>() == "gc-plan")
         {
             foreach (string field in new[] { "store", "retention", "planned_at", "grace_hours", "read_only",
