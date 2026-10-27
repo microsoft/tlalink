@@ -85,6 +85,46 @@ public static class PTests
             return output;
         }
         string Healthy() => healthy ??= Run(original, 0);
+        test("P inline bindings retain distinct native event and function endpoint kinds", () =>
+        {
+            string directory = Directory.CreateDirectory(Path.Combine(work, "p-panel-bindings")).FullName;
+            File.WriteAllText(Path.Combine(directory, "Panel.cs"), """
+                namespace PanelCases;
+                public static class Panel {
+                  /* @link {"bind":[{"id":"command","target":"panel::eSet"}]} */
+                  public static void Send(bool requested) {}
+                  /* @link {"bind":[{"id":"decision","target":"panel::Panel.Apply"}]} */
+                  public static bool Apply(bool requested) => requested;
+                }
+                """);
+            File.WriteAllText(Path.Combine(directory, "Panel.p"), """
+                event eSet: bool;
+                machine Panel {
+                  start state Ready {
+                    entry { assert Apply(true), "requested-on"; }
+                    on eSet do (requested: bool) { assert Apply(requested) == requested, "set-result"; }
+                  }
+                  fun Apply(requested: bool): bool { return requested; }
+                }
+                test tcPanel [main = Panel]: { Panel };
+                """);
+            Files.WriteNew(Path.Combine(directory, "scope.json"),
+                new CorrespondenceConfiguration(Schema.Version, "correspondence-scope", Markup.Version,
+                    [new("panel", "p", ["Panel.p"])], []));
+            Files.WriteNew(Path.Combine(directory, "analysis.json"),
+                new PAnalysis(Schema.Version, "p-analysis", "Panel", "inspect", ["Panel.p"], ["Panel.cs"],
+                    [new("command", "", "", "Authored command correspondence.", ["No C# execution claim."]),
+                     new("decision", "", "", "Authored decision correspondence.", ["No refinement claim."])],
+                    [], Scope: "scope.json"));
+            string output = Path.Combine(directory, "result");
+            var response = TestCli.Run(["inspect-p", "--config", Path.Combine(directory, "analysis.json"),
+                "--p", compiler, "--output", output, "--timeout", "60"]);
+            if (response.Code != 0) throw new InvalidOperationException(response.Json);
+            PPacket packet = ProjectInputs.Read<PPacket>(Path.Combine(output, "result.json"));
+            CoreTests.Equal("event", packet.Links.Single(l => l.Id == "command").Specification.Kind);
+            CoreTests.Equal("function", packet.Links.Single(l => l.Id == "decision").Specification.Kind);
+            CoreTests.Equal(0, TestCli.Run(["read-p", "--result", Path.Combine(output, "result.json")]).Code);
+        });
         test("P configuration rejects unknown fields duplicate IDs and missing external artifacts", () =>
         {
             try
@@ -122,7 +162,10 @@ public static class PTests
         });
         test("P native extra-credit mutation is a property rejection not a tool failure", () =>
         {
-            string output = Run(original with { Models = ["ExtraCredit.p"] }, 1);
+            string scope = Path.Combine(fixture, "extra-scope.json");
+            Files.WriteNew(scope, new CorrespondenceConfiguration(Schema.Version, "correspondence-scope", Markup.Version,
+                [new("credit-p", "p", ["ExtraCredit.p"])], []));
+            string output = Run(original with { Models = ["ExtraCredit.p"], Scope = "extra-scope.json" }, 1);
             PPacket packet = ProjectInputs.Read<PPacket>(Path.Combine(output, "result.json"));
             CoreTests.Equal("rejected", packet.Status);
             CoreTests.True(packet.Diagnostics.Any(d => d.Is(ErrorCode.PAssertionFailed)));
@@ -139,7 +182,14 @@ public static class PTests
         });
         test("P unresolved source endpoint and invalid model remain incomplete", () =>
         {
-            Run(original with { Bindings = [original.Bindings[0] with { Declaration = "Credit.Missing" }] }, 2);
+            string source = Path.Combine(fixture, "Credit.cs");
+            string originalSource = Files.Read(source);
+            try
+            {
+                File.WriteAllText(source, originalSource.Replace("credit-p::Credit.ReturnCredit", "credit-p::Credit.Missing", StringComparison.Ordinal));
+                Run(original, 2);
+            }
+            finally { File.WriteAllText(source, originalSource); }
             string malformed = Path.Combine(fixture, "Malformed.p");
             File.WriteAllText(malformed, "machine {");
             Run(original with { Models = ["Malformed.p"] }, 2);

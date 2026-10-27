@@ -24,6 +24,7 @@ root-relative because this document lives beside the README.
 - [Integrated TLA+ and Dafny workflow](#integrated-tla-and-dafny-workflow)
 - [Review commands](#review-commands)
 - [Current C# source inventory](#current-c-source-inventory)
+- [Preparing annotated source copies](#preparing-annotated-source-copies)
 - [Source annotation grammar](#one-maintained-markup-link)
 - [Instrumentation and trace validation](#instrument-execute-validate)
 - [Tests and evidence](#tests-and-evidence)
@@ -132,6 +133,40 @@ Expected rejection controls stay rejected even when matching expectations.
 Historical claims and assigned code coverage are not new acceptance.
 Reports/manifests are not automatic GC roots: retain required underlying
 evidence through the separate explicit retention/recheck workflow.
+
+### Source inventory presentation
+
+Instead of maintaining a script that enumerates `code_regions`, an
+`evidence-report` can declare `source_inventories`:
+
+```json
+"source_inventories": [{
+  "inventory": "inventory.json",
+  "dispositions": [
+    {
+      "file": "Counter.cs", "profile": "selected C#",
+      "disposition": "inventory-only", "contracts": [],
+      "reason": "Authored scope, not per-member validation."
+    },
+    {
+      "file": "Counter.cs", "symbol_prefix": "M:Counter.Helper",
+      "profile": "selected C#", "disposition": "excluded",
+      "contracts": [], "reason": "Explicit authored exclusion."
+    }
+  ]
+}]
+```
+
+Pin the inventory and every selected source in `fingerprints`. The inventory
+must be ready and list its exact sources; those source hashes must agree with
+the report's approved pins. Every source needs exactly one default disposition.
+Optional symbol prefixes compare ordinally, must match a member and must not
+overlap. The renderer expands recorded member spans; a file with no explicit
+members receives a line-1 file disposition. Missing defaults, stale policy
+prefixes and ambiguous overrides fail rather than manufacturing coverage.
+Changed inventory bytes produce a stale report without expanding untrusted
+replacement regions; changed source bytes retain stale presentation status.
+Neither expansion nor a disposition establishes tested or validated code.
 
 ## Requirements and build
 
@@ -572,9 +607,10 @@ dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --p
 ```
 
 The strict `p-analysis` manifest selects an engine, explicit P/C# inputs,
-source bindings, assumptions and exploration bounds. C# endpoints use the
-same resolved symbol convention as Dafny bindings; P endpoints use qualified
-native names such as `Credit.ReturnCredit`. A binding is a reviewable
+a correspondence `scope`, binding IDs, assumptions and exploration bounds.
+Inline C# bindings name qualified native P endpoints such as
+`credit-p::Credit.ReturnCredit`; the manifest does not duplicate those endpoints.
+A binding is a reviewable
 correspondence, not an executable oracle comparison or refinement proof.
 Native testcase selection must resolve exactly, avoiding PChecker's
 otherwise implicit prefix expansion.
@@ -688,6 +724,14 @@ An input-set document declares `sets`, each with an `id` and explicit `inputs`.
 Reviews reference set IDs through `input_sets`, optionally adding inline `inputs`.
 Set paths resolve against the set document; equivalent review input identities are
 deduplicated using the host comparer. Input sets do not discover files with globs.
+
+An input set may additionally declare `prepared_sources`, an explicit list of
+`prepared-sources.json` ledger paths. Authoring expands each ledger into the
+ledger itself and its declared output files, relative to its own directory.
+This replaces manually repeated output paths without directory discovery.
+The ledger is included in authoring fingerprints and supports archived
+composition with the ordinary source reader. This file-list expansion does
+not validate preparation semantics, establish acceptance or authorize deletion.
 
 An execution-profile document declares `profiles`, each with `id`, stage `kind`,
 `timeout_seconds` and optional TLC/trace `resources`. A stage selects `profile`
@@ -975,6 +1019,15 @@ per-run archive/applicability/acceptance results. Source dispositions are not
 invented, and reports are not automatic retention roots. Custom source-region
 presentation continues to use the ordinary explicit report manifest.
 
+Use `--source-report authored-report.json` to compose an ordinary
+`evidence-report` presentation manifest with those project-run nodes. Its title,
+scope, nodes, source dispositions, assumptions and gaps remain explicitly
+authored; all paths resolve against the declaring presentation file.
+For a fresh runtime-selected inventory, supply `--source-inventory inventory.json`
+and declare exactly one `source_inventories` entry with `"inventory": null`.
+The tool pins and binds that one slot, but never replaces an existing declared
+inventory or updates approved source hashes to clear drift.
+
 ### Declared check coverage
 
 Unused tool pins may be omitted from `tools`; selected stage kinds still require
@@ -1124,7 +1177,7 @@ All public manifests, receipts, traces, packets, plans, reviews and reports use
 `schema_version: 4` plus a `kind` discriminator. Each kind has a specific shape;
 tool-specific evidence is not flattened into a generic proof claim. Unknown
 versions, kinds, duplicate fields and unknown project options are errors.
-Source annotations use `@link` with root `annotation_version: 2`; that grammar number is not a JSON
+Source annotations use `@link` with root `annotation_version: 3`; that grammar number is not a JSON
 schema version. Native backend output and .NET runtime/project configuration
 retain their upstream formats.
 
@@ -1312,9 +1365,9 @@ alone is not sufficient. No package installation or public service is involved.
 Using the repository-local tool cache:
 
 ```powershell
-.\TlaLink.ps1 inspect-integrated --annotation-version 2 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-review-new
-.\TlaLink.ps1 verify-integrated --annotation-version 2 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-proof-new
-.\TlaLink.ps1 test-integrated --annotation-version 2 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-test-new --timeout 60
+.\TlaLink.ps1 inspect-integrated --annotation-version 3 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-review-new
+.\TlaLink.ps1 verify-integrated --annotation-version 3 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-proof-new
+.\TlaLink.ps1 test-integrated --annotation-version 3 --bindings .\examples\Integrated\bindings.json --dafny .\.tools\dafny\Dafny.exe --jar .\.tools\tla\v1.8.0\tla2tools.jar --output .\Results\integrated-test-new --timeout 60
 .\TlaLink.ps1 read-integrated --result .\Results\integrated-test-new\result.json --current true
 ```
 
@@ -1342,14 +1395,19 @@ command names and do not require Dafny; their JSON uses the same current schema.
 
 [The example manifest](examples/Integrated/bindings.json) uses kind `integrated-bindings`:
 
-- `sources`, `proofs`, `models`: explicit file/directory scopes, relative to
-  the manifest (not the caller); `models` can be empty for Dafny-only use.
-- `bindings`: unique `id`, C# `source` symbol, fully qualified `dafny`
-  declaration, nullable C# `adapter`, and explicit `cases` with unique IDs and
-  typed `inputs`. No inference from same-named identifiers.
-- C# symbols can use `Namespace.Type.Method`, a full Roslyn display signature,
-  or documentation IDs such as `M:Namespace.Type.Method(System.Int32)` to
-  disambiguate overloads. Review-only bindings can target fields/properties.
+- `sources`: explicit C# file/directory scopes, relative to the manifest.
+- `scope`: one correspondence scope whose aliases select explicit native files.
+  Proof/model inputs come from the selected inline bindings' aliases, not
+  duplicate `proofs`/`models` arrays.
+- `tla_targets`: explicit TLA+ aliases to review alongside Dafny; default `[]`.
+  Merely declaring another alias or having links in C# does not select that
+  native frontend or require its tool.
+- `bindings`: unique inline binding `id`, nullable C# `adapter`, and explicit
+  `cases` with unique IDs and typed `inputs`. Source/formal endpoints belong in
+  C# `bind` entries; duplicate manifest endpoints are rejected.
+- Roslyn resolves the attached C# declaration directly, including overloads.
+  Review-only bindings can target fields/properties. Explicit adapters retain
+  resolved C# symbol selectors where the native oracle requires them.
 - Dafny names/signatures/locations/ghost status come from its resolved AST.
   Review bindings can reference ghost lemmas; these do not become runtime tests.
 - Executable targets currently support static non-ghost Dafny methods/functions/
@@ -1371,15 +1429,87 @@ command names and do not require Dafny; their JSON uses the same current schema.
   endpoints are errors. These claims always remain `requires-review` /
   `not-proved`; matching names or two successful backends never prove composition.
 
-There is no need to add Dafny comments to existing source. Existing `@link`
-annotations continue to supply optional TLA+ links. The example exercises
+### Executable C# source premises
+
+The same `integrated-bindings` manifest optionally declares `source_obligations`
+(default `[]`, maximum 1000). Each has a unique `id`, an existing `binding` ID,
+a `kind`, and an exact field documentation ID in `storage`. Selectors are
+case-sensitive semantic identities, not source text or CFG block numbers.
+
+| Kind | Additional fields | Checked premise |
+|---|---|---|
+| `guarded-effect` | `gate`, `effect`: method documentation IDs; `when`: Boolean | Exactly one gate call on `this.storage` decides a direct Boolean branch. Every entry-to-effect path crosses the declared outcome edge, that outcome can reach the effect, and the one effect block cannot repeat. A value-type gate receiver must not be readonly. |
+| `guarded-try-effect` | Same as `guarded-effect` | Extends that check only to a selected first direct call in the body of one top-level try statement. The gate must be in the method prefix outside that region. Exception dispatch cannot enter the selected first site; handler behavior and arbitrary exception-flow summaries are not established. |
+| `stable-storage` | `allowed_calls`: nonempty unique source method documentation IDs; optional `allowed_properties`: getter property IDs | A private writable value-type field in a reference-type owner has no initializer, replacement, copy or ref escape in the selected scope. Every use is an authored direct method call or instance getter without a setter/ref return. Callee/getter effects and purity are not inferred. |
+| `atomic-exchange-gate` | none | The bound synchronous instance method consists of `return Interlocked.Exchange(ref this.storage, 1) == 0`, or its expression-bodied/equality-operand-order equivalent, using writable private Int32 storage. |
+| `monotonic-int32` | none | Selected private writable Int32 storage starts at zero and every scoped use is a recognized `Volatile.Read`, `Volatile.Write(..., 1)` or `Interlocked.Exchange(..., 1)`. Direct writes, resets and unrecognized ref escapes do not pass. |
+| `reference-cas-gate` | `parameter`: source parameter name | The bound instance method returns generic reference `Interlocked.CompareExchange(ref this.storage, parameter, null) == null` with built-in, not overloaded, equality. This checks shape, not a nonnull input precondition. |
+| `reference-read` | none | The selected instance getter or synchronous method returns a direct generic reference `Volatile.Read(ref this.storage)`. |
+| `reference-cell` | none | Private writable reference storage starts null. Every scoped use is a recognized generic reference Volatile.Read or CompareExchange with null comparand. Nonnull replacement comparands, resets, aliases and unrecognized operations do not pass. |
+
+For example, independently authored notification logic could declare:
+
+```json
+"source_obligations": [
+  {
+    "id": "delivery-guard",
+    "binding": "notification",
+    "kind": "guarded-effect",
+    "gate": "M:SignalFlag.Raise",
+    "effect": "M:Notification.OnRaised",
+    "storage": "F:Notification.flag",
+    "when": true
+  }
+]
+```
+
+Storage containers must not be partial or use explicit/inline-array layouts;
+closure outside selected sources and storage-alias arguments are not invented.
+Generic source declarations use their declaration documentation IDs. Recorded
+flow calls retain both the constructed target and its `definition`; matching
+does not collapse their display identities. Closure checks compare original
+field declarations so writes through other constructed generic types cannot
+escape the inventory.
+
+Guard checks initially exclude loops, jumps, general exception regions,
+`using`, locks, suspension, unsafe blocks and nested functions. More complex
+branch expressions are unsupported rather than approximated. Storage checks
+inspect all selected syntax trees, including nested functions. Whole-struct
+replacement is rejected; escapes, copies or calls on the containing
+value-type `this` require unsupported effect summaries rather than being ignored.
+These checks do not infer global heap aliasing or object lifetime. Recognized
+intrinsics must resolve to metadata methods with the expected Int32 or generic
+reference signatures;
+source lookalikes do not qualify. Framework references and CLR intrinsic
+semantics remain trusted, not authenticated or proved.
+
+A null candidate can make CompareExchange return null without publishing a
+nonnull reference. Repeated such calls may all return true. At-most-one
+nonnull publication and stable-first-reference claims differ from at-most-one
+true result or guarded callback; the latter need an explicit nonnull argument
+premise. Neither a source-shape pass nor nullable annotations supplies that
+runtime precondition.
+
+Inspection, verification and testing record `source_obligations` with per-item
+`passed` / `rejected` / `incomplete`, source locations, explanations and guard
+flow facts. `source_obligations_status` is `not-specified` for an empty list;
+otherwise incomplete takes precedence over rejection, then all-pass. A known
+failed premise exits 1; unsupported or unresolved premises exit 2. Either blocks
+native proof and oracle execution. Readers check outcome consistency and compare
+the recorded premises with the explicitly pinned archived binding manifest,
+separately from archive/current bytes. These are selected structural premises, not a proof
+that the abstraction, allowed callees, resource identity or C# implementation
+matches the linked theorem. Coverage and required human reviews remain pending.
+
+Inline JSON `bind` entries identify the Dafny and optional TLA+ correspondences;
+adapters, cases and `tla_targets` remain explicit in the manifest. The example exercises
 multi-output credit return, a mathematical-integer function, and Boolean
 functions. Its accepted-unit-return correspondence deliberately does not cover
 rejected or non-unit returns.
 
 ### Separate evidence, never one "verified C#" badge
 
-The integrated packet independently reports `links_status`, `coverage_status`, `proof_status`,
+The integrated packet independently reports `links_status`, `source_obligations_status`, `coverage_status`, `proof_status`,
 `audit_status`, `conformance_status`, `correspondence_status` and
 `provenance_status`. Coverage still requires review; tested and untested bindings
 are listed in the execution receipt. A nonempty subset of test cases does not
@@ -1420,7 +1550,7 @@ formal backend. Supply the actual source scope and any additional references
 and replacement defines explicitly:
 
 ```powershell
-.\TlaLink.ps1 inspect-source --annotation-version 2 --source .\examples\Demo.cs --output .\Results\demo-source-inventory.json --format summary
+.\TlaLink.ps1 inspect-source --annotation-version 3 --source .\examples\Demo.cs --output .\Results\demo-source-inventory.json --format summary
 ```
 
 The full inventory includes declared methods, constructors, properties, events
@@ -1430,6 +1560,15 @@ Field initializers have their own regions. It pins source/reference bytes, the
 selected defines, producing tool and runtime. Output is exclusive; use a new
 path for each inventory.
 
+Method/constructor `flow` records include reachable blocks, predecessor and
+branch destinations, conditions and fixed-point block dominators. Resolved
+calls identify their block, receiver field (including readonly status) and
+ref-argument symbols. These facts can show a gate block dominating an effect
+block or reveal a writable value-type receiver; they do not prove the called
+gate's semantics, branch polarity's adequacy or a concurrent refinement.
+Nested callbacks/local functions are not inlined into the parent flow.
+Implicit exception/finally execution remains a separate review obligation.
+
 The `compiler` object records C# 14, nullable mode, unsafe/overflow options,
 defines and framework-reference selection. Defaults are `--nullable enable`
 and `--framework-references implicit` (the host's trusted platform assemblies
@@ -1438,6 +1577,16 @@ use `--framework-references explicit` with every observed `--reference`, the
 observed `--define` values and `--nullable enable|disable`. Explicit mode adds no
 implicit framework references and requires at least one reference. This does
 not load an MSBuild workspace or discover project settings.
+
+Alternatively, `--regression-result <native-engine-directory>\result.json`
+uses an independently checked schema-4 C# regression archive. Supply the selected
+`--source` files explicitly. The tool takes the exact observed references,
+defines and supported settings internally, adds no implicit host references,
+and requires each selected source/reference to retain its observed bytes.
+Do not combine this option with reference/define/nullable/framework overrides.
+The inventory pins the receipt and records its compiler provenance; `sources`
+lists the actual analyzed files. This is compiler-context reuse, not reuse of
+the regression's correctness claim or automatic analysis of all its inputs.
 
 Compiler errors, unresolved call targets and unsupported top-level scopes return
 2 with an incomplete inventory, rather than a success-shaped empty result.
@@ -1450,13 +1599,114 @@ runtime dispatch. Implicit disposal calls, compiler-generated async machinery,
 generated members and external behavior still need review. A resolved source
 region is not validated code and does not discharge correspondence gates.
 
+## Preparing annotated source copies
+
+Use `prepare-sources` instead of maintaining annotation generators based on text
+searches, surrounding lines or newline spelling:
+
+```powershell
+.\TlaLink.ps1 prepare-sources --manifest .\preparation.json --output .\Results\prepared-new --format summary
+.\TlaLink.ps1 check-prepared-sources --result .\Results\prepared-new\prepared-sources.json --format summary
+```
+
+The strict manifest is schema 4, kind `source-preparation`, with one required
+`annotation_version: 3`, a supported standalone `compiler` profile and explicit
+`files`. Each file declares `source`, approved `sha256` and output-relative
+`destination`. Supply real approved hashes, not placeholders chosen to clear
+drift. Paths resolve against the manifest; destinations must remain inside a
+new output directory. Original files are never edited.
+
+For example, independently authored code containing `class Gadget`,
+`int total` and `void Apply()` can declare these annotations:
+
+```json
+{
+  "schema_version": 4,
+  "kind": "source-preparation",
+  "annotation_version": 3,
+  "compiler": {
+    "target_framework": "net10.0", "language_version": "14",
+    "nullable": "enable", "checked": false, "allow_unsafe": true,
+    "references": []
+  },
+  "files": [{
+    "source": "Gadget.cs",
+    "sha256": "<approved SHA256>",
+    "destination": "scope/Gadget.cs",
+    "annotations": [
+      { "target": { "symbol": "T:Gadget" },
+        "payload": { "bind": [{ "id": "gadget", "target": "sample::Gadget" }] } },
+      { "target": { "symbol": "F:Gadget.total" },
+        "payload": { "bind": [{ "id": "total", "target": "sample::Total" }] } },
+      {
+        "target": {
+          "symbol": "M:Gadget.Apply",
+          "syntax": "ExpressionStatement",
+          "tokens": "total = 1;"
+        },
+        "payload": { "bind": [{ "id": "update", "target": "sample::Update" }] }
+      }
+    ]
+  }]
+}
+```
+
+C# `symbol` values are Roslyn documentation declaration IDs. Type/field/member
+declarations can be selected directly; statement/expression targets add a
+Roslyn `SyntaxKind` name. Optional `tokens` restrict selection using C# token
+kind/text, not whitespace or comments. String literals retain their exact token
+text. Default selection requires exactly one match. Repeated syntax requires
+explicit `expected_matches` and one-based `match`; ambiguity never silently
+selects the first occurrence. Generic explicit interface members use their
+actual declared IDs rather than a handwritten symbol-name approximation.
+
+The compiler profile is the supported standalone net10.0/C#14, nullable-enable,
+unchecked, unsafe context, not an MSBuild workspace. References and replacement
+defines are explicit profile inputs; omitted defines use the standalone
+frontend defaults. Optional `context_sources` is an array of `{ "path": "...",
+"sha256": "..." }` C# inputs needed only for resolution, not copied output.
+The complete selected reference/source/define context is fingerprinted.
+
+Use `context_imports` to share those pinned compiler-only sources. Each explicit
+path names another schema-4 `source-preparation` manifest with empty `files`,
+no `jar`, no reference/define overrides, and the same supported standalone
+compiler profile. Only its `context_sources` and nested context imports are
+selected; output edits are not inherited. Paths resolve against their declaring
+manifest. Import bytes are fingerprinted, cycles and conflicting pins fail,
+and shared declarations are not copied into output.
+
+Formal inputs can be copied byte-for-byte, but binding insertion is C# only.
+Native declarations and PlusCal labels are resolved directly during review;
+they do not need duplicate binding comments. Formal/generated translation edits
+and TLA+ mutations are rejected.
+
+Explicit C# negative controls use a file's `mutations` array. Each entry has a
+`target`, `replacement` and nonempty `reason`. Replacements are checked in the
+selected C# compilation, and overlapping edits are rejected. They are labeled
+`comment_only: false` in the output ledger, never passed off as approved code.
+Files without edits are copied byte-for-byte; edited sources preserve their
+encoding, BOM and line endings. `payload` is the typed annotation object, not a
+string of directives. Serialization uses standard JSON escaping, including
+comment-terminator escaping, before insertion into the C# block comment.
+
+Preparation writes `prepared-sources.json` only after input rechecks and output
+publication. It records source/output hashes, selectors, typed payloads, mutations,
+compiler inputs and producing tools. Output is exclusive: never overwrite a
+previous preparation. `check-prepared-sources` is readonly and rejects changed
+inputs, missing/changed outputs and unexpected files. Failed or partial output
+is not reusable evidence; choose a fresh directory after correcting the cause.
+
+Exit 0 establishes copy preparation or recorded-byte readiness only, not valid
+capture metadata, model adequacy, atomicity, trace conformance, refinement or
+acceptance. Use the normal review/instrumentation workflow afterward.
+
 ## Review commands
 
 ```powershell
-.\TlaLink.ps1 inspect --annotation-version 2 --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar
-.\TlaLink.ps1 review --annotation-version 2 --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
-.\TlaLink.ps1 check --annotation-version 2 --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --snapshot .\review-new.json
-.\TlaLink.ps1 check --annotation-version 2 --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --baseline .\review-new.json
+.\TlaLink.ps1 inspect --annotation-version 3 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar
+.\TlaLink.ps1 review --annotation-version 3 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
+.\TlaLink.ps1 check --annotation-version 3 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --snapshot .\review-new.json
+.\TlaLink.ps1 check --annotation-version 3 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --baseline .\review-new.json
 .\TlaLink.ps1 inputs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar
 ```
 
@@ -1471,6 +1721,8 @@ Common options:
 | Option | Meaning |
 |---|---|
 | `--source`, `--model` | Explicit file/directory; repeatable, maximum 1,000 files per language |
+| `--scope` | Schema-4 correspondence scope for TLA review/capture; optional on source inventory |
+| `--target` | Explicit TLA+ alias; its one root must agree with any `--model` |
 | `--jar` | Required trusted local JAR |
 | `--reference` | Additional C# metadata reference; repeatable |
 | `--define` | Full replacement preprocessor-symbol set; repeatable |
@@ -1491,77 +1743,106 @@ not field-name text.
 
 ## One maintained markup: `@link`
 
-Declare `"annotation_version": 2` once in the root `analysis-project`.
-All imported components, C# sources and annotated TLA+ modules use that grammar;
+For the vocabulary specification, see the
+[source correspondence vocabulary](docs/proposals/source-correspondence.md)
+and its [synthetic conformance cases](docs/proposals/source-correspondence-cases.md).
+The conformance matrix includes design controls as well as behavior exercised
+by the executable suites; it is not itself a test result.
+
+Declare `"annotation_version": 3` once in the root `analysis-project`.
+All imported components and C# source comments use that grammar;
 components cannot select or override it. JSON `schema_version` remains 4 and
 is independent of the annotation grammar version.
 
 Standalone `inspect-source`, `inspect`, `check`, `review`, `instrument`, `validate-trace` and the
-three integrated analysis commands require `--annotation-version 2`. Project
+three integrated analysis commands require `--annotation-version 3`. Project
 workflows pass their declared version to child commands. Missing or unsupported
 versions fail explicitly; neither filenames nor comments select a version.
 Commands such as `inputs`, which do not interpret bindings, need no annotation
 version. The marker denotes correspondence, not general implementation-language
-support: the source integration remains C#, and Dafny/P retain their separate
-backend-specific binding manifests.
+support: the source integration remains C#, and native checker configurations
+and claims remain backend-specific.
 
-To migrate maintained inputs, add the root field and replace each `@tla 2`
-header with `@link` in source/model comments. Old `@tla` headers and version
-numbers embedded after `@link` are rejected, not accepted as a parallel grammar.
-Regenerate copied/instrumented sources and collect new evidence. Do not rewrite
-historical receipts, approved configuration pins or generated PlusCal bodies
-just to clear drift.
+Version 2's `model`/`state`/`step` syntax and old `@tla` headers are rejected.
+Migrate owned C# links inline and name native endpoints explicitly. Formal
+files need no duplicate source-link annotations; do not edit generated PlusCal
+bodies. Regenerate instrumented copies and collect new successor evidence,
+preserving historical receipts and independent configuration/requirement pins.
 
-Use C# block comments or TLA+ comments, with semicolon-terminated directives.
-Quoted values use JSON escaping. Unknown versions/options and duplicate options
-are errors. IDs begin with a letter/underscore and may contain letters, digits,
-underscores, dots and hyphens. Numeric expressions must be quoted.
+Use a C# block comment containing `@link` followed by a standard JSON object.
+Only `bind`, `capture` and `exclude` arrays are accepted. `System.Text.Json`
+deserializes strict typed records, including enum-valued capture choices;
+unknown fields, duplicate properties, malformed JSON and invalid array entries
+fail explicitly. No XML or semicolon-language alternative is accepted.
 
 ```csharp
-/* @link model CreditLane; */
 class Lane {
     readonly object gate = new();
-    /* @link state Available guard=gate type=int units=frames; */
+    /* @link {
+      "bind": [{"id":"available","target":"credit::Available"}],
+      "capture": [{"binding":"available","guard":"gate","type":"int","units":"frames"}]
+    } */
     int available;
 
     void Acquire() {
         lock (gate) {
-            /* @link step Acquire actor="1" operation="1" connection="1"
-               point=commit classification=transition observe=Available; */
+            /* @link {
+              "bind": [{"id":"acquire","target":"credit::Acquire"}],
+              "capture": [{"binding":"acquire","actor":"1","operation":"1",
+                "point":"commit","classification":"transition","observe":["available"]}]
+            } */
             available--;
         }
     }
 }
 ```
 
-In TLA+, annotate one module namespace and operators; explicit PlusCal labels
-also supply step endpoints automatically. State observations can be
-zero-argument operators, or one-argument entity-indexed operators when the
-step declares an explicit scalar `entity` identity:
+Declare formal aliases once in a schema-4 `correspondence-scope`:
 
-```tla
-(* @link model CreditLane; *)
-(* @link state Available type=int; *)
-Available == available
-(* @link step Acquire; *)
-Acquire == ...
+```json
+{
+  "schema_version": 4,
+  "kind": "correspondence-scope",
+  "annotation_version": 3,
+  "targets": [
+    {"id":"credit","language":"tla","inputs":["Credit.tla"],
+     "required_bindings":["available","acquire"]}
+  ],
+  "omissions": []
+}
 ```
 
-Each annotated C# type has one model namespace; nested types may override it.
-Review-only `model`, `state` and `step` bindings do not need executable options.
-Review-only steps can also attach directly to invocation expressions, for
-example inside an expression-bodied cancellation callback:
+Targets select `tla`, `dafny` or `p`. Inputs are explicit files, relative to the
+scope document; TLA+ selects exactly one root and pins its native import closure.
+TLA+ targets declare `required_bindings` so deleting one inline mapping cannot
+silently reduce the selected correspondence. Dafny/P select required IDs in
+their backend configurations instead.
+Bindings use `alias::native-endpoint`, resolved by SANY/PlusCal, Dafny's resolved
+AST or the authoritative P frontend. A class can link to several aliases with
+independent binding IDs. There is no implicit active model or cross-model proof.
 
-```csharp
-token.Register(() => /* @link step CancelCallback; */ canceled.TrySetCanceled(token));
-```
+TLA review/instrumentation commands require `--scope` and `--target`; optional
+`--model` must agree with the selected target. `validate-trace` reuses the exact
+scope pinned during instrumentation. Trace project stages declare `scope` and
+`target`; `doctor` and execution validate the same selection.
+
+Integrated manifests declare `scope`, C# `sources`, and selected binding IDs
+with their adapters/cases. P analysis manifests declare `scope` when they select
+source bindings. Source/formal endpoints live only in C#, not duplicated in
+those manifests. Native P model inputs must agree with their selected target.
+
+A review-only `bind` needs no `capture`. It can attach to declarations,
+statements or supported invocation expressions, including callbacks.
+State observations can be nullary TLA+ operators or entity-indexed unary
+operators. `capture` currently supports only the TLC execution adapter; it is
+not an Apalache trace adapter, Dafny oracle or P monitoring adapter.
 
 Invocation-expression bindings cannot declare an executable `point`; automatic
 capture still requires a supported statement. Locks enclosing a callback's
 creation site are not treated as held when its body runs. A callback must
 acquire its own guard for generated shared-field capture.
-State options are `guard`, `type` (`int`, `bool`, `string`) and `units`.
-Step options:
+State capture options are `guard`, `type` (`int`, `bool`, `string`) and `units`.
+Action capture options:
 
 - `actor`, `operation`, `connection`: scalar source expressions identifying the
   logical operation. Actor/operation are required for capture; connection defaults
@@ -1570,21 +1851,56 @@ Step options:
   observations use it as their model-operator argument; separate entities may
   hold independent guards. One entity cannot silently switch observation guards.
 - `point`: `invoke`, `commit`, `complete`, `fault`, `cleanup`.
-  Invoke observations are before the statement/model action; the others are
-  after. Automatic exceptional/fault capture is deliberately unsupported.
+  Invoke observations precede the selected statement; commit/complete follow
+  successful execution. A fault observation on an expression statement records
+  its exception and rethrows it; declarations with introduced variables and
+  source-lock fault capture are unsupported.
+  On one synchronous reference-type `using` statement/declaration, cleanup
+  records successful implicit `IDisposable.Dispose`; fault records a disposer
+  exception and rethrows it. Acquisition is evaluated once, failed acquisition
+  emits no disposal event, null skips disposal, and nested lifetimes retain
+  reverse cleanup order across awaits, returns and body exceptions. This
+  selected compiler lowering does not support await-using, value-type/pattern
+  disposal, boxing/user-defined conversions, multiple declarators or source
+  locks. Cleanup/fault scheduling hooks are unsupported. Scope exit alone is
+  never reported as a successful resource return or method completion.
 - `classification`: `transition`, `stutter`, `unresolved`. Unresolved blocks
   instrumentation. Stutter preserves **all** model state.
-- `observe`: comma-separated state IDs; captures typed source fields.
-- `guard`, `justification`: review claims, not proofs of protection.
+- `observe`: a JSON array of state-binding IDs; captures typed source fields.
+- `arguments`: a JSON array of 1..8 scalar local, parameter or literal C#
+  expression strings, for example `["count","enabled","label"]`. C# string
+  literal expressions may contain commas. Fields, getters, calls, indexers, reference
+  objects, named/ref/out argument syntax and non-scalar types are rejected.
+  An out parameter's scalar value can be captured after its assignment.
+- `guard`, `reason`: review claims, not proofs of protection.
 - `hook`: optional `before`/`after` scheduling callback, separate from capture.
   Generation rejects hooks inside held source locks.
-- Model-only `visibility=hidden` requires a `justification`. This explicitly
-  permits internal model transitions between observations; it is not the same
-  as an implementation stutter. Hidden and observed mappings cannot overlap.
+- Target `hidden_actions` entries explicitly name native endpoints and reasons.
+  These permit internal model transitions between observations; they are not
+  implementation stutters. Hidden and observed mappings cannot overlap.
 
-Model actions take zero arguments, actor, actor+operation, or actor+operation+entity
-in that order. Three-argument actions require an explicit captured entity;
-hidden three-argument actions range only over captured entities.
+`exclude` entries require `id`, a `from` array of explicit aliases and `reason`,
+and attach to the next declaration, statement or block. They do not remove code
+from compilation/execution, source fingerprints or competing-access inspection.
+Same-target bindings inside excluded regions and overlapping exclusions fail.
+
+Scope `omissions` rules require `id`, `targets`, exact Roslyn method declaration
+IDs in `calls`, `reason` and explicit boundary `assumptions`. They classify
+synchronous void invocation statements without a comment on every log call.
+They do not omit receiver/argument evaluation, transitively match wrappers,
+erase awaits/disposal or prove logger effects harmless. Known modeled-state
+conflicts fail; unresolved callee/dispatch effects remain visible obligations.
+Source inventories with `--scope` and native review packets retain dispositions.
+
+Model actions take zero identity parameters, actor, actor+operation, or
+actor+operation+entity in that order, followed by any declared typed `arguments`.
+Three identity parameters require an explicit captured entity; data arguments
+do not double as entity identities. With `arguments="count,enabled"`, for example,
+`Apply(actor, op, count, enabled)` receives two identity and two data parameters.
+The trace binds exact argument count and int/bool/string types. Argument values
+do not participate in operation/guard identity keys, create causal edges or
+replace guarded shared-field observations. Hidden actions retain the existing
+0..3 identity-only convention; no data domains are inferred for them.
 Capture expressions exclude calls, getters, indexers and mutations.
 Enum-valued identities are lowered to their integral value; UInt64-backed enums
 are rejected because trace integers are signed. Mutable enum identity fields
@@ -1684,6 +2000,10 @@ copies. Hashes establish recorded consistency, not host authenticity or a proof
 that the compiler implements C# correctly.
 
 ## Tests and evidence
+
+`--trace` selects scalar argument, entity/guard, causal-order and whole-trace
+controls. It requires only the selected TLC JAR and pinned Java toolchain, not
+Dafny, Apalache or P.
 
 `--evidence` selects focused native regression, standalone Dafny, TLC-resource,
 trace, acceptance/report and retention controls; it requires the selected

@@ -15,8 +15,23 @@ frontend helpers in `PlusCal`, symbolic safety in `Apalache`, and Dafny in
 `Dafny`. Preserve the public
 namespace and flat deployed bridge-asset names when moving implementation.
 
+## Branch and PR workflow
+
+- While a PR is open, keep related work on its one existing feature branch and
+  push subsequent changes there to update that PR. Do not create or switch to
+  parallel branches, stacked branches or additional PRs without explicit user
+  instructions.
+- After that PR merges, pull the latest main before starting the next feature
+  branch. Follow explicit user instructions to work on main or another branch
+  instead; do not move unfinished work between branches on your own.
+
 ## Helping a user obtain evidence
 
+- Publication is limited to independently authored public material. Never put
+  non-public names, paths, identifiers, content, provenance or references in
+  source code, examples, committed documents, commit messages, branch names or
+  PR text, including statements revealing their existence. Keep public tool
+  enhancements generic and public regression fixtures independently synthetic.
 - Start with the user's concrete behavior/risk and relevant source scope.
   Recommend the smallest suitable claim and checker; make the abstraction,
   bounds, assumptions and missing context visible for human review.
@@ -41,6 +56,59 @@ namespace and flat deployed bridge-asset names when moving implementation.
 
 ## Model authoring and self-checks
 
+- Use annotation version 3 with standard JSON inside C# `@link` block comments:
+  typed `bind`, `capture` and `exclude` arrays. Do not introduce XML, another
+  tokenizer, raw JSON binding stores or version-2 acceptance branches. Formal
+  aliases and exact logging API omissions use one schema-4
+  `correspondence-scope`. Keep source/native endpoints inline; native manifests
+  reference binding IDs and retain backend-specific execution/claim semantics.
+  Exclusions never remove runtime code, input pins or relevant argument/callee
+  effects. See the [vocabulary](docs/proposals/source-correspondence.md).
+- Prepare immutable annotation copies with one schema-4 `source-preparation`
+  manifest and the `prepare-sources` command. Use Roslyn declaration IDs and
+  syntax selectors and typed annotation payloads for C#, and explicit reasons
+  for control mutations. Do not introduce text-replacement generators, regex
+  model parsers or parallel copy-ledger formats. Check existing output with
+  `check-prepared-sources`; changed inputs require a new output directory.
+  Share pinned compiler-only sources through context-only `context_imports`
+  using that same format, not duplicated hash catalogs.
+- Reuse a recorded regression compiler context through
+  `inspect-source --regression-result`; do not maintain scripts that reconstruct
+  its references/defines or work around native argument limits. Keep selected
+  sources explicit. Source inventories record their exact source list.
+  Their method/constructor `flow` records contain Roslyn blocks, branch
+  conditions, resolved calls/ref arguments and dominance. Treat these as
+  structural correspondence evidence, not proof of call effects, implicit
+  exception paths, atomicity or concurrency semantics.
+- Declare executable C# premises in `integrated-bindings.source_obligations`,
+  not a second proof-packet format or generated prose. Use binding IDs and
+  Roslyn documentation IDs, never CFG block numbers. The initial checks cover
+  guarded single effects, stable instance gate storage, an Int32 exchange gate
+  and scoped monotonic Int32 writes. Unsupported control flow or alias escapes
+  are incomplete, not successful approximations. These checks do not approve
+  the source/model relation, infer CLR semantics or discharge human review.
+- Reference publication uses `reference-cas-gate` and `reference-cell` premises:
+  CompareExchange against null and scoped recognized reads/writes. A successful
+  null-valued attempt need not publish anything; never infer one successful
+  caller without a nonnull argument premise. Stable storage may explicitly
+  allow source property getters; that does not prove getter purity. Generic
+  source selectors use declaration IDs while flow facts retain constructed
+  call targets. `guarded-try-effect` only extends the guard check to the first
+  direct call in one top-level try body; it does not model handler semantics.
+- Selected synchronous reference-type `using` lifetimes may use `point=cleanup`
+  after a successful implicit `IDisposable.Dispose`, and `point=fault` for a
+  throwing disposer. Instrumentation lowers that narrow compiler pattern once,
+  retaining acquisition, null checks, reverse disposal order and exception
+  propagation; it does not merely observe leaving a scope. Await-using,
+  value-type/pattern disposal, multiple declarators and cleanup under source
+  locks remain unsupported. Statement fault observations rethrow the original
+  exception and do not imply successful cleanup. Keep these events distinct
+  from resource-return attempts and whole-method completion.
+- Keep report dispositions authored in the existing `evidence-report` manifest.
+  Use `source_inventories` for mechanical member-region expansion and project
+  `report --source-report` for presentation composition. Require explicit file
+  defaults and unambiguous symbol-prefix overrides; never infer code coverage
+  from checker outcomes or filename conventions.
 - Own model development and technical self-review; do not delegate reading
   TLA+, Dafny or P to the user as the normal workflow. Follow the
   [authoring procedure](REFERENCE.md#model-authoring-and-self-checks), then
@@ -64,6 +132,10 @@ namespace and flat deployed bridge-asset names when moving implementation.
   a user's approval or record yourself as the human reviewer. Instructions
   and self-checks are not an automatic guarantee of model adequacy or C#
   correctness; leave unsupported claims and required reviews outstanding.
+- Pass measured call data through typed step `arguments`, not actor, operation
+  or entity identities. Arguments are scalar values from locals, parameters or literals at
+  the selected point, not guarded shared-state observations or causal edges.
+  Keep serial-owner assumptions explicit for unguarded synchronous components.
 
 ## Build and validation
 
@@ -72,7 +144,7 @@ dotnet build .\TlaLink.sln
 dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --core
 .\TlaLink.ps1 doctor --project .\examples\Workflow\tlalink.project.json --scenario lanes
 .\TlaLink.ps1 plan --project .\examples\Workflow\tlalink.project.json --scenario lanes
-.\TlaLink.ps1 review --annotation-version 2 --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
+.\TlaLink.ps1 review --annotation-version 3 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
 ```
 
 The core suite needs no external backends. The example preflight/review
@@ -109,9 +181,9 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   Roslyn inventory before assigning source dispositions. Its calls and lock/
   await/access facts are not validated code, runtime dispatch or model coverage;
   review implicit disposal, async machinery and external effects separately.
-- Use only `@link`, with `"annotation_version": 2` declared once in the root
+- Use only `@link`, with `"annotation_version": 3` declared once in the root
   project. Components inherit it and must not override it. Standalone annotation
-  commands require `--annotation-version 2`; never guess a version, restore
+  commands require `--annotation-version 3`; never guess a version, restore
   per-comment version headers or add compatibility parsing for `@tla`.
   Review-only bindings need not have executable metadata.
 - Instrument separate copied sources, never product code or frozen profiles.
@@ -148,7 +220,10 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   `project-component`, `project-input-sets` and `project-execution-profiles`
   documents. Resolve each path against its declaring file, select components
   explicitly per scenario, and reject duplicate IDs/imports, cycles and mixed
-  inline/profile budgets. Input sets are explicit file lists, not globs.
+  inline/profile budgets. Input sets use explicit file lists or explicit
+  `prepared_sources` ledger references, never globs or directory discovery.
+  Ledger-derived review scope is a file-list expansion, not proof or retention
+  approval; preserve every required input when replacing manual listings.
   Keep one normalized `AnalysisProject` for execution and save a
   `project-expansion` snapshot with all authored-file pins. Independent readers
   reconstruct that snapshot from archived authoring bytes. Editor schemas are

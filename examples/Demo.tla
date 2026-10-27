@@ -1,9 +1,7 @@
 ---------------------------- MODULE Demo ----------------------------
 EXTENDS Naturals
 
-(* @link
-model demo;
-*)
+
 
 (* --algorithm Lifecycle
 variables active = 0;
@@ -42,8 +40,6 @@ Termination == <>(pc = "Done")
 
 \* END TRANSLATION 
 
-(* @link
-state active;
-*)
+
 ObservedActive == active
 ====================================================================

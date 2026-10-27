@@ -2,7 +2,7 @@
   "$schema": "../../schemas/project.schema.json",
   "schema_version": 4,
   "kind": "analysis-project",
-  "annotation_version": 2,
+  "annotation_version": 3,
   "id": "evidence-stages",
   "tools": {
     "dafny": {

@@ -2,13 +2,13 @@ using System;
 using System.Threading;
 using TlaLink.Runtime;
 
-/* @link model WorkflowLanes; */
+
 internal sealed class Lane
 {
     private readonly object gate = new();
     private readonly int id;
 
-    /* @link state Value guard=gate type=int; */
+    /* @link {"bind":[{"id":"Value","target":"WorkflowLanes::Value"}],"capture":[{"binding":"Value","guard":"gate","type":"int"}]} */
     private int value;
 
     public Lane(int id) { this.id = id; }
@@ -17,7 +17,7 @@ internal sealed class Lane
     {
         lock (gate)
         {
-            /* @link step Move actor="1" operation="1" entity=id point=commit classification=transition observe=Value; */
+            /* @link {"bind":[{"id":"Move","target":"WorkflowLanes::Move"}],"capture":[{"binding":"Move","actor":"1","operation":"1","entity":"id","point":"commit","classification":"transition","observe":["Value"]}]} */
             value = nextValue;
         }
     }

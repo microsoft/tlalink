@@ -94,7 +94,7 @@ public static class ProjectAcceptance
                 selectedStage.Kind != stage.Kind)
                 Error(ErrorCode.WorkflowStageInconsistent, "Stage outcome/schema/kind contradicts its evidence: " + stage.Id);
             if (stage.Kind is "inspect" or "verify" or "oracle")
-                issues.AddRange(IntegratedEvidence.Validate(result));
+                issues.AddRange(IntegratedEvidence.Validate(result, Path.Combine(directory, "inputs")));
             if (stage.Kind is "tlc" or "trace")
             {
                 AnalysisStage evidenceStage = selectedStage;

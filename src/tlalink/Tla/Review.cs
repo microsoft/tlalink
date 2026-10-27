@@ -11,13 +11,17 @@ public static class Review
         Packet packet = new(command);
         packet.Diagnostics.AddRange(source.Diagnostics);
         packet.Diagnostics.AddRange(modelDiagnostics);
+        packet.Dispositions.AddRange(source.Dispositions);
+        packet.OmissionMatches.AddRange(source.OmissionMatches);
+        packet.SourceBindings.AddRange(source.DeclaredLinks);
+        packet.SelectedTargets.AddRange(source.SelectedTargets ?? source.Bindings.Select(b => b.Model).ToHashSet(StringComparer.Ordinal));
         packet.Inventory.AddRange(inventory ?? model.Select(m => m.Endpoint));
         foreach (var pair in source.Fingerprints.Concat(modelPins)) Files.Pin(packet.Fingerprints, pair.Key, pair.Value);
         foreach (var group in source.Bindings.GroupBy(b => b.Key).Where(g => g.Count() > 1))
             packet.Diagnostics.Add(new(ErrorCode.DuplicateBinding, "Duplicate C# binding: " + group.Key, group.First().Endpoint.Location));
         foreach (var group in model.GroupBy(b => $"{b.Model}:{b.Tag.Kind}:{b.Tag.Identity}").Where(g => g.Count() > 1))
             packet.Diagnostics.Add(new(ErrorCode.DuplicateBinding, "Duplicate model binding: " + group.Key, group.First().Endpoint.Location));
-        foreach (SourceBinding binding in source.Bindings)
+        foreach (SourceBinding binding in source.Bindings.Where(b => source.SelectedTargets == null || source.SelectedTargets.Contains(b.Model)))
         {
             List<ModelBinding> targets = model.Where(m => m.Model == binding.Model && m.Tag.Kind == binding.Tag.Kind && m.Tag.Identity == binding.Tag.Identity).ToList();
             if (targets.Count == 0)
@@ -38,12 +42,13 @@ public static class Review
                 "Do guard claims match all accesses, including those outside supplied files?"
             ];
             packet.Links.Add(new(binding.Key, binding.Tag.Identity, binding.Tag.Kind, binding.Model, binding.Endpoint,
-                targets[0].Endpoint, new(binding.Tag.Options), binding.Locks, CSharpScope.Boundaries(binding), accesses, questions));
+                targets[0].Endpoint, binding.Declaration, binding.Capture, binding.Locks, CSharpScope.Boundaries(binding), accesses, questions));
         }
         foreach (ModelBinding binding in model.Where(m => m.Tag.Options.GetValueOrDefault("visibility") != "hidden" && !source.Bindings.Any(s =>
             s.Model == m.Model && s.Tag.Kind == m.Tag.Kind && s.Tag.Identity == m.Tag.Identity)))
             packet.Diagnostics.Add(new(ErrorCode.UnboundModelEndpoint, $"Model endpoint has no C# binding: {binding.Model}:{binding.Tag.Kind}:{binding.Tag.Identity}", binding.Endpoint.Location));
-        foreach (SourceBinding state in source.Bindings.Where(b => b.Tag.Kind == "state" && b.Symbol is not null))
+        foreach (SourceBinding state in source.Bindings.Where(b => b.Tag.Kind == "state" && b.Symbol is not null &&
+            (source.SelectedTargets == null || source.SelectedTargets.Contains(b.Model))))
         {
             foreach (SyntaxTree tree in source.Compilation.SyntaxTrees)
             {

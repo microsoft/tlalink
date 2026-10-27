@@ -5,6 +5,8 @@ namespace TlaLink;
 
 public static partial class TlaBackend
 {
+    internal static bool HasAlgorithm(string text) => AlgorithmArguments(text).Length != 0;
+
     private static void AddTranslation(JsonElement row, string path,
         List<TlaBackendDiagnostic> diagnostics)
     {

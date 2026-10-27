@@ -15,16 +15,22 @@ public static class IntegratedReview
         IntegratedPacket packet = new(options.Command);
         try
         {
-            IntegratedManifest manifest = IntegratedInputs.Load(options.Required("bindings"), packet.Fingerprints);
+            packet.Bindings = FilePaths.Full(options.Required("bindings"));
+            IntegratedManifest manifest = IntegratedInputs.Load(packet.Bindings, packet.Fingerprints);
             Program.PinTool(packet.Fingerprints);
             packet.Fingerprints["tool:integrated-schema"] = Schema.Version.ToString(System.Globalization.CultureInfo.InvariantCulture);
             CSharpScope source = CSharpScope.Parse(manifest.Sources, options.Many("reference"),
                 options.Has("define") ? options.Many("define") : null);
+            source.ApplyCorrespondence(manifest.Configuration!);
+            packet.Dispositions.AddRange(source.Dispositions);
+            packet.OmissionMatches.AddRange(source.OmissionMatches);
+            packet.SourceBindings.AddRange(source.DeclaredLinks);
             foreach (var pin in source.Fingerprints) Files.Pin(packet.Fingerprints, pin.Key, pin.Value);
             packet.Diagnostics.AddRange(source.Diagnostics);
             source.RequireCompilable();
             if (source.Diagnostics.Any(d => d.Severity == "error"))
                 throw new InputException(ErrorCode.InvalidIntegratedBinding, "Invalid C# annotations; see source diagnostics.");
+            manifest = IntegratedInputs.ResolveBindings(manifest, source);
             DafnyBackend backend = new(options.Required("dafny"), output, options.Timeout, packet);
             backend.Initialize();
             DafnyIndexResult index = backend.Index(manifest.Proofs);
@@ -33,19 +39,27 @@ public static class IntegratedReview
             packet.SourceInventory.AddRange(symbols.Select(s => s.Endpoint));
             foreach (DafnyBinding binding in manifest.Bindings)
             {
-                var implementation = Resolve(symbols, binding.Source);
                 List<DafnyDeclaration> declarations = index.Declarations.Where(d => d.Name == binding.Dafny).ToList();
                 if (declarations.Count != 1)
                     throw new InputException(ErrorCode.InvalidIntegratedBinding, $"{binding.Id}: expected one resolved Dafny declaration '{binding.Dafny}', found {declarations.Count}.");
-                packet.Links.Add(new(binding.Id, implementation.Endpoint, declarations[0], binding.Adapter));
+                SourceBinding inline = source.Bindings.Single(b => b.BindingId == binding.Id);
+                packet.Links.Add(new(binding.Id, inline.Endpoint, declarations[0], binding.Adapter));
                 if (binding.Adapter != null) Resolve(symbols, binding.Adapter);
                 if (binding.Cases.Count > 0)
+                {
+                    if (binding.Adapter == null && inline.Kind != SourceBindingKind.Declaration)
+                        throw new InputException(ErrorCode.InvalidOracleInput,
+                            "Statement/expression bindings require an explicit oracle adapter: " + binding.Id);
                     DafnyConformance.CheckSignature(Resolve(symbols, binding.Adapter ?? binding.Source).Symbol, declarations[0]);
+                }
             }
             if (manifest.Models.Count > 0)
             {
                 string jar = FilePaths.Full(options.Required("jar"));
                 ModelScope models = ModelScope.Load(manifest.Models, jar, options.Timeout);
+                source.SelectedTargets = manifest.TlaTargets.ToHashSet(StringComparer.Ordinal);
+                foreach (string alias in manifest.TlaTargets)
+                    models.BindSources(source, manifest.Configuration!, alias);
                 Files.Pin(models.Fingerprints, jar, Files.Hash(jar));
                 string adapter = Path.Combine(AppContext.BaseDirectory, "TlaIndex.java");
                 Files.Pin(models.Fingerprints, adapter, Files.Hash(adapter));
@@ -63,14 +77,21 @@ public static class IntegratedReview
                 packet.Correspondences.Add(new(claim));
             }
             packet.LinksStatus = "passed";
+            packet.SourceObligations.AddRange(SourceObligations.Check(source, manifest));
+            foreach (SourceObligationResult premise in packet.SourceObligations.Where(p => p.Status != "passed"))
+                packet.Diagnostics.Add(new(premise.Status == "rejected" ? ErrorCode.SourceObligationRejected :
+                    ErrorCode.SourceObligationIncomplete, premise.Obligation.Id + ": " + premise.Reason));
             if (options.Optional("baseline") is string baseline) Baseline(baseline, packet);
-            if (packet.LinksStatus == "passed" && options.Command != "inspect-integrated" && backend.Verify(manifest.Proofs) &&
+            if (packet.LinksStatus == "passed" && packet.SourceObligationsStatus is "passed" or "not-specified" &&
+                options.Command != "inspect-integrated" && backend.Verify(manifest.Proofs) &&
                 options.Command == "test-integrated")
                 DafnyConformance.Run(manifest, source, symbols, backend, packet);
             IntegratedInputs.CheckPins(packet.Fingerprints);
             IntegratedInputs.CheckPins(packet.GeneratedFiles);
             packet.ProvenanceStatus = "consistent";
             packet.Status = packet.LinksStatus != "passed" ? "incomplete" :
+                packet.SourceObligationsStatus == "incomplete" ? "incomplete" :
+                packet.SourceObligationsStatus == "rejected" ? "rejected" :
                 packet.ProofStatus == "rejected" || packet.AuditStatus == "findings" || packet.ConformanceStatus == "rejected" ? "rejected" :
                 options.Command == "inspect-integrated" ? "ready" :
                 packet.ProofStatus == "verified" && packet.AuditStatus == "passed" &&
@@ -91,6 +112,7 @@ public static class IntegratedReview
         {
             Console.WriteLine($"Status: {packet.Status}; links: {packet.LinksStatus}; proof: {packet.ProofStatus}; audit: {packet.AuditStatus}; conformance: {packet.ConformanceStatus}");
             Console.WriteLine($"Coverage: {packet.CoverageStatus}; correspondence: {packet.CorrespondenceStatus}; provenance: {packet.ProvenanceStatus}");
+            Console.WriteLine("Source obligations: " + packet.SourceObligationsStatus);
             foreach (DafnyLink link in packet.Links)
                 Console.WriteLine($"{link.Id}: {link.Implementation.Location.Path}:{link.Implementation.Location.Line} -> {link.Specification.Name}");
             foreach (Issue issue in packet.Diagnostics) Console.WriteLine($"{issue.Code} {issue.Severity}: {issue.Message}");

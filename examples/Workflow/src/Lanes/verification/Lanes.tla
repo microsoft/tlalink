@@ -1,12 +1,12 @@
 ---- MODULE Lanes ----
 EXTENDS Integers
-(* @link model WorkflowLanes; *)
+
 VARIABLE x
 vars == <<x>>
 Init == x = [lane \in 1..2 |-> 0]
-(* @link state Value type=int; *)
+
 Value(entity) == x[entity]
-(* @link step Move; *)
+
 Move == \E lane \in 1..2:
           /\ x[lane] = 0
           /\ (lane = 1 \/ x[1] = 1)

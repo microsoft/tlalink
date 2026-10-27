@@ -15,7 +15,8 @@ public sealed record CompilerProfile(string TargetFramework, string LanguageVers
 }
 public sealed record AnalysisStage(string Id, string Kind, List<string> DependsOn, int TimeoutSeconds,
     string? Bindings = null, List<string>? Sources = null, List<string>? Models = null,
-    string? Config = null, List<string>? Arguments = null, TlcResources? Resources = null, int? Fingerprint = null);
+    string? Config = null, List<string>? Arguments = null, TlcResources? Resources = null, int? Fingerprint = null,
+    string? Scope = null, string? Target = null);
 public sealed record AnalysisScenario(string Id, List<AnalysisStage> Stages);
 public sealed record ReviewObligation(string Id, string Claim, List<string> Assumptions, List<string> Inputs);
 public sealed record CheckObligation(string Id, string Kind, string Scenario, List<string> Requirements);
@@ -188,6 +189,17 @@ public static class ProjectInputs
                         throw new InputException(ErrorCode.InvalidWorkflowInput, "TLC/trace stages require one root model and config.");
                     if (stage.Kind == "trace" && stage.Sources is not { Count: > 0 })
                         throw new InputException(ErrorCode.InvalidWorkflowInput, "Trace stages require copied executable sources including their harness.");
+                    if (stage.Kind == "trace")
+                    {
+                        if (stage.Scope == null || stage.Target == null)
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "Trace stages require an explicit correspondence scope and target.");
+                        CorrespondenceConfiguration scope = CorrespondenceInputs.Load(Resolve(path, stage.Scope), new(FilePaths.Comparer));
+                        FormalTarget target = CorrespondenceInputs.Target(scope, stage.Target, "tla");
+                        if (!target.Inputs.SequenceEqual(stage.Models!.Select(p => Resolve(path, p)), FilePaths.Comparer))
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "Trace model contradicts the selected correspondence target.");
+                    }
+                    else if (stage.Scope != null || stage.Target != null)
+                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Only trace stages take scope/target directly; other native stages use their own configuration.");
                     if (stage.Kind is "inputs" or "tlc" or "trace" && stage.Bindings != null ||
                         stage.Kind is "inputs" or "tlc" && (stage.Sources != null || stage.Arguments != null) ||
                         stage.Kind == "inputs" && stage.Config != null)
@@ -324,7 +336,7 @@ public static class ProjectInputs
         return ordered;
     }
 
-    private static void Unique(IEnumerable<string> values, string label)
+    internal static void Unique(IEnumerable<string> values, string label)
     {
         HashSet<string> ids = new(StringComparer.Ordinal);
         foreach (string value in values)

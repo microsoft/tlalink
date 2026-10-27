@@ -22,9 +22,13 @@ checkable:
 - **Links live in your code.** The agent annotates the C# to show which code
   each model step and variable represents. TlaLink checks that every link
   still resolves to real code and model declarations.
+  Selected source premises can also be checked, such as whether only the
+  authorized gate outcome reaches an effect. These checks do not prove that
+  the implementation matches the model.
 - **Executions are checked against the model.** Where supported, TlaLink runs
   instrumented copies of your code and checks the recorded behavior against
-  the model.
+  the model. Selected cleanup and exception paths can be observed explicitly,
+  rather than treating scope exit as successful resource release.
 - **Evidence knows when it is stale.** TlaLink records exactly which code,
   models and tool versions each result used, and reports when changes mean
   earlier results no longer apply. The agent then updates the model and
@@ -63,9 +67,11 @@ says the increment under the lock is the model step `Admit`:
 ```csharp
 lock (this.gate)
 {
-    /* @link
-    step Admit justification=lock actor="1" operation="1" point=commit classification=transition observe=active;
-    */
+    /* @link {
+      "bind": [{"id":"admit","target":"lifecycle::Admit","reason":"Update under the gate."}],
+      "capture": [{"binding":"admit","actor":"1","operation":"1",
+        "point":"commit","classification":"transition","observe":["active"]}]
+    } */
     this.active++;
 }
 ```

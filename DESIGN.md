@@ -44,15 +44,99 @@ formal backends supporting the C# workflow.
 
 ## Architecture
 
+The [source correspondence vocabulary](docs/proposals/source-correspondence.md)
+defines qualified `bind`, optional `capture` and
+explicit `exclude` directives, including symbol-resolved logging omissions.
+Its [synthetic conformance cases](docs/proposals/source-correspondence-cases.md)
+cover TLA+/PlusCal, TLC/Apalache, Dafny and P; the case matrix is not itself an
+execution result.
+
 Binding comments use `@link` without an embedded version. The root project's
 required `annotation_version` selects one grammar for all components and
-annotated C#/TLA+ inputs. Standalone annotation commands require explicit
+annotated C# inputs. Standalone annotation commands require explicit
 version context instead. This keeps source comments focused on correspondence
 and makes version changes project-wide migrations, not mixed per-comment
-interpretations. Only annotation version 2 is supported; JSON schema 4 is
-independent. Old `@tla` markers are rejected. The neutral marker does not unify
-backend semantics: Dafny and P retain their native binding formats, and source
-resolution remains C#-specific.
+interpretations. Only annotation version 3 is supported; JSON schema 4 is
+independent. Payloads are standard JSON deserialized into strict typed binding,
+capture and exclusion records, not a bespoke token language or free-form JSON
+objects. Old `@tla` markers and version-2 directives are rejected. The neutral
+marker does not unify backend semantics; source resolution remains C#-specific.
+
+One schema-4 `correspondence-scope` names explicit language/input aliases and
+symbol-resolved routine omission rules. Inline C# owns source/native endpoints;
+native manifests reference IDs and own their cases, assumptions and checks.
+SANY/PlusCal, Dafny's resolved AST and P's authoritative frontend resolve native
+endpoints without duplicate formal-file source annotations. Several independent
+bindings may attach to one C# node. Only the TLC adapter currently consumes
+`capture`; no generic native execution/refinement capability is inferred.
+
+Exclusions and logging omissions are correspondence dispositions, not code
+removal or safety exemptions. Receiver/argument evaluation, competing accesses,
+awaits, disposal and unresolved callee effects remain explicit. All scope and
+source bytes stay fingerprinted. Archive readers check recorded inline targets
+against archived source and scope bytes without depending on live sources.
+
+Source preparation is authoring infrastructure, separate from instrumentation
+and execution evidence. One strict schema-4 manifest pins explicit source bytes,
+compiler context and destinations. Roslyn declared symbol identities delimit C#
+syntax selection; token matching ignores trivia, with explicit counts/ordinals
+for repeated syntax. Formal files are copied without inserted bindings;
+PlusCal/generated translations are not edited. Typed JSON comments are inserted
+at resolved C# spans and C# controls require
+declared replacement text and reasons. Original encoding/BOM/newlines are retained.
+All targets and resulting C# compilations are checked before new output is
+published. Readonly validation checks recorded input/output bytes and rejects
+unexpected files. These copies and their ledger establish neither binding
+adequacy nor general source/model correspondence, and are not acceptance receipts.
+
+Context-only preparation imports share approved source pins without inheriting
+compiler settings or output edits. Explicit prepared-source ledger references
+in project input sets expand to the ledger and its declared output paths through
+the normal authoring reader, including archived readers; they do not scan a
+directory or automatically approve the producer's semantics.
+
+Source inventories can select the exact compiler context from independently
+checked regression evidence, requiring selected current sources/references to
+match the observed bytes. This avoids reconstructing long command lines without
+loading MSBuild or claiming all recorded compiler sources were analyzed.
+Inventories declare their exact selected source list, including memberless files.
+Method/constructor inventories also expose Roslyn's explicit control-flow blocks,
+reachable-block dominance and resolved invocation receiver/ref-argument facts.
+Nested function bodies are not merged into a parent's graph. This supports
+reviewable guard/effect correspondence without claiming that CFG dominance
+models implicit exception dispatch, finally behavior or concurrent execution.
+Integrated bindings can declare executable `source_obligations` against their
+existing binding IDs and exact Roslyn documentation IDs. Guarded-effect checks
+require an authorized Boolean branch edge on every path to one reachable effect
+site, not merely a dominating gate block. Stable-storage checks account for every
+selected field use; exchange-gate and monotonic-Int32 checks recognize a narrow
+set of resolved framework intrinsics. No source-to-Dafny translation is involved.
+These checks use the same explicit compiler scope and pins as integrated links.
+They reject known structural counterexamples and report unsupported exception
+regions, alias escapes and partial storage containers as incomplete. They do not
+summarize arbitrary callees or infer an atomicity/concurrency theorem. Source
+premise outcomes remain separate from native proof, audit, conformance, coverage
+and human correspondence; unmet premises block subsequent proof/execution.
+Reference cells add exact generic metadata CompareExchange-to-null and
+Volatile.Read shapes, with original-declaration matching for generic field
+closure. Flow facts keep constructed and definition identities separately.
+Authored allowed getters do not establish purity. A narrow guarded first-try
+effect checks the normal prefix and unique try entry without pretending to
+summarize handler semantics. Null candidates can report success without a
+nonnull publication; any one-success/one-callback theorem must state its nonnull
+premise independently of the shape checks and library/caller review.
+The existing evidence-report format can project these regions through explicit
+authored per-file dispositions and nonoverlapping symbol-prefix overrides.
+Project reports compose that same authored presentation alongside independently
+evaluated runs. Presentation data never approves reviews or infers validated code.
+
+Executable steps may append typed scalar action arguments after their existing
+identity parameters. Arguments are captured only from simple locals, parameters
+or literals; fields/getters/calls/reference objects cannot bypass guarded state
+observation rules. They are kept outside the recorder's operation/guard identity
+keys, so changing a value does not fabricate or erase causal edges. Trace readers
+check exact presence/count/types before applying the mapped native action.
+Hidden actions do not infer domains for these data arguments.
 
 Sources are physically grouped into `Common`, `PLang`, `Tla`, `Tlc`,
 `Apalache`, `PlusCal` and `Dafny` under `src\tlalink`. This is a responsibility split in
@@ -68,6 +152,7 @@ and freshness handling are in a separate partial frontend under `PlusCal`.
 | `Markup.cs` | The single maintained `@link` grammar/comment envelopes; project-level annotation version |
 | `SourceInventory.cs` | Current Roslyn source/member/call/lock/await facts under explicit compiler scope; no coverage or atomicity verdict |
 | `CSharpFrontend.cs` | Explicit Roslyn compilation, attachments, field symbols and boundaries |
+| `SourcePreparation.cs` | Byte-pinned source copies, Roslyn/SANY annotation targets, explicit C# control mutations and readonly copy validation |
 | `TlaBackend.cs` | Bounded fresh Java processes, normalized spans, dependencies and freshness |
 | `TlaIndex.java` | Authoritative SANY/PlusCal adapter |
 | `ModelScope.cs` | Model annotations, explicit label bindings and operator arities |
@@ -465,9 +550,17 @@ read under one actually held readonly reference-field lock. Mutable identity
 fields need an explicit held-guard claim. This cannot establish that all writers
 use the guard; reviewers retain that obligation.
 
-Invoke captures precede the source/model action; other supported points capture
-afterward. Fault interception is unsupported rather than silently changing
-exception behavior. Scheduling callbacks run outside the recorder's internal
+Invoke captures precede the source/model action; commit/complete follow success.
+Selected expression-statement faults record and rethrow the original exception.
+Selected synchronous reference IDisposable using lifetimes are lowered to
+single acquisition and explicit try/finally disposal with interface dispatch.
+Null and failed acquisitions do not invent cleanup; nested declarations close
+in reverse order, including across awaits and exceptional exits. Cleanup means
+Dispose returned; a disposer fault is recorded separately and rethrown, not
+reclassified as release success. Unsupported resource conversions, await-using,
+value/pattern disposal, multiple resources and held source locks block generation.
+Rewrites are compiled before publication; this is selected execution evidence,
+not a general source-language semantics proof. Scheduling callbacks run outside the recorder's internal
 lock and cannot be generated inside source locks. Instrumentation necessarily
 perturbs scheduling and allocations; it observes test executions, not untouched
 production execution.

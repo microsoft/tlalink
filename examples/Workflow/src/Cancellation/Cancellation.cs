@@ -4,6 +4,7 @@ public static class CancellationChecks
 {
     private static bool cleaned;
 
+    /* @link {"bind":[{"id":"cleanup","target":"cancellation-spec::CancellationSpec.Observe"}]} */
     public static void Process(bool requested)
     {
         cleaned = false;
@@ -25,5 +26,6 @@ public static class CancellationChecks
         cleanupCompleted = cleaned;
     }
 
+    /* @link {"bind":[{"id":"bad-inversion","target":"rejection-spec::RejectedSpec.Invert"}]} */
     public static void Invert(bool canceled, out bool result) => result = !canceled;
 }

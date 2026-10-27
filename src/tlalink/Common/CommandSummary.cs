@@ -14,12 +14,14 @@ public static class CommandSummary
             "command", "project", "scenario", "status", "analysis_status", "recorded_status",
             "execution_status", "archive_status", "semantic_status", "current_applicability",
             "acceptance_status", "claim", "mode", "links_status", "proof_status", "audit_status",
-            "conformance_status", "coverage_status", "correspondence_status", "provenance_status",
+            "conformance_status", "coverage_status", "correspondence_status", "source_obligations_status", "provenance_status",
             "directory", "path", "boundary", "boundaries", "diagnostics", "next_actions", "statistics",
             "nodes", "code_regions", "input_files", "requested_resources", "resources", "annotation_version",
-            "source_count", "member_count", "call_count", "await_count"]);
+            "source_count", "member_count", "call_count", "await_count", "file_count", "mutated_file_count"]);
         if (source["kind"]?.GetValue<string>() == "source-inventory")
             result["compiler"] = source["compiler"]?.DeepClone();
+        if (source["source_obligations"] is JsonArray sourceObligations)
+            result["source_obligations"] = Rows(sourceObligations, ["obligation", "status", "reason"]);
         if (source["kind"]?.GetValue<string>() == "gc-plan")
         {
             foreach (string field in new[] { "store", "retention", "planned_at", "grace_hours", "read_only",

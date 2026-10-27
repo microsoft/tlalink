@@ -27,27 +27,27 @@ public static class TraceTests
         string source = Path.Combine(output, "Subject.cs"), model = Path.Combine(output, "Calls.tla");
         File.WriteAllText(source, """
             using System.Threading.Tasks;
-            /* @link model Calls; */
+
             class Subject {
                 public async Task Run(Task release) {
-                    /* @link step BeginCall actor=this operation="$call" point=commit classification=transition; */
+                    /* @link {"bind":[{"id":"BeginCall","target":"Calls::BeginCall"}],"capture":[{"binding":"BeginCall","actor":"this","operation":"$call","point":"commit","classification":"transition"}]} */
                     System.GC.KeepAlive(0);
                     await release;
-                    /* @link step EndCall actor=this operation="$call" point=commit classification=transition; */
+                    /* @link {"bind":[{"id":"EndCall","target":"Calls::EndCall"}],"capture":[{"binding":"EndCall","actor":"this","operation":"$call","point":"commit","classification":"transition"}]} */
                     System.GC.KeepAlive(0);
                 }
             }
             """);
         File.WriteAllText(model, """
             ---- MODULE Calls ----
-            (* @link model Calls; *)
+
             Ops == {"call:1", "call:2"}
             VARIABLE pc
             vars == <<pc>>
             Init == pc = [op \in Ops |-> "New"]
-            (* @link step BeginCall; *)
+
             BeginCall(actor, op) == pc[op] = "New" /\ pc' = [pc EXCEPT ![op] = "Pending"]
-            (* @link step EndCall; *)
+
             EndCall(actor, op) == pc[op] = "Pending" /\ pc' = [pc EXCEPT ![op] = "Done"]
             Next == \E op \in Ops : BeginCall(1, op) \/ EndCall(1, op)
             Spec == Init /\ [][Next]_vars
@@ -56,19 +56,19 @@ public static class TraceTests
         if (entity)
         {
             File.WriteAllText(source, Files.Read(source).Replace("Run(Task release)", "Run(Task release, Subject target)")
-                .Replace("actor=this operation=", "actor=this entity=target operation="));
+                .Replace("\"actor\":\"this\"", "\"actor\":\"this\",\"entity\":\"target\""));
             File.WriteAllText(model, """
                 ---- MODULE Calls ----
-                (* @link model Calls; *)
+
                 Ops == {"call:1", "call:2"}
                 VARIABLE pc, target
                 vars == <<pc, target>>
                 Init == pc = [op \in Ops |-> "New"] /\ target = [op \in Ops |-> ""]
-                (* @link step BeginCall; *)
+
                 BeginCall(actor, op, entity) ==
                   /\ pc[op] = "New" /\ pc' = [pc EXCEPT ![op] = "Pending"]
                   /\ target' = [target EXCEPT ![op] = entity]
-                (* @link step EndCall; *)
+
                 EndCall(actor, op, entity) ==
                   /\ pc[op] = "Pending" /\ target[op] = entity
                   /\ pc' = [pc EXCEPT ![op] = "Done"] /\ UNCHANGED target
@@ -78,7 +78,7 @@ public static class TraceTests
                 """);
         }
         string generated = Path.Combine(output, "generated"), jar = TestTools.Jar(root);
-        var instrument = TestCli.Run(["instrument", "--annotation-version", "2", "--source", source,
+        var instrument = TestCli.Tla(["instrument", "--annotation-version", "3", "--source", source,
             "--model", model, "--jar", jar, "--output", generated]);
         if (instrument.Code != 0) throw new InvalidOperationException(instrument.Json);
         File.WriteAllText(Path.Combine(generated, "Program.cs"), """
@@ -115,7 +115,7 @@ public static class TraceTests
         CoreTests.Equal(2, events.GroupBy(e => e.GetProperty("operation").GetString()).Count());
         string config = Path.Combine(output, "calls.cfg");
         File.WriteAllText(config, "SPECIFICATION Spec\n");
-        var check = TestCli.Run(["validate-trace", "--annotation-version", "2", "--model", model, "--jar", jar,
+        var check = TestCli.Tla(["validate-trace", "--annotation-version", "3", "--model", model, "--jar", jar,
             "--manifest", manifest, "--trace", trace, "--execution", Path.Combine(execution, "execution.json"),
             "--config", config, "--output", Path.Combine(output, "validation")]);
         if (check.Code != 0) throw new InvalidOperationException(check.Json);
@@ -128,28 +128,33 @@ public static class TraceTests
         string model = Path.Combine(output, "TraceFixture.tla"), source = Path.Combine(output, "Subject.cs");
         string state = trajectory ? """
             readonly object gate = new();
-            /* @link state Value guard=gate type=int; */
+            /* @link {"bind":[{"id":"Value","target":"TraceFixture::Value"}],"capture":[{"binding":"Value","guard":"gate","type":"int"}]} */
             int value;
             """ : "";
-        string Statement(string id, int value, int actor) =>
-            (trajectory ? "lock (gate) {\n" : "") +
-            $"/* @link step {id} point=commit classification=transition actor=" +
-            (referenceActor ? "this" : $"\"{actor}\"") + " operation=\"1\"" +
-            (trajectory ? " observe=Value" : "") + "; */\n" +
-            (trajectory ? $"this.value = {value};\n}}" : "System.GC.KeepAlive(0);");
-        File.WriteAllText(source, "/* @link model Fixture; */\nclass Subject {\n" + state +
+        string Statement(string id, int value, int actor)
+        {
+            AnnotationPayload annotations = new() {
+                Bind = [new(id, new("TraceFixture", id))],
+                Capture = [new(id, CapturePoint.Commit, CaptureClassification.Transition,
+                    referenceActor ? "this" : actor.ToString(System.Globalization.CultureInfo.InvariantCulture), "1",
+                    Observe: trajectory ? ["Value"] : null)]
+            };
+            return (trajectory ? "lock (gate) {\n" : "") + "/* @link " + Markup.Encode(annotations) + " */\n" +
+                (trajectory ? $"this.value = {value};\n}}" : "System.GC.KeepAlive(0);");
+        }
+        File.WriteAllText(source, "\nclass Subject {\n" + state +
             "\npublic void A() { " + Statement("A", 1, 1) + " }\npublic void B() { " +
             Statement("B", 4, trajectory ? 1 : 2) + " }\n}");
         string body = trajectory ? """
             VARIABLES x, h, phase
             vars == <<x,h,phase>>
             Init == /\ x = 0 /\ h \in 0..1 /\ phase = 0
-            (* @link state Value type=int; *)
+
             Value == x
-            (* @link step A; *)
+
             A == /\ phase = 0 /\ phase' = 1
                  /\ x' = (IF h = 0 THEN 1 ELSE 2) /\ UNCHANGED h
-            (* @link step B; *)
+
             B == /\ phase = 1 /\ phase' = 2
                  /\ x' = (IF h = 0 THEN 3 ELSE 4) /\ UNCHANGED h
             HIDDEN_ANNOTATION
@@ -159,29 +164,30 @@ public static class TraceTests
             VARIABLE x
             vars == <<x>>
             Init == x = 0
-            (* @link step A; *)
+
             A == x = 0 /\ x' = 1
-            (* @link step B; *)
+
             B == x = 1 /\ x' = 2
             Next == A \/ B
             """;
-        body = body.Replace("HIDDEN_ANNOTATION", hidden ? "(* @link step Flip visibility=hidden justification=\"Internal unobserved choice for this synthetic control\"; *)" : "", StringComparison.Ordinal);
+        body = body.Replace("HIDDEN_ANNOTATION", hidden ? "" : "", StringComparison.Ordinal);
         if (booleanOnly) body = """
             VARIABLE flag
             vars == <<flag>>
             Init == flag = FALSE
-            (* @link step A; *)
+
             A == flag /\ flag' = FALSE
-            (* @link step B; *)
+
             B == ~flag /\ flag' = TRUE
             Next == A \/ B
             """;
         File.WriteAllText(model, "---- MODULE TraceFixture ----\n" + (booleanOnly ? "" : "EXTENDS Integers\n") +
-            "(* @link model Fixture; *)\n" + body + "\nSpec == Init /\\ [][Next]_vars\n====\n");
+            "\n" + body + "\nSpec == Init /\\ [][Next]_vars\n====\n");
         string config = Path.Combine(output, "fixture.cfg");
         File.WriteAllText(config, "SPECIFICATION Spec\n");
         string generated = Path.Combine(output, "generated"), jar = TestTools.Jar(root);
-        var instrument = TestCli.Run(["instrument", "--annotation-version", "2", "--source", source, "--model", model, "--jar", jar, "--output", generated]);
+        var instrument = TestCli.Tla(["instrument", "--annotation-version", "3", "--source", source, "--model", model, "--jar", jar, "--output", generated],
+            hidden ? [new("Flip", "Explicit intervening-state control.")] : null);
         if (instrument.Code != 0) throw new InvalidOperationException(instrument.Json);
         string workload = trajectory ? "subject.A(); subject.B();" : parallel ? """
             using var started = new System.Threading.ManualResetEventSlim();
@@ -204,7 +210,7 @@ public static class TraceTests
             using JsonDocument captured = JsonDocument.Parse(Files.Read(trace));
             CoreTests.Equal("B", captured.RootElement.GetProperty("events")[0].GetProperty("step").GetString());
         }
-        var check = TestCli.Run(["validate-trace", "--annotation-version", "2", "--model", model, "--jar", jar, "--manifest", manifest, "--trace", trace,
+        var check = TestCli.Tla(["validate-trace", "--annotation-version", "3", "--model", model, "--jar", jar, "--manifest", manifest, "--trace", trace,
             "--execution", Path.Combine(execution, "execution.json"), "--config", config, "--output", Path.Combine(output, "validation")]);
         using JsonDocument result = JsonDocument.Parse(check.Json);
         if (result.RootElement.GetProperty("status").GetString() != expected) throw new InvalidOperationException(check.Json);

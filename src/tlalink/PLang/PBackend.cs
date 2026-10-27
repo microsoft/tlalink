@@ -82,17 +82,27 @@ public static class PBackend
         {
             CSharpScope source = CSharpScope.Parse(config.Sources, options.Many("reference"),
                 options.Has("define") ? options.Many("define") : null);
+            if (config.Configuration != null) source.ApplyCorrespondence(config.Configuration);
+            packet.Dispositions.AddRange(source.Dispositions);
+            packet.OmissionMatches.AddRange(source.OmissionMatches);
+            packet.SourceBindings.AddRange(source.DeclaredLinks);
             source.RequireCompilable();
             packet.Diagnostics.AddRange(source.Diagnostics);
             foreach (var pin in source.Fingerprints) Files.Pin(packet.Fingerprints, pin.Key, pin.Value);
             var symbols = IntegratedReview.SourceSymbols(source);
             foreach (PBinding binding in config.Bindings)
             {
-                var implementation = IntegratedReview.Resolve(symbols, binding.Source);
-                List<PDeclaration> declarations = packet.Inventory.Where(d => d.Name == binding.Declaration).ToList();
+                List<SourceBinding> matches = source.Bindings.Where(b => b.BindingId == binding.Id).ToList();
+                if (matches.Count != 1)
+                    throw new InputException(ErrorCode.InvalidPBinding, "Expected one inline P binding: " + binding.Id);
+                SourceBinding inline = matches[0];
+                FormalTarget target = CorrespondenceInputs.Target(config.Configuration!, inline.Model, "p");
+                if (!target.Inputs.SequenceEqual(config.Models, FilePaths.Comparer))
+                    throw new InputException(ErrorCode.InvalidPBinding, "P model inputs contradict the selected target.");
+                List<PDeclaration> declarations = packet.Inventory.Where(d => d.Name == inline.NativeEndpoint).ToList();
                 if (declarations.Count != 1)
-                    throw new InputException(ErrorCode.InvalidPBinding, $"{binding.Id}: expected one resolved P declaration {binding.Declaration}, found {declarations.Count}.");
-                packet.Links.Add(new(binding.Id, implementation.Endpoint, declarations[0], binding.Relation, binding.Assumptions));
+                    throw new InputException(ErrorCode.InvalidPBinding, $"{binding.Id}: expected one resolved P declaration {inline.NativeEndpoint}, found {declarations.Count}.");
+                packet.Links.Add(new(binding.Id, inline.Endpoint, declarations[0], binding.Relation, binding.Assumptions));
             }
             if (packet.Diagnostics.Any(d => d.Severity == "error"))
                 throw new InputException(ErrorCode.InvalidPBinding, "Invalid source scope; see diagnostics.");

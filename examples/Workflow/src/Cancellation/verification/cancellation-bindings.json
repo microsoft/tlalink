@@ -2,13 +2,10 @@
   "schema_version": 4,
   "kind": "integrated-bindings",
   "sources": ["../Cancellation.cs"],
-  "proofs": ["Cancellation.dfy"],
-  "models": [],
+  "scope": "scope.json",
   "bindings": [
     {
       "id": "cleanup",
-      "source": "CancellationChecks.Process",
-      "dafny": "CancellationSpec.Observe",
       "adapter": "CancellationChecks.Observe",
       "cases": [
         {"id": "normal", "inputs": [false]},

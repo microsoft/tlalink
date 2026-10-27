@@ -2,12 +2,11 @@
   "schema_version": 4,
   "kind": "integrated-bindings",
   "sources": ["Decisions.cs"],
-  "proofs": ["Decisions.dfy"],
+  "scope": "scope.json",
+  "tla_targets": ["CreditDecision"],
   "bindings": [
     {
       "id": "credit-return",
-      "source": "Decisions.Return",
-      "dafny": "DecisionsSpec.Return",
       "adapter": null,
       "cases": [
         {"id": "return-one", "inputs": [1, 0, 1]},
@@ -19,8 +18,6 @@
     },
     {
       "id": "record-append",
-      "source": "Decisions.Append",
-      "dafny": "DecisionsSpec.Append",
       "adapter": null,
       "cases": [
         {"id": "accept", "inputs": [10, 2, 12]},
@@ -30,8 +27,6 @@
     },
     {
       "id": "boolean-function",
-      "source": "Decisions.Invert",
-      "dafny": "DecisionsSpec.Invert",
       "adapter": null,
       "cases": [
         {"id": "true", "inputs": [true]},
@@ -39,7 +34,6 @@
       ]
     }
   ],
-  "models": ["Credits.tla"],
   "correspondences": [
     {
       "id": "accepted-unit-return",

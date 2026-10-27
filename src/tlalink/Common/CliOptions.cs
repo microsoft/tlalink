@@ -9,12 +9,14 @@ public sealed class CliOptions
     public string Command { get; }
     public CliOptions(string[] args)
     {
-        if (args.Length == 0) throw new InputException("Usage: TlaLink <report|gc|expand|project-schema|doctor|plan|run|check-stage|accept|explain|inspect-source|inspect|check|review|inputs|instrument|execute|validate-trace|check-regression|read-regression|check-dafny|read-dafny|check-apalache|read-apalache|inspect-integrated|verify-integrated|test-integrated|read-integrated> [--option value ...]");
+        if (args.Length == 0) throw new InputException("Usage: TlaLink <prepare-sources|check-prepared-sources|report|gc|expand|project-schema|doctor|plan|run|check-stage|accept|explain|inspect-source|inspect|check|review|inputs|instrument|execute|validate-trace|check-regression|read-regression|check-dafny|read-dafny|check-apalache|read-apalache|inspect-integrated|verify-integrated|test-integrated|read-integrated> [--option value ...]");
         Command = args[0];
         Dictionary<string, string[]> allowed = new()
         {
-            ["report"] = ["manifest", "project", "run", "output", "format"],
-            ["inspect-source"] = ["source", "reference", "define", "output", "format", "nullable", "framework-references"],
+            ["prepare-sources"] = ["manifest", "output", "timeout", "format"],
+            ["check-prepared-sources"] = ["result", "format"],
+            ["report"] = ["manifest", "project", "run", "source-report", "source-inventory", "output", "format"],
+            ["inspect-source"] = ["source", "reference", "define", "output", "format", "nullable", "framework-references", "regression-result"],
             ["check-dafny"] = ["config", "dafny", "output", "timeout", "format"],
             ["read-dafny"] = ["result", "current", "format"],
             ["check-regression"] = ["config", "output", "timeout", "format"],
@@ -49,6 +51,9 @@ public sealed class CliOptions
         if (!allowed.TryGetValue(Command, out string[]? options)) throw new InputException("Unknown command: " + Command);
         if (AnnotationCommands.Contains(Command, StringComparer.Ordinal))
             options = [.. options, "annotation-version"];
+        if (Command is "inspect" or "check" or "review" or "instrument" or "validate-trace")
+            options = [.. options, "scope", "target"];
+        if (Command == "inspect-source") options = [.. options, "scope"];
         HashSet<string> repeated = ["source", "model", "reference", "define", "arg", "evidence"];
         if (Command == "report") repeated.Add("run");
         for (int i = 1; i < args.Length; i += 2)

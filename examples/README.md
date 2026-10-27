@@ -31,7 +31,7 @@ and pinned in the local `.tools` cache; see the
 algorithm in [Demo.tla](Demo.tla). Review the links for one step:
 
 ```powershell
-.\TlaLink.ps1 review --annotation-version 2 --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
+.\TlaLink.ps1 review --annotation-version 3 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
 ```
 
 This checks that the annotations resolve on both sides. It does not run the

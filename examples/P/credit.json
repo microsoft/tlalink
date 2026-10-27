@@ -5,11 +5,10 @@
   "engine": "pchecker",
   "models": ["Credit.p"],
   "sources": ["Credit.cs"],
+  "scope": "scope.json",
   "bindings": [
     {
       "id": "credit-return",
-      "source": "PExample.Credit.ReturnCredit",
-      "declaration": "Credit.ReturnCredit",
       "relation": "The returned available-credit count increases by one within the live-window precondition.",
       "assumptions": ["The caller supplies 0 <= available < 2.", "Exception behavior and concurrent shutdown require separate checks."]
     }

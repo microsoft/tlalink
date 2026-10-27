@@ -15,14 +15,18 @@ public static class IntegratedTests
         {
             foreach (string name in new[] { "Decisions.cs", "Decisions.dfy", "Credits.tla" })
                 File.Copy(Path.Combine(example, name), Path.Combine(directory, name));
-            IntegratedManifest manifest = JsonSerializer.Deserialize<IntegratedManifest>(Files.Read(Path.Combine(example, "bindings.json")), Files.Json)!;
-            return models ? manifest : manifest with { Models = [], Correspondences = [] };
+            IntegratedManifest manifest = IntegratedInputs.Load(Path.Combine(example, "bindings.json"), []);
+            manifest = IntegratedInputs.ResolveBindings(manifest, CSharpScope.Parse(manifest.Sources));
+            return manifest with {
+                Sources = ["Decisions.cs"], Proofs = ["Decisions.dfy"], Models = models ? ["Credits.tla"] : [],
+                Correspondences = models ? manifest.Correspondences : [], Scope = "scope.json"
+            };
         }
         (int Code, JsonElement Result) Run(string directory, IntegratedManifest manifest, string command = "test-integrated", string? baseline = null)
         {
             string path = Path.Combine(directory, "bindings.json");
-            Files.WriteNew(path, manifest);
-            List<string> args = [command, "--annotation-version", "2", "--bindings", path, "--dafny", dafny, "--output", Path.Combine(directory, "result"),
+            BindingFixtures.WriteIntegrated(path, manifest);
+            List<string> args = [command, "--annotation-version", "3", "--bindings", path, "--dafny", dafny, "--output", Path.Combine(directory, "result"),
                 "--jar", jar, "--timeout", "60"];
             if (baseline != null) args.AddRange(["--baseline", baseline]);
             var result = TestCli.Run(args.ToArray());
@@ -34,6 +38,116 @@ public static class IntegratedTests
         void Status(JsonElement packet, string field, string expected) => CoreTests.Equal(expected, packet.GetProperty(field).GetString());
         void Diagnostic(JsonElement packet, string text) => CoreTests.True(packet.GetProperty("diagnostics").ToString().Contains(text, StringComparison.Ordinal));
 
+        test("Dafny callback-expression bindings remain review-only and retain their actual source span", () =>
+        {
+            string directory = NewDirectory("callback-binding");
+            File.WriteAllText(Path.Combine(directory, "Callback.cs"), """
+                public static class Callback {
+                  public static void Register() {
+                    System.Action run = () =>
+                      /* @link {"bind":[{"id":"callback","target":"proof::Claim"}]} */
+                      System.GC.KeepAlive(1);
+                    run();
+                  }
+                }
+                """);
+            File.WriteAllText(Path.Combine(directory, "Claim.dfy"), "lemma Claim() ensures 1 == 1 {}");
+            Files.WriteNew(Path.Combine(directory, "scope.json"),
+                new CorrespondenceConfiguration(Schema.Version, "correspondence-scope", Markup.Version,
+                    [new("proof", "dafny", ["Claim.dfy"])], []));
+            Files.WriteNew(Path.Combine(directory, "bindings.json"),
+                new IntegratedManifest(Schema.Version, ["Callback.cs"], [],
+                    [new("callback", "", "", null, [])], [], []) { Scope = "scope.json" });
+            string output = Path.Combine(directory, "result");
+            var response = TestCli.Run(["inspect-integrated", "--annotation-version", "3",
+                "--bindings", Path.Combine(directory, "bindings.json"), "--dafny", dafny, "--output", output]);
+            if (response.Code != 0) throw new InvalidOperationException(response.Json);
+            JsonElement packet = ProjectInputs.Read<JsonElement>(Path.Combine(output, "result.json"));
+            DafnyLink link = packet.GetProperty("links")[0].Deserialize<DafnyLink>(Files.Json)!;
+            CoreTests.Equal("InvocationExpression", link.Implementation.Name);
+            CoreTests.True(link.Specification.Ghost);
+            CoreTests.Equal("not-run", packet.GetProperty("conformance_status").GetString());
+            CoreTests.Equal(0, TestCli.Run(["read-integrated", "--result", Path.Combine(output, "result.json")]).Code);
+        });
+
+        test("integrated source obligations retain structural evidence without approving correspondence", () =>
+        {
+            string directory = NewDirectory("source-premises");
+            File.WriteAllText(Path.Combine(directory, "Notification.cs"), SourceObligationTests.Fixture);
+            File.WriteAllText(Path.Combine(directory, "Claim.dfy"), "lemma Claim() ensures 1 == 1 {}");
+            var (code, packet) = Run(directory, SourceObligationTests.Manifest("Notification.cs"), "verify-integrated");
+            CoreTests.Equal(0, code);
+            Status(packet, "source_obligations_status", "passed");
+            Status(packet, "proof_status", "verified"); Status(packet, "audit_status", "passed");
+            Status(packet, "coverage_status", "requires-review"); Status(packet, "conformance_status", "not-run");
+            CoreTests.Equal(4, packet.GetProperty("source_obligations").GetArrayLength());
+            CoreTests.Equal(0, IntegratedEvidence.Validate(packet).Count);
+            CoreTests.Equal(0, TestCli.Run(["read-integrated", "--result",
+                Path.Combine(directory, "result", "result.json"), "--current", "true"]).Code);
+            var forged = System.Text.Json.Nodes.JsonNode.Parse(packet.GetRawText())!;
+            forged["source_obligations"]![0]!["status"] = "rejected";
+            using JsonDocument changed = JsonDocument.Parse(forged.ToJsonString());
+            CoreTests.True(IntegratedEvidence.Validate(changed.RootElement).Count > 0);
+            forged = System.Text.Json.Nodes.JsonNode.Parse(packet.GetRawText())!;
+            forged["source_obligations"] = new System.Text.Json.Nodes.JsonArray();
+            forged["source_obligations_status"] = "not-specified";
+            using JsonDocument omitted = JsonDocument.Parse(forged.ToJsonString());
+            CoreTests.True(IntegratedEvidence.Validate(omitted.RootElement,
+                Path.Combine(directory, "result", "inputs")).Any(i => i.Message.Contains("pinned binding manifest", StringComparison.Ordinal)));
+        });
+        test("integrated generic reference premises retain getter and declaration identities in archived evidence", () =>
+        {
+            string directory = NewDirectory("reference-premises");
+            File.WriteAllText(Path.Combine(directory, "Memo.cs"), ReferenceObligationTests.Fixture);
+            File.WriteAllText(Path.Combine(directory, "Claim.dfy"), "lemma Claim() ensures 1 == 1 {}");
+            var (code, packet) = Run(directory, ReferenceObligationTests.Manifest("Memo.cs"), "verify-integrated");
+            CoreTests.Equal(0, code);
+            Status(packet, "source_obligations_status", "passed");
+            Status(packet, "proof_status", "verified"); Status(packet, "coverage_status", "requires-review");
+            CoreTests.Equal(5, packet.GetProperty("source_obligations").GetArrayLength());
+            CoreTests.Equal(0, TestCli.Run(["read-integrated", "--result",
+                Path.Combine(directory, "result", "result.json"), "--current", "true"]).Code);
+        });
+        test("project acceptance checks source premises against the run-level input archive", () =>
+        {
+            string directory = NewDirectory("source-project");
+            File.WriteAllText(Path.Combine(directory, "Notification.cs"), SourceObligationTests.Fixture);
+            File.WriteAllText(Path.Combine(directory, "Claim.dfy"), "lemma Claim() ensures 1 == 1 {}");
+            BindingFixtures.WriteIntegrated(Path.Combine(directory, "bindings.json"), SourceObligationTests.Manifest("Notification.cs"));
+            string project = Path.Combine(directory, "project.json");
+            Files.WriteNew(project, new AnalysisProject(Schema.Version, "analysis-project", "notification",
+                new(Dafny: new(dafny, Files.Hash(dafny))), new("net10.0", "14", "enable", false, true, []),
+                "requirements.json", [new("premises", [new("proof", "verify", [], 60, "bindings.json")])],
+                [], "reviews"));
+            Files.WriteNew(Path.Combine(directory, "requirements.json"), new AcceptancePolicy(Schema.Version,
+                "acceptance-policy", "notification", [new("proof", "premises", "proof", "passed")]));
+            string output = Path.Combine(directory, "run");
+            var execution = TestCli.Run(["run", "--project", project, "--scenario", "premises", "--output", output]);
+            if (execution.Code != 0) throw new InvalidOperationException(execution.Json);
+            var acceptance = TestCli.Run(["accept", "--project", project, "--run", output]);
+            if (acceptance.Code != 0) throw new InvalidOperationException(acceptance.Json);
+            using JsonDocument document = JsonDocument.Parse(acceptance.Json);
+            Status(document.RootElement, "archive_status", "consistent");
+            Status(document.RootElement, "current_applicability", "current");
+        });
+        test("integrated false source premises reject and unsupported cleanup stays incomplete before proof", () =>
+        {
+            foreach (bool unsupported in new[] { false, true })
+            {
+                string directory = NewDirectory(unsupported ? "source-unsupported" : "source-rejected");
+                string body = unsupported ? "try { if (this.flag.Raise()) OnRaised(); } finally {}" :
+                    "if (!this.flag.Raise()) OnRaised();";
+                File.WriteAllText(Path.Combine(directory, "Notification.cs"), SourceObligationTests.Fixture.Replace(
+                    "if (this.flag.Raise()) { OnRaised(); }", body, StringComparison.Ordinal));
+                File.WriteAllText(Path.Combine(directory, "Claim.dfy"), "lemma Claim() ensures 1 == 1 {}");
+                var (code, packet) = Run(directory, SourceObligationTests.Manifest("Notification.cs"), "inspect-integrated");
+                CoreTests.Equal(unsupported ? 2 : 1, code);
+                Status(packet, "source_obligations_status", unsupported ? "incomplete" : "rejected");
+                Status(packet, "proof_status", "not-run"); Status(packet, "audit_status", "not-run");
+                Diagnostic(packet, unsupported ? "SO200" : "SO100");
+                CoreTests.Equal(0, IntegratedEvidence.Validate(packet).Count);
+            }
+        });
         test("integrated two backends retain separate evidence and unproved correspondence", () =>
         {
             string directory = NewDirectory("both");
@@ -179,7 +293,7 @@ public static class IntegratedTests
             string directory = NewDirectory("schema");
             string manifest = Path.Combine(directory, "bindings.json");
             File.WriteAllText(manifest, """{"schema_version":1,"schema_version":1}""");
-            var result = TestCli.Run(["inspect-integrated", "--annotation-version", "2", "--bindings", manifest, "--dafny", dafny,
+            var result = TestCli.Run(["inspect-integrated", "--annotation-version", "3", "--bindings", manifest, "--dafny", dafny,
                 "--output", Path.Combine(directory, "result")]);
             CoreTests.Equal(2, result.Code);
             CoreTests.True(result.Json.Contains("duplicate", StringComparison.OrdinalIgnoreCase));
@@ -192,7 +306,7 @@ public static class IntegratedTests
             File.AppendAllText(Path.Combine(directory, "Decisions.dfy"), "\n// reviewed input changed\n");
             string baseline = Path.Combine(directory, "result", "result.json");
             string second = Path.Combine(directory, "second.json"); Files.WriteNew(second, manifest);
-            var result = TestCli.Run(["inspect-integrated", "--annotation-version", "2", "--bindings", Path.Combine(directory, "bindings.json"),
+            var result = TestCli.Run(["inspect-integrated", "--annotation-version", "3", "--bindings", Path.Combine(directory, "bindings.json"),
                 "--dafny", dafny, "--output", Path.Combine(directory, "second-result"), "--baseline", baseline]);
             CoreTests.Equal(2, result.Code); CoreTests.True(result.Json.Contains("DF030", StringComparison.Ordinal));
         });

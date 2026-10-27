@@ -16,11 +16,11 @@ public static class ProjectCompositionTests
             root.Remove("annotation_version");
             Save(f.Path, root);
             CoreTests.ThrowsAny<InputException>(() => ProjectComposition.Read(f.Path));
-            root["annotation_version"] = 3;
+            root["annotation_version"] = 2;
             Save(f.Path, root);
             CoreTests.ThrowsAny<InputException>(() => ProjectComposition.Read(f.Path));
             File.WriteAllText(f.Path, original);
-            CoreTests.Equal(2, ProjectComposition.Read(f.Path).AnnotationVersion);
+            CoreTests.Equal(3, ProjectComposition.Read(f.Path).AnnotationVersion);
             JsonObject component = JsonNode.Parse(File.ReadAllText(f.ComponentPath))!.AsObject();
             component["annotation_version"] = 2;
             Save(f.ComponentPath, component);
@@ -42,7 +42,7 @@ public static class ProjectCompositionTests
             string schema = System.IO.Path.Combine(f.Root, "project.schema.json");
             CoreTests.Equal(0, TestCli.Run(["project-schema", "--output", schema]).Code);
             JsonObject editor = JsonNode.Parse(File.ReadAllText(schema))!.AsObject();
-            CoreTests.Equal(4, editor["oneOf"]!.AsArray().Count);
+            CoreTests.Equal(5, editor["oneOf"]!.AsArray().Count);
             CoreTests.Equal("project-component", editor["$defs"]!["component"]!["properties"]!["kind"]!["const"]!.GetValue<string>());
             void References(JsonNode node)
             {
@@ -65,6 +65,32 @@ public static class ProjectCompositionTests
                         if (item != null) References(item);
             }
             References(editor);
+        });
+        test("prepared source ledgers expand explicit review inputs without directory discovery and remain archivable", () =>
+        {
+            Fixture f = new(work);
+            string recipe = System.IO.Path.Combine(f.Root, "prepare.json"), output = System.IO.Path.Combine(f.Root, "prepared");
+            Files.WriteNew(recipe, new SourcePreparationManifest(Schema.Version, "source-preparation", Markup.Version,
+                new("net10.0", "14", "enable", false, true, []),
+                [new(f.Source, Files.Hash(f.Source), System.IO.Path.Combine("scope", "Counter.cs"))]));
+            SourcePreparation.Prepare(recipe, output, 30);
+            string ledger = System.IO.Path.Combine(output, "prepared-sources.json");
+            Save(f.SetsPath, new ProjectInputSets(Schema.Version, "project-input-sets",
+                [new("code", [System.IO.Path.GetRelativePath(System.IO.Path.GetDirectoryName(f.SetsPath)!, f.Source)],
+                    [System.IO.Path.GetRelativePath(System.IO.Path.GetDirectoryName(f.SetsPath)!, ledger)])]));
+            ProjectExpansion expanded = ProjectComposition.Expand(f.Path);
+            List<string> inputs = expanded.ExpandedProject.Obligations.Single().Inputs
+                .Select(p => ProjectInputs.Resolve(f.Path, p)).ToList();
+            CoreTests.Equal(3, inputs.Count);
+            CoreTests.True(inputs.Contains(ledger));
+            CoreTests.True(inputs.Contains(System.IO.Path.Combine(output, "scope", "Counter.cs")));
+            CoreTests.True(expanded.Fingerprints.ContainsKey(ledger));
+            Dictionary<string, ProjectComposition.Source> archived = expanded.Fingerprints
+                .ToDictionary(p => p.Key, p => ProjectComposition.ReadSource(p.Key), FilePaths.Comparer);
+            File.Delete(ledger);
+            AnalysisProject historical = ProjectComposition.Read(f.Path, p => archived[p]);
+            CoreTests.Equal(Schema.Hash(expanded.ExpandedProject), Schema.Hash(historical));
+            CoreTests.ThrowsAny<InputException>(() => ProjectComposition.Read(f.Path));
         });
         test("nested component imports require explicit child selection and retain project-wide review scopes", () => {
             Fixture f = new(work);
