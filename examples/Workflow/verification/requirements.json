@@ -8,25 +8,60 @@
       "scenario": "credits",
       "stage": "decisions",
       "expected": "passed",
-      "bindings": ["credit-return", "record-append", "boolean-function"],
+      "bindings": [
+        "decisions-spec::credit-return",
+        "decisions-spec::record-append",
+        "decisions-spec::boolean-function"
+      ],
       "cases": [
-        "credit-return/return-one", "credit-return/reject-overflow", "credit-return/reject-zero",
-        "credit-return/reject-negative", "credit-return/full-window",
-        "record-append/accept", "record-append/reject", "record-append/maximum",
-        "boolean-function/true", "boolean-function/false"
+        "decisions-spec::credit-return/return-one",
+        "decisions-spec::credit-return/reject-overflow",
+        "decisions-spec::credit-return/reject-zero",
+        "decisions-spec::credit-return/reject-negative",
+        "decisions-spec::credit-return/full-window",
+        "decisions-spec::record-append/accept",
+        "decisions-spec::record-append/reject",
+        "decisions-spec::record-append/maximum",
+        "decisions-spec::boolean-function/true",
+        "decisions-spec::boolean-function/false"
       ]
     },
-    {"id": "lane-model", "scenario": "lanes", "stage": "model", "expected": "passed", "config_sha256": "63cd3973b75b3ad40ea7115a4953698dce237ff00760224b57f120e3e2193de3"},
-    {"id": "lane-trace", "scenario": "lanes", "stage": "execution", "expected": "passed", "config_sha256": "63cd3973b75b3ad40ea7115a4953698dce237ff00760224b57f120e3e2193de3"},
+    {
+      "id": "lane-model",
+      "scenario": "lanes",
+      "stage": "model",
+      "expected": "passed",
+      "config_sha256": "63cd3973b75b3ad40ea7115a4953698dce237ff00760224b57f120e3e2193de3"
+    },
+    {
+      "id": "lane-trace",
+      "scenario": "lanes",
+      "stage": "execution",
+      "expected": "passed",
+      "config_sha256": "63cd3973b75b3ad40ea7115a4953698dce237ff00760224b57f120e3e2193de3"
+    },
     {
       "id": "cleanup-cases",
       "scenario": "cancellation",
       "stage": "cleanup",
       "expected": "passed",
-      "bindings": ["cleanup"],
-      "cases": ["cleanup/normal", "cleanup/canceled"],
-      "reviews": ["cleanup-adapter"]
+      "bindings": [
+        "cancellation-spec::cleanup"
+      ],
+      "cases": [
+        "cancellation-spec::cleanup/normal",
+        "cancellation-spec::cleanup/canceled"
+      ],
+      "reviews": [
+        "cleanup-adapter"
+      ]
     },
-    {"id": "unsafe-proof", "scenario": "cancellation", "stage": "unsafe-control", "expected": "rejected", "diagnostic": "DF100"}
+    {
+      "id": "unsafe-proof",
+      "scenario": "cancellation",
+      "stage": "unsafe-control",
+      "expected": "rejected",
+      "diagnostic": "DF100"
+    }
   ]
 }

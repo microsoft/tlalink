@@ -31,8 +31,11 @@ and pinned in the local `.tools` cache; see the
 algorithm in [Demo.tla](Demo.tla). Review the links for one step:
 
 ```powershell
-.\TlaLink.ps1 review --annotation-version 2 --source .\examples\Demo.cs --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step Admit
+.\TlaLink.ps1 review --annotation-version 4 --source .\examples\Demo.cs --scope .\examples\demo-scope.json --target demo --model .\examples\Demo.tla --jar .\.tools\tla\v1.8.0\tla2tools.jar --step demo::Admit
 ```
 
 This checks that the annotations resolve on both sides. It does not run the
-C# or prove that the model describes it correctly.
+C# or prove that the model describes it correctly. The PlusCal algorithm
+describes one `Open` followed by one `Release`, not arbitrary repeated calls,
+unmatched releases, or general concurrent use of the C# class. Its program
+counter and terminating stutter are model control, not additional C# bindings.

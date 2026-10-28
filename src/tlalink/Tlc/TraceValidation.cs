@@ -61,6 +61,24 @@ public static class TraceValidation
             if (hasEntity != binding.Entity || hasEntity && entity.ValueKind is not (JsonValueKind.Number or JsonValueKind.String))
                 throw new InputException(ErrorCode.InvalidTrace, "Event entity capture disagrees with binding.");
             string? entityValue = hasEntity ? TlaValue(entity) : null;
+            bool hasArguments = entry.TryGetProperty("arguments", out JsonElement capturedArguments);
+            List<string> argumentTypes = binding.ArgumentTypes ?? [];
+            if (hasArguments != (argumentTypes.Count > 0) ||
+                hasArguments && (capturedArguments.ValueKind != JsonValueKind.Array || capturedArguments.GetArrayLength() != argumentTypes.Count))
+                throw new InputException(ErrorCode.InvalidTrace, "Event action arguments disagree with the typed binding.");
+            List<string> argumentValues = [];
+            for (int i = 0; i < argumentTypes.Count; i++)
+            {
+                JsonElement value = capturedArguments[i];
+                bool typed = argumentTypes[i] switch {
+                    "int" => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out _),
+                    "bool" => value.ValueKind is JsonValueKind.True or JsonValueKind.False,
+                    "string" => value.ValueKind == JsonValueKind.String,
+                    _ => false
+                };
+                if (!typed) throw new InputException(ErrorCode.InvalidTrace, "Action argument type disagrees with the binding.");
+                argumentValues.Add(TlaValue(value));
+            }
             if (binding.Classification == "transition" && !models.Any(m => m.Model == model && m.Tag.Kind == "step" &&
                 m.Tag.Identity == step && m.Endpoint.Name == binding.Operator && m.Arity == binding.Arity))
                 throw new InputException(ErrorCode.InvalidTrace, "Model action mapping disagrees with manifest.");
@@ -94,11 +112,13 @@ public static class TraceValidation
             if (new[] { "actor", "operation", "connection" }.Any(name =>
                 entry.GetProperty(name).ValueKind is not (JsonValueKind.Number or JsonValueKind.String)))
                 throw new InputException(ErrorCode.InvalidTrace, "Trace identities require integers or strings.");
+            List<string> parameters = (binding.Arity - argumentValues.Count) switch {
+                0 => [], 1 => [actor], 2 => [actor, operation], 3 when binding.Entity => [actor, operation, entityValue!],
+                _ => throw new InputException(ErrorCode.InvalidTrace, "Unsupported identity arity or missing entity.")
+            };
+            parameters.AddRange(argumentValues);
             string action = binding.Classification == "stutter" ? $"UNCHANGED {Tuple()}" :
-                binding.Operator + (binding.Arity switch {
-                    0 => "", 1 => $"({actor})", 2 => $"({actor},{operation})",
-                    3 when binding.Entity => $"({actor},{operation},{entityValue})",
-                    _ => throw new InputException(ErrorCode.InvalidTrace, "Unsupported action arity or missing entity.") });
+                binding.Operator + (parameters.Count == 0 ? "" : "(" + string.Join(",", parameters) + ")");
             if (binding.Classification == "transition") actionNames.Add(binding.Operator);
             JsonElement observations = entry.GetProperty("observations");
             if (observations.EnumerateObject().Count() != binding.Observations.Count)

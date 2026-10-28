@@ -4,6 +4,7 @@
   "kind": "project-component",
   "id": "increment",
   "stages": [
+    { "id": "correspondence", "kind": "inspect", "timeout_seconds": 60, "bindings": "bindings.json" },
     { "id": "regressions", "kind": "csharp-regression", "timeout_seconds": 60, "config": "../regression.json" },
     { "id": "contracts", "kind": "dafny-verify", "timeout_seconds": 60, "config": "dafny.json" }
   ],
@@ -12,7 +13,7 @@
       "id": "source-correspondence",
       "claim": "Review the correspondence between the selected C# implementation, test assertions, Dafny preconditions and arithmetic model.",
       "assumptions": ["The proof concerns its supplied Dafny implementation, not arbitrary C# inputs or executions."],
-      "inputs": ["../Program.cs", "Increment.dfy", "../regression.json", "dafny.json"]
+      "inputs": ["../Program.cs", "../Increment.cs", "Increment.dfy", "../regression.json", "dafny.json", "bindings.json", "scope.json"]
     }
   ]
 }

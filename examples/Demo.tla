@@ -1,15 +1,15 @@
 ---------------------------- MODULE Demo ----------------------------
 EXTENDS Naturals
 
-(* @link
-model demo;
-*)
+
 
 (* --algorithm Lifecycle
 variables active = 0;
 begin
+(* @link {"bind":[{"id":"demo::Admit"}]} *)
 Admit:
     active := active + 1;
+(* @link {"bind":[{"id":"demo::Release"}]} *)
 Release:
     active := active - 1;
 end algorithm; *)
@@ -42,8 +42,7 @@ Termination == <>(pc = "Done")
 
 \* END TRANSLATION 
 
-(* @link
-state active;
-*)
+
+(* @link {"bind":[{"id":"demo::active"}]} *)
 ObservedActive == active
 ====================================================================

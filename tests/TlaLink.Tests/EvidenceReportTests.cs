@@ -74,6 +74,53 @@ public static class EvidenceReportTests
             CoreTests.Equal(2, TestCli.Run(["report", "--manifest", fixture.Manifest, "--output", output]).Code);
             CoreTests.Equal(markdown, Files.Read(output));
         });
+        test("report expands inventoried regions using explicit file defaults and symbol dispositions", () =>
+        {
+            string directory = Directory.CreateDirectory(Path.Combine(work, "inventory-report")).FullName;
+            string source = Path.Combine(directory, "Sample.cs"), marker = Path.Combine(directory, "Marker.cs");
+            File.WriteAllText(source, "class Sample { int item; void Change() { item++; } void Excluded() {} }");
+            File.WriteAllText(marker, "class Marker {}");
+            string inventoryPath = Path.Combine(directory, "inventory.json");
+            SourceInventoryResult inventory = SourceInventory.Build([source, marker]);
+            CoreTests.Equal("ready", inventory.Status);
+            Files.WriteNew(inventoryPath, inventory);
+            ReportSourceDisposition baseline = new("Sample.cs", "synthetic", "inventory-only", [], "Authored scope, not tested code.");
+            ReportSourceDisposition empty = baseline with { File = "Marker.cs", Disposition = "source-pin-only" };
+            ReportSourceDisposition excluded = baseline with { SymbolPrefix = "M:Sample.Excluded", Disposition = "excluded-implementation" };
+            EvidenceReportManifest value = new(Schema.Version, "evidence-report", "Inventoried source presentation",
+                "Synthetic authored dispositions, not validated code.",
+                new() { ["Sample.cs"] = Files.Hash(source), ["Marker.cs"] = Files.Hash(marker), ["inventory.json"] = Files.Hash(inventoryPath) },
+                [new("inventory", "audit", "Source facts", "Resolved selected source facts only.", "ready", "ready", [], ["inventory.json"], [], [])],
+                [], [], [], [new("inventory.json", [baseline, empty, excluded])]);
+            (int Code, string Json, string Markdown) Render(EvidenceReportManifest manifest)
+            {
+                string path = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".json"), output = path + ".md";
+                Files.WriteNew(path, manifest);
+                var result = TestCli.Run(["report", "--manifest", path, "--output", output, "--format", "summary"]);
+                return (result.Code, result.Json, File.Exists(output) ? Files.Read(output) : "");
+            }
+            var good = Render(value);
+            if (good.Code != 0) throw new InvalidOperationException(good.Json);
+            using (JsonDocument summary = JsonDocument.Parse(good.Json))
+                CoreTests.Equal(inventory.MemberCount + 1, summary.RootElement.GetProperty("code_regions").GetInt32());
+            CoreTests.True(good.Markdown.Contains("excluded-implementation", StringComparison.Ordinal));
+            CoreTests.True(good.Markdown.Contains("source-pin-only", StringComparison.Ordinal));
+            CoreTests.Equal(2, Render(value with { SourceInventories = [new("inventory.json", [baseline, excluded])] }).Code);
+            CoreTests.Equal(2, Render(value with { SourceInventories = [new("inventory.json", [baseline, empty, excluded,
+                excluded with { SymbolPrefix = "M:Sample." }])] }).Code);
+            CoreTests.Equal(2, Render(value with { SourceInventories = [new("inventory.json", [baseline, empty,
+                excluded with { SymbolPrefix = "M:Sample.Absent" }])] }).Code);
+            File.AppendAllText(source, "\n// changed source");
+            var stale = Render(value);
+            CoreTests.Equal(2, stale.Code);
+            CoreTests.True(stale.Json.Contains("RP002", StringComparison.Ordinal));
+            CoreTests.True(!stale.Markdown.Contains("]:::matched", StringComparison.Ordinal));
+            File.WriteAllText(inventoryPath, "{}");
+            var changedInventory = Render(value);
+            CoreTests.Equal(2, changedInventory.Code);
+            CoreTests.True(changedInventory.Json.Contains("RP002", StringComparison.Ordinal));
+            CoreTests.True(changedInventory.Markdown.Contains("STALE snapshot", StringComparison.Ordinal));
+        });
         test("report renders stale or missing inputs explicitly and removes all green matches", () =>
         {
             var fixture = Fixture();

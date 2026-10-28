@@ -77,6 +77,14 @@ public final class TlaIndex {
             entries.add("{\"kind\":\"operator-level\",\"name\":" + quote(operator.getName().toString())
                 + ",\"level\":" + operator.getLevel() + "}");
         }
+        for (tla2sany.semantic.OpDeclNode variable : specification.getRootModule().getVariableDecls()) {
+            Location place = variable.getLocation();
+            if (!place.source().equals(module)) {
+                continue;
+            }
+            entries.add(entry("variable", variable.getName().toString(), module,
+                place.beginLine(), place.beginColumn(), place.endLine(), place.endColumn()));
+        }
         if (args.length > 1) {
             parsePlusCal(path, args, module);
         }

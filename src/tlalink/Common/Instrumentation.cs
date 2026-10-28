@@ -11,7 +11,12 @@ namespace TlaLink;
 public sealed record Observation(string Id, string Operator, string Type, [property: JsonRequired] int Arity = 0);
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record EventBinding(string Model, string Step, string Operator, int Arity, string Point,
-    string Classification, List<Observation> Observations, [property: JsonRequired] bool Entity = false);
+    string Classification, List<Observation> Observations, [property: JsonRequired] bool Entity = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] List<string>? ArgumentTypes = null)
+{
+    [JsonRequired]
+    public string Binding { get; init; } = "";
+}
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record InstrumentManifest(int SchemaVersion, string BindingId, Dictionary<string, string> Fingerprints,
     Dictionary<string, string> GeneratedFiles, List<EventBinding> Events, string Boundary)
@@ -36,6 +41,17 @@ public static class Instrumentation
             manifest.BindingId != Files.HashText(JsonSerializer.Serialize(new { manifest.Fingerprints, manifest.Events }, Files.Json)) ||
             manifest.Events.Select(e => (e.Model, e.Step)).Distinct().Count() != manifest.Events.Count)
             throw new InputException(ErrorCode.InvalidTrace, "Binding manifest identity or event uniqueness is invalid.");
+        foreach (EventBinding binding in manifest.Events)
+        {
+            if (!Markup.IsCorrespondenceId(binding.Binding) || Markup.Name(binding.Binding).Alias != binding.Model)
+                throw new InputException(ErrorCode.InvalidTrace, "An event must identify its paired correspondence.");
+            int count = binding.ArgumentTypes?.Count ?? 0, identities = binding.Arity - count;
+            if (binding.ArgumentTypes != null && (count is < 1 or > 8 ||
+                binding.ArgumentTypes.Any(t => t is not ("int" or "bool" or "string"))) ||
+                identities is < 0 or > 3 || identities == 3 && !binding.Entity ||
+                count > 0 && binding.Classification != "transition")
+                throw new InputException(ErrorCode.InvalidTrace, "Invalid action argument types or identity/action arity.");
+        }
         return manifest;
     }
 
@@ -47,7 +63,8 @@ public static class Instrumentation
                 string.Join("; ", packet.Diagnostics.Take(8).Select(d => d.Code + ": " + d.Message)));
         output = FilePaths.Full(output);
         if (Directory.Exists(output) || File.Exists(output)) throw new InputException(ErrorCode.UnresolvedInstrumentation, "Instrumentation output must be a new directory.");
-        List<SourceBinding> executable = scope.Bindings.Where(b => b.Tag.Kind == "step" && b.Tag.Options.ContainsKey("point")).ToList();
+        List<SourceBinding> executable = scope.Bindings.Where(b => b.Tag.Kind == "step" && b.Tag.Options.ContainsKey("point") &&
+            (scope.SelectedTargets == null || scope.SelectedTargets.Contains(b.Model))).ToList();
         if (executable.Count == 0) throw new InputException(ErrorCode.UnresolvedInstrumentation, "No executable observation points.");
         List<EventBinding> events = [];
         Dictionary<string, List<TextChange>> changes = [];
@@ -84,13 +101,18 @@ public static class Instrumentation
             Tag tag = binding.Tag;
             string point = tag.Options["point"];
             string classification = tag.Options.GetValueOrDefault("classification", "unresolved");
-            if (classification == "unresolved" || point == "fault")
+            bool usingCapture = CleanupInstrumentation.IsUsing(binding.Node);
+            if ((usingCapture || point == "fault") && tag.Options.ContainsKey("hook"))
+                throw new InputException(ErrorCode.InvalidInstrumentation, "Cleanup/fault capture does not generate scheduling hooks.");
+            if (classification == "unresolved")
                 throw new InputException(ErrorCode.InvalidInstrumentation, "Unresolved or fault observation requires a reviewed capture implementation; not generated.");
             bool controlTransfer = binding.Node is ReturnStatementSyntax or ThrowStatementSyntax or SwitchStatementSyntax;
-            if (binding.Node is not (ExpressionStatementSyntax or LocalDeclarationStatementSyntax) && !controlTransfer ||
+            if (usingCapture && point is not ("cleanup" or "fault") ||
+                !usingCapture && (binding.Node is not (ExpressionStatementSyntax or LocalDeclarationStatementSyntax) && !controlTransfer ||
                 controlTransfer && point != "invoke" ||
-                binding.Node is LocalDeclarationStatementSyntax local && !local.UsingKeyword.IsKind(SyntaxKind.None) ||
-                binding.Node.Parent is not (BlockSyntax or SwitchSectionSyntax))
+                binding.Node.Parent is not (BlockSyntax or SwitchSectionSyntax)) ||
+                point == "fault" && !usingCapture && (binding.Node is not ExpressionStatementSyntax ||
+                    binding.Node.DescendantNodes().Any(n => n is DeclarationExpressionSyntax) || binding.Locks.Count != 0))
                 throw new InputException(ErrorCode.InvalidInstrumentation, "Capture requires expression statements, ordinary local declarations, or invoke-only return/throw/switch statements in a block/switch section; using declarations are not completion points.");
             if (binding.Node.DescendantNodes().Any(n => n is AnonymousFunctionExpressionSyntax))
                 throw new InputException(ErrorCode.InvalidInstrumentation, "Nested lambda capture is unsupported.");
@@ -99,10 +121,34 @@ public static class Instrumentation
                 ? InvocationIdentity(binding) : RequiredIdentity(binding, "operation");
             string? entity = tag.Options.TryGetValue("entity", out string? identity) ? Scalar(binding, identity, identity: true) : null;
             string connection = tag.Options.TryGetValue("connection", out string? c) ? Scalar(binding, c, identity: true) : "0L";
+            List<string> arguments = [], argumentTypes = [];
+            if (tag.Options.TryGetValue("arguments", out string? argumentList))
+            {
+                if (binding.Capture?.Arguments is not { } declaredArguments ||
+                    declaredArguments.Any(value => SyntaxFactory.ParseExpression(value).ContainsDiagnostics))
+                    throw new InputException(ErrorCode.InvalidInstrumentation, "Each arguments array entry must be one complete C# expression.");
+                ArgumentListSyntax parsed = SyntaxFactory.ParseArgumentList("(" + argumentList + ")");
+                string[] expressions = parsed.Arguments.Select(a => a.Expression.ToString()).ToArray();
+                if (parsed.ContainsDiagnostics || parsed.Arguments.Any(a => a.NameColon != null || !a.RefKindKeyword.IsKind(SyntaxKind.None)) ||
+                    expressions.Length is < 1 or > 8 || classification != "transition")
+                    throw new InputException(ErrorCode.InvalidInstrumentation, "Action arguments require 1..8 scalar locals, parameters or literals on a transition.");
+                foreach (string expression in expressions)
+                {
+                    ExpressionSyntax syntax = SyntaxFactory.ParseExpression(expression);
+                    ISymbol? symbol = binding.Semantics.GetSpeculativeSymbolInfo(binding.Node.SpanStart, syntax, SpeculativeBindingOption.BindAsExpression).Symbol;
+                    if (syntax is not (LiteralExpressionSyntax or PrefixUnaryExpressionSyntax) &&
+                        (syntax is not IdentifierNameSyntax || symbol is not (ILocalSymbol or IParameterSymbol)))
+                        throw new InputException(ErrorCode.InvalidInstrumentation, "Action arguments capture locals, parameters or literals, not fields, getters, references or calls.");
+                    arguments.Add(Scalar(binding, expression, identity: false));
+                    ITypeSymbol? type = binding.Semantics.GetSpeculativeTypeInfo(binding.Node.SpanStart, syntax, SpeculativeBindingOption.BindAsExpression).Type;
+                    argumentTypes.Add(type == null ? throw new InputException(ErrorCode.InvalidInstrumentation, "Unresolved action argument type.") : TypeName(type));
+                }
+            }
             ModelBinding? action = models.SingleOrDefault(m => m.Model == binding.Model && m.Tag.Kind == "step" && m.Tag.Identity == tag.Identity);
             if (classification == "transition" && action is null) throw new InputException(ErrorCode.InvalidInstrumentation, "Observable transition has no model action.");
-            if (action is not null && (action.Arity is < 0 or > 3 || action.Arity == 3 && entity == null))
-                throw new InputException(ErrorCode.InvalidInstrumentation, "Trace actions take 0, actor, actor+operation, or actor+operation+explicit entity.");
+            int identities = (action?.Arity ?? 0) - arguments.Count;
+            if (action is not null && (identities is < 0 or > 3 || identities == 3 && entity == null))
+                throw new InputException(ErrorCode.InvalidInstrumentation, "Action arity must match 0..3 identity parameters followed by the declared scalar arguments.");
             List<Observation> observed = [];
             List<string> values = [];
             ISymbol? guardSymbol = null;
@@ -139,9 +185,13 @@ public static class Instrumentation
             if (tag.Options.ContainsKey("hook") && binding.Locks.Count != 0)
                 throw new InputException(ErrorCode.InvalidInstrumentation, "Scheduling hooks inside held source locks are not generated.");
             EventBinding eventBinding = new(binding.Model, tag.Identity, action?.Endpoint.Name ?? "", action?.Arity ?? 0,
-                point, classification, observed, entity is not null);
+                point, classification, observed, entity is not null, argumentTypes.Count == 0 ? null : argumentTypes)
+                { Binding = binding.BindingId };
             events.Add(eventBinding);
-            string emit = $"global::TlaLink.Runtime.TraceRuntime.{(entity is null ? "Emit" : "EmitEntity")}(BINDING_ID, {Quote(binding.Model)}, {Quote(tag.Identity)}, {Quote(point)}, {Quote(classification)}, {connection}, {actor}, {operation}, {(entity is null ? "" : entity + ", ")}{guard}, new global::System.Collections.Generic.Dictionary<string, object> {{ {string.Join(", ", values)} }});";
+            string method = arguments.Count > 0 ? "EmitArguments" : entity is null ? "Emit" : "EmitEntity";
+            string extra = arguments.Count > 0 ? (entity ?? "null") + ", new object[] { " + string.Join(", ", arguments) + " }, " :
+                entity == null ? "" : entity + ", ";
+            string emit = $"global::TlaLink.Runtime.TraceRuntime.{method}(BINDING_ID, {Quote(binding.Model)}, {Quote(tag.Identity)}, {Quote(point)}, {Quote(classification)}, {connection}, {actor}, {operation}, {extra}{guard}, new global::System.Collections.Generic.Dictionary<string, object> {{ {string.Join(", ", values)} }});";
             string before = point == "invoke" ? emit : "";
             string after = point != "invoke" ? emit : "";
             if (tag.Options.TryGetValue("hook", out string? hook))
@@ -155,13 +205,30 @@ public static class Instrumentation
         if (events.Select(e => (e.Model, e.Step)).Distinct().Count() != events.Count)
             throw new InputException(ErrorCode.InvalidInstrumentation, "Observable step IDs must be unique; use distinct invocation/completion bindings.");
         string bindingId = Files.HashText(JsonSerializer.Serialize(new { packet.Fingerprints, Events = events }, Files.Json));
-        foreach (var capture in captures)
+        Dictionary<(string Path, int Position), List<(int Start, string Text)>> closers = [];
+        foreach (var group in captures.GroupBy(c => (c.Binding.Path, c.Binding.Node.SpanStart)))
         {
-            if (!changes.TryGetValue(capture.Binding.Path, out List<TextChange>? edits))
-                changes[capture.Binding.Path] = edits = [];
-            if (capture.Before.Length != 0) edits.Add(new(new TextSpan(capture.Binding.Node.SpanStart, 0), capture.Before.Replace("BINDING_ID", Quote(bindingId), StringComparison.Ordinal) + "\n"));
-            if (capture.After.Length != 0) edits.Add(new(new TextSpan(capture.Binding.Node.Span.End, 0), "\n" + capture.After.Replace("BINDING_ID", Quote(bindingId), StringComparison.Ordinal) + "\n"));
+            SourceBinding binding = group.First().Binding;
+            if (!changes.TryGetValue(binding.Path, out List<TextChange>? edits)) changes[binding.Path] = edits = [];
+            string Combine(IEnumerable<string> parts) => string.Join("\n", parts.Where(p => p.Length != 0))
+                .Replace("BINDING_ID", Quote(bindingId), StringComparison.Ordinal);
+            string fault = Combine(group.Where(c => c.Binding.Tag.Options["point"] == "fault").Select(c => c.After));
+            string after = Combine(group.Where(c => c.Binding.Tag.Options["point"] != "fault").Select(c => c.After));
+            if (CleanupInstrumentation.IsUsing(binding.Node))
+                CleanupInstrumentation.Add(binding, after, fault, edits, closers);
+            else
+            {
+                string before = Combine(group.Select(c => c.Before));
+                if (before.Length != 0 || fault.Length != 0)
+                    edits.Add(new(new TextSpan(binding.Node.SpanStart, 0), before + "\n" + (fault.Length == 0 ? "" : "try {\n")));
+                if (after.Length != 0 || fault.Length != 0)
+                    edits.Add(new(new TextSpan(binding.Node.Span.End, 0),
+                        (fault.Length == 0 ? "" : "\n} catch { " + fault + "\nthrow; }\n") + "\n" + after + "\n"));
+            }
         }
+        foreach (var closer in closers)
+            changes[closer.Key.Path].Add(new(new TextSpan(closer.Key.Position, 0),
+                string.Concat(closer.Value.OrderByDescending(c => c.Start).Select(c => c.Text))));
         Dictionary<string, string> generated = [];
         // Validate every rewrite before creating the output directory.
         Dictionary<string, string> rewritten = [];
@@ -170,7 +237,11 @@ public static class Instrumentation
         {
             string name = Path.GetFileName(pair.Key);
             if (!namesUsed.Add(name)) throw new InputException(ErrorCode.InvalidInstrumentation, "Duplicate source basenames; supply an unambiguous explicit scope.");
-            string text = SourceText.From(pair.Value).WithChanges(changes.GetValueOrDefault(pair.Key, [])).ToString();
+            List<TextChange> edits = changes.GetValueOrDefault(pair.Key, []).GroupBy(c => c.Span)
+                .Select(g => g.Count() == 1 ? g.First() : g.Key.Length == 0
+                    ? new TextChange(g.Key, string.Concat(g.Select(c => c.NewText)))
+                    : throw new InputException(ErrorCode.InvalidInstrumentation, "Overlapping source rewrites are unsupported.")).ToList();
+            string text = SourceText.From(pair.Value).WithChanges(edits).ToString();
             rewritten[name] = text;
         }
         string runtime = Path.Combine(AppContext.BaseDirectory, "TraceRuntime.source.cs");
@@ -191,7 +262,8 @@ public static class Instrumentation
             generated[path] = Files.Hash(path);
         }
         InstrumentManifest manifest = new(Schema.Version, bindingId, new(packet.Fingerprints), generated, events,
-            "Test-only Roslyn instrumentation; lock-field capture checked, but atomicity, full source coverage, host authenticity and general refinement are not proved.");
+            "Test-only Roslyn instrumentation; selected synchronous reference IDisposable lifetimes and statement faults are explicit. " +
+            "Lock-field capture checked, but atomicity, full source coverage, host authenticity and general refinement are not proved.");
         Files.WriteNew(Path.Combine(output, "bindings.json"), manifest);
         return manifest;
     }

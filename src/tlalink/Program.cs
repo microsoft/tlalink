@@ -13,6 +13,7 @@ public static class Program
         try
         {
             options = new(args);
+            if (options.Command is "prepare-sources" or "check-prepared-sources") return SourcePreparation.Run(options);
             if (CliOptions.AnnotationCommands.Contains(options.Command, StringComparer.Ordinal))
                 Markup.RequireVersion(options.AnnotationVersion);
             if (options.Command == "inspect-source") return SourceInventory.Run(options);
@@ -35,8 +36,17 @@ public static class Program
                 return 0;
             }
             string jar = FilePaths.Full(options.Required("jar"));
-            List<string> modelPaths = Files.Discover(options.Many("model"), ".tla");
+            Dictionary<string, string> scopePins = new(FilePaths.Comparer);
+            CorrespondenceConfiguration? correspondence = options.Command == "inputs" ? null :
+                CorrespondenceInputs.Load(options.Required("scope"), scopePins);
+            string? alias = correspondence == null ? null : options.Required("target");
+            FormalTarget? target = correspondence == null ? null : CorrespondenceInputs.Target(correspondence, alias!, "tla");
+            List<string> modelPaths = target?.Inputs ?? Files.Discover(options.Many("model"), ".tla");
+            if (target != null && options.Many("model").Count != 0 &&
+                !Files.Discover(options.Many("model"), ".tla").SequenceEqual(target.Inputs, FilePaths.Comparer))
+                throw new InputException(ErrorCode.InvalidModelBinding, "--model contradicts the selected correspondence target.");
             ModelScope models = ModelScope.Load(modelPaths, jar, options.Timeout, annotations: options.Command != "inputs");
+            foreach (var pin in scopePins) Files.Pin(models.Fingerprints, pin.Key, pin.Value);
             PinTool(models.Fingerprints);
             Files.Pin(models.Fingerprints, jar, Files.Hash(jar));
             string adapter = Path.Combine(AppContext.BaseDirectory, "TlaIndex.java");
@@ -52,6 +62,13 @@ public static class Program
             }
             if (options.Command == "validate-trace")
             {
+                InstrumentManifest manifest = Instrumentation.ReadManifest(options.Required("manifest"));
+                string scopePath = FilePaths.Full(options.Required("scope"));
+                if (!manifest.Fingerprints.TryGetValue(scopePath, out string? scopeHash) || scopeHash != Files.Hash(scopePath))
+                    throw new InputException(ErrorCode.InvalidTrace, "Trace validation must reuse the instrumented correspondence scope and its pinned bytes.");
+                if (manifest.Events.Any(e => e.Model != alias))
+                    throw new InputException(ErrorCode.InvalidTrace, "Manifest events disagree with the selected target alias.");
+                models.BindManifest(manifest, correspondence!);
                 if (models.Documents.Count != 1 || models.Diagnostics.Any(d => d.Severity == "error" || d.Is(ErrorCode.StaleTranslation, ErrorCode.ToolFailure)))
                     throw new InputException(ErrorCode.InvalidTrace, "Trace validation requires one successfully parsed, fresh root model.");
                 TlaDocument document = models.Documents.Single();
@@ -65,6 +82,9 @@ public static class Program
             }
             CSharpScope source = CSharpScope.Parse(Files.Discover(options.Many("source"), ".cs"),
                 options.Many("reference"), options.Has("define") ? options.Many("define") : null);
+            source.ApplyCorrespondence(correspondence!);
+            source.SelectedTargets = new(StringComparer.Ordinal) { alias! };
+            models.BindSources(source, correspondence!, alias);
             Packet packet = Review.Build(options.Command, source, models.Bindings, models.Diagnostics, models.Fingerprints,
                 options.Command == "review" ? options.Required("step") : null, models.Inventory);
             if (options.Optional("baseline") is string baseline) Baseline(baseline, packet);

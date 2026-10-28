@@ -2,7 +2,7 @@
   "$schema": "../../schemas/project.schema.json",
   "schema_version": 4,
   "kind": "analysis-project",
-  "annotation_version": 2,
+  "annotation_version": 4,
   "id": "apalache-credit",
   "tools": {
     "jar": {
@@ -24,6 +24,15 @@
   },
   "requirements": "verification/requirements.json",
   "review_directory": "verification/reviews",
-  "components": ["Credit/component.json"],
-  "scenarios": [{ "id": "credit", "components": ["credit"] }]
+  "components": [
+    "Credit/component.json"
+  ],
+  "scenarios": [
+    {
+      "id": "credit",
+      "components": [
+        "credit"
+      ]
+    }
+  ]
 }

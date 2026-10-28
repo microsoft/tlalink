@@ -2,6 +2,20 @@ namespace TlaLink;
 
 public enum ErrorCode
 {
+    [DiagnosticInfo("SC003", IssueSeverity.Error)]
+    MissingImplementationEndpoint,
+    [DiagnosticInfo("SC001", IssueSeverity.Error)]
+    OmissionBoundaryConflict,
+    [DiagnosticInfo("SC002", IssueSeverity.Warning)]
+    OmissionBoundaryIncomplete,
+    [DiagnosticInfo("SO001", IssueSeverity.Error)]
+    InvalidSourceObligation,
+    [DiagnosticInfo("SO100", IssueSeverity.Error)]
+    SourceObligationRejected,
+    [DiagnosticInfo("SO200", IssueSeverity.Error)]
+    SourceObligationIncomplete,
+    [DiagnosticInfo("SP001", IssueSeverity.Error)]
+    InvalidSourcePreparation,
     [DiagnosticInfo("RP001", IssueSeverity.Error)]
     InvalidReportInput,
     [DiagnosticInfo("RP002", IssueSeverity.Warning)]

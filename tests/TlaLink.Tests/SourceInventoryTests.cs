@@ -13,6 +13,37 @@ public static class SourceInventoryTests
 
     public static void Register(Action<string, Action> test, string work)
     {
+        test("source flow records resolved branch calls ref arguments and effect-block dominance", () =>
+        {
+            string flowDirectory = Directory.CreateDirectory(Path.Combine(work, "source-flow")).FullName;
+            string path = Path.Combine(flowDirectory, "Once.cs");
+            File.WriteAllText(path, """
+                using System.Threading;
+                class Once {
+                    int stamp;
+                    public void Release() {
+                        if (Interlocked.Exchange(ref stamp, 1) != 0) return;
+                        Effect();
+                    }
+                    void Effect() {}
+                }
+                """);
+            SourceInventoryResult result = SourceInventory.Build([path]);
+            CoreTests.Equal("ready", result.Status);
+            SourceControlFlow flow = result.Members.Single(m => m.Symbol == "M:Once.Release").Flow!;
+            SourceFlowCall gate = flow.Calls.Single(c => c.Target.Contains("Interlocked.Exchange", StringComparison.Ordinal));
+            SourceFlowCall effect = flow.Calls.Single(c => c.Target == "M:Once.Effect");
+            CoreTests.True(flow.Blocks.Single(b => b.Id == effect.Block).Dominators.Contains(gate.Block));
+            CoreTests.Equal("Ref", gate.Arguments[0].RefKind);
+            CoreTests.Equal("F:Once.stamp", gate.Arguments[0].Symbol);
+            CoreTests.True(flow.Blocks.Any(b => b.ConditionKind != "None" && b.Condition != null));
+            File.WriteAllText(path, Files.Read(path).Replace("if (Interlocked.Exchange(ref stamp, 1) != 0) return;",
+                "if (stamp == 0) { Interlocked.Exchange(ref stamp, 1); }", StringComparison.Ordinal));
+            SourceControlFlow wrong = SourceInventory.Build([path]).Members.Single(m => m.Symbol == "M:Once.Release").Flow!;
+            SourceFlowCall conditionalGate = wrong.Calls.Single(c => c.Target.Contains("Interlocked.Exchange", StringComparison.Ordinal));
+            SourceFlowCall unguardedEffect = wrong.Calls.Single(c => c.Target == "M:Once.Effect");
+            CoreTests.True(!wrong.Blocks.Single(b => b.Id == unguardedEffect.Block).Dominators.Contains(conditionalGate.Block));
+        });
         string directory = Directory.CreateDirectory(Path.Combine(work, "source-inventory")).FullName;
         string source = Path.Combine(directory, "Fixture.cs");
         File.WriteAllText(source, """
@@ -50,19 +81,19 @@ public static class SourceInventoryTests
         test("source inventory CLI retains context and diagnostics without claiming model coverage", () =>
         {
             string output = Path.Combine(directory, "inventory.json");
-            var response = TestCli.Run(["inspect-source", "--annotation-version", "2", "--source", source,
+            var response = TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", source,
                 "--output", output, "--format", "summary"]);
             if (response.Code != 0) throw new InvalidOperationException(response.Json);
             using JsonDocument document = JsonDocument.Parse(response.Json);
             CoreTests.Equal("source-inventory", document.RootElement.GetProperty("result_kind").GetString());
             CoreTests.True(!document.RootElement.TryGetProperty("members", out _));
-            CoreTests.Equal(2, document.RootElement.GetProperty("annotation_version").GetInt32());
+            CoreTests.Equal(4, document.RootElement.GetProperty("annotation_version").GetInt32());
             SourceInventoryResult saved = ProjectInputs.Read<SourceInventoryResult>(output);
             CoreTests.True(saved.Boundaries.Any(b => b.Contains("not model coverage", StringComparison.Ordinal)));
-            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "2", "--source", source, "--output", output]).Code);
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", source, "--output", output]).Code);
             string unresolved = Path.Combine(directory, "Unresolved.cs");
             File.WriteAllText(unresolved, "class Unresolved { MissingType Run() => null; }");
-            var bad = TestCli.Run(["inspect-source", "--annotation-version", "2", "--source", unresolved]);
+            var bad = TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", unresolved]);
             CoreTests.Equal(2, bad.Code);
             using JsonDocument incomplete = JsonDocument.Parse(bad.Json);
             CoreTests.Equal("incomplete", incomplete.RootElement.GetProperty("status").GetString());
@@ -79,7 +110,7 @@ public static class SourceInventoryTests
                 #endif
                 """);
             string reference = typeof(object).Assembly.Location;
-            var response = TestCli.Run(["inspect-source", "--annotation-version", "2", "--source", path,
+            var response = TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", path,
                 "--framework-references", "explicit", "--reference", reference, "--nullable", "disable",
                 "--define", "CONTEXT", "--format", "summary"]);
             if (response.Code != 0) throw new InvalidOperationException(response.Json);
@@ -94,9 +125,9 @@ public static class SourceInventoryTests
             CSharpScope scope = CSharpScope.Parse([path], [reference], ["CONTEXT"],
                 Microsoft.CodeAnalysis.NullableContextOptions.Disable, false);
             CoreTests.Equal(reference, scope.Compilation.References.Single().Display);
-            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "2", "--source", path,
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", path,
                 "--framework-references", "explicit"]).Code);
-            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "2", "--source", path,
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", path,
                 "--nullable", "guess"]).Code);
         });
         test("review-only invocation links identify callbacks without inheriting their creation lock", () =>
@@ -105,15 +136,15 @@ public static class SourceInventoryTests
             string text = """
                 using System;
                 using System.Threading;
-                /* @link model Calls; */
+
                 sealed class Calls {
                     readonly object gate = new();
                     Action callback = () => {};
                     void Setup(CancellationToken token) {
                         lock (gate) {
-                            callback = () => /* @link step Callback; */ GC.KeepAlive(1);
+                            callback = () => /* @link {"bind":[{"id":"Calls::Callback"}]} */ GC.KeepAlive(1);
                         }
-                        using (/* @link step Register; */ token.Register(callback)) {}
+                        using (/* @link {"bind":[{"id":"Calls::Register"}]} */ token.Register(callback)) {}
                     }
                 }
                 """;
@@ -121,8 +152,9 @@ public static class SourceInventoryTests
             CSharpScope scope = CSharpScope.Parse([path]);
             CoreTests.True(scope.Diagnostics.All(d => d.Severity != "error"));
             CoreTests.Equal(2, scope.Bindings.Count);
-            CoreTests.Equal(0, scope.Bindings.Single(b => b.Tag.Identity == "Callback").Locks.Count);
-            File.WriteAllText(path, text.Replace("step Callback;", "step Callback point=commit actor=\"1\" operation=\"1\";"));
+            CoreTests.Equal(0, scope.Bindings.Single(b => b.BindingId == "Calls::Callback").Locks.Count);
+            File.WriteAllText(path, text.Replace("\"id\":\"Calls::Callback\"}]}",
+                "\"id\":\"Calls::Callback\"}],\"capture\":[{\"binding\":\"Calls::Callback\",\"point\":\"commit\",\"classification\":\"transition\",\"actor\":\"1\",\"operation\":\"1\"}]}"));
             CoreTests.True(CSharpScope.Parse([path]).Diagnostics.Any(d => d.Severity == "error"));
         });
         test("automatic capture cannot claim a lock held only when the callback was created", () =>
@@ -130,16 +162,16 @@ public static class SourceInventoryTests
             string path = Path.Combine(directory, "CallbackCapture.cs");
             File.WriteAllText(path, """
                 using System;
-                /* @link model CallbackCapture; */
+
                 class CallbackCapture {
                     readonly object gate = new();
-                    /* @link state Value guard=gate type=int; */
+                    /* @link {"bind":[{"id":"CallbackCapture::Value"}],"capture":[{"binding":"CallbackCapture::Value","guard":"gate","type":"int"}]} */
                     int value;
                     Action callback = () => {};
                     void Setup() {
                         lock (gate) {
                             callback = () => {
-                                /* @link step Change point=commit actor="1" operation="1" classification=transition observe=Value; */
+                                /* @link {"bind":[{"id":"CallbackCapture::Change"}],"capture":[{"binding":"CallbackCapture::Change","point":"commit","actor":"1","operation":"1","classification":"transition","observe":["CallbackCapture::Value"]}]} */
                                 value++;
                             };
                         }
@@ -158,15 +190,15 @@ public static class SourceInventoryTests
             string path = Path.Combine(directory, "EnumIdentity.cs");
             string text = """
                 enum Role { Client, Server }
-                /* @link model EnumIdentity; */
+
                 class EnumIdentity {
                     readonly object gate = new();
                     readonly Role role = Role.Client;
-                    /* @link state Value guard=gate type=int; */
+                    /* @link {"bind":[{"id":"EnumIdentity::Value"}],"capture":[{"binding":"EnumIdentity::Value","guard":"gate","type":"int"}]} */
                     int value;
                     void Change() {
                         lock (gate) {
-                            /* @link step Change point=commit actor=role entity=role operation="1" classification=transition observe=Value; */
+                            /* @link {"bind":[{"id":"EnumIdentity::Change"}],"capture":[{"binding":"EnumIdentity::Change","point":"commit","actor":"role","entity":"role","operation":"1","classification":"transition","observe":["EnumIdentity::Value"]}]} */
                             value = 1;
                         }
                     }
@@ -199,14 +231,14 @@ public static class SourceInventoryTests
         {
             string path = Path.Combine(directory, "LocalCapture.cs");
             string text = """
-                /* @link model Locals; */
+
                 class Locals {
                     readonly object gate = new();
-                    /* @link state Value guard=gate type=int; */
+                    /* @link {"bind":[{"id":"Locals::Value"}],"capture":[{"binding":"Locals::Value","guard":"gate","type":"int"}]} */
                     int value;
                     void Change() {
                         lock (gate) {
-                            /* @link step Change point=commit actor=this operation="1" classification=transition observe=Value; */
+                            /* @link {"bind":[{"id":"Locals::Change"}],"capture":[{"binding":"Locals::Change","point":"commit","actor":"this","operation":"1","classification":"transition","observe":["Locals::Value"]}]} */
                             int result = value = 1;
                         }
                     }
@@ -233,17 +265,17 @@ public static class SourceInventoryTests
         {
             string path = Path.Combine(directory, "CallIdentity.cs");
             File.WriteAllText(path, """
-                /* @link model Calls; */
+
                 class Calls {
                     string __tlalinkOperation0 = "";
                     readonly object gate = new();
-                    /* @link state Value guard=gate type=int; */
+                    /* @link {"bind":[{"id":"Calls::Value"}],"capture":[{"binding":"Calls::Value","guard":"gate","type":"int"}]} */
                     int value;
                     void Change() {
                         lock (gate) {
-                            /* @link step First actor=this operation="$call" point=commit classification=transition observe=Value; */
+                            /* @link {"bind":[{"id":"Calls::First"}],"capture":[{"binding":"Calls::First","actor":"this","operation":"$call","point":"commit","classification":"transition","observe":["Calls::Value"]}]} */
                             value = 1;
-                            /* @link step Second actor=this operation="$call" point=commit classification=transition observe=Value; */
+                            /* @link {"bind":[{"id":"Calls::Second"}],"capture":[{"binding":"Calls::Second","actor":"this","operation":"$call","point":"commit","classification":"transition","observe":["Calls::Value"]}]} */
                             value++;
                         }
                     }
@@ -263,16 +295,16 @@ public static class SourceInventoryTests
         {
             string path = Path.Combine(directory, "Routing.cs");
             string text = """
-                /* @link model Routes; */
+
                 class Router {
                     void Route(Target target, bool fail) {
-                        /* @link step Choose actor=this operation="$call" entity=target point=invoke classification=transition; */
+                        /* @link {"bind":[{"id":"Routes::Choose"}],"capture":[{"binding":"Routes::Choose","actor":"this","operation":"$call","entity":"target","point":"invoke","classification":"transition"}]} */
                         switch (fail) {
                             case true:
-                                /* @link step Reject actor=this operation="$call" entity=target point=invoke classification=transition; */
+                                /* @link {"bind":[{"id":"Routes::Reject"}],"capture":[{"binding":"Routes::Reject","actor":"this","operation":"$call","entity":"target","point":"invoke","classification":"transition"}]} */
                                 throw new System.InvalidOperationException();
                             default:
-                                /* @link step Return actor=this operation="$call" entity=target point=invoke classification=transition; */
+                                /* @link {"bind":[{"id":"Routes::Return"}],"capture":[{"binding":"Routes::Return","actor":"this","operation":"$call","entity":"target","point":"invoke","classification":"transition"}]} */
                                 return;
                         }
                     }
@@ -290,9 +322,9 @@ public static class SourceInventoryTests
             string generated = Path.Combine(directory, "routing-generated");
             CoreTests.True(Generate(generated).Events.All(e => e.Arity == 3 && e.Entity));
             CoreTests.True(Files.Read(Path.Combine(generated, "Routing.cs")).Contains("ObjectIdentity(target)", StringComparison.Ordinal));
-            File.WriteAllText(path, text.Replace("point=invoke", "point=commit"));
+            File.WriteAllText(path, text.Replace("\"point\":\"invoke\"", "\"point\":\"commit\""));
             CoreTests.ThrowsAny<InputException>(() => Generate(Path.Combine(directory, "routing-after")));
-            File.WriteAllText(path, text.Replace("entity=target ", ""));
+            File.WriteAllText(path, text.Replace("\"entity\":\"target\",", ""));
             CoreTests.ThrowsAny<InputException>(() => Generate(Path.Combine(directory, "routing-missing-entity")));
         });
         test("blocked instrumentation retains the diagnostic that requires action", () =>

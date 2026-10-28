@@ -8,6 +8,8 @@
     {
       "id": "execution",
       "kind": "trace",
+      "scope": "scope.json",
+      "target": "WorkflowLanes",
       "depends_on": ["model"],
       "timeout_seconds": 60,
       "sources": ["../Lanes.cs"],

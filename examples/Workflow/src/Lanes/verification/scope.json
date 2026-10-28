@@ -1,0 +1,19 @@
+{
+  "schema_version": 4,
+  "kind": "correspondence-scope",
+  "annotation_version": 4,
+  "targets": [
+    {
+      "id": "WorkflowLanes",
+      "language": "tla",
+      "inputs": [
+        "Lanes.tla"
+      ],
+      "required_bindings": [
+        "WorkflowLanes::Value",
+        "WorkflowLanes::Move"
+      ]
+    }
+  ],
+  "omissions": []
+}

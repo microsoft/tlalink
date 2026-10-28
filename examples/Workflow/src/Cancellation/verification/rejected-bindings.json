@@ -1,14 +1,13 @@
 {
   "schema_version": 4,
   "kind": "integrated-bindings",
-  "sources": ["../Cancellation.cs"],
-  "proofs": ["Rejected.dfy"],
-  "models": [],
+  "sources": [
+    "../Cancellation.cs"
+  ],
+  "scope": "scope.json",
   "bindings": [
     {
-      "id": "bad-inversion",
-      "source": "CancellationChecks.Invert",
-      "dafny": "RejectedSpec.Invert",
+      "id": "rejection-spec::bad-inversion",
       "adapter": null,
       "cases": []
     }

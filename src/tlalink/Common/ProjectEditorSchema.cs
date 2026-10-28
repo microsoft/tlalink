@@ -26,7 +26,8 @@ public static class ProjectEditorSchema
             ("project", "analysis-project", typeof(ProjectAuthoring)),
             ("component", "project-component", typeof(ProjectComponent)),
             ("inputSets", "project-input-sets", typeof(ProjectInputSets)),
-            ("executionProfiles", "project-execution-profiles", typeof(ProjectExecutionProfiles))
+            ("executionProfiles", "project-execution-profiles", typeof(ProjectExecutionProfiles)),
+            ("correspondenceScope", "correspondence-scope", typeof(CorrespondenceConfiguration))
         ];
         foreach (var document in documents)
         {
@@ -35,10 +36,16 @@ public static class ProjectEditorSchema
             JsonObject properties = schema["properties"]!.AsObject();
             properties["schema_version"]!["const"] = Schema.Version;
             properties["kind"]!["const"] = document.Kind;
-            if (document.Kind == "analysis-project")
+            if (document.Kind is "analysis-project" or "correspondence-scope")
             {
                 properties["annotation_version"]!["const"] = Markup.Version;
                 properties["annotation_version"]!.AsObject().Remove("default");
+            }
+            if (document.Kind == "correspondence-scope")
+            {
+                properties["targets"]!["minItems"] = 1;
+                properties["targets"]!["maxItems"] = 1000;
+                properties["omissions"]!["maxItems"] = 1000;
             }
             definitions[document.Name] = schema;
         }
@@ -61,6 +68,35 @@ public static class ProjectEditorSchema
                 obj["$ref"] = prefix + value[1..];
             if (obj["properties"] is JsonObject properties)
             {
+                if (properties.ContainsKey("language") && properties.ContainsKey("inputs") &&
+                    properties.ContainsKey("required_bindings"))
+                {
+                    properties["language"]!["enum"] = new JsonArray("tla", "dafny", "p");
+                    properties["inputs"]!["minItems"] = 1;
+                    properties["inputs"]!["maxItems"] = 1000;
+                    properties["inputs"]!["uniqueItems"] = true;
+                    obj["allOf"] = new JsonArray(new JsonObject {
+                        ["if"] = new JsonObject {
+                            ["properties"] = new JsonObject { ["language"] = new JsonObject { ["const"] = "tla" } },
+                            ["required"] = new JsonArray("language")
+                        },
+                        ["then"] = new JsonObject {
+                            ["required"] = new JsonArray("required_bindings"),
+                            ["properties"] = new JsonObject {
+                                ["inputs"] = new JsonObject { ["maxItems"] = 1 },
+                                ["required_bindings"] = new JsonObject {
+                                    ["type"] = "array", ["minItems"] = 1, ["maxItems"] = 1000, ["uniqueItems"] = true
+                                }
+                            }
+                        },
+                        ["else"] = new JsonObject {
+                            ["properties"] = new JsonObject {
+                                ["required_bindings"] = new JsonObject { ["type"] = "null" },
+                                ["hidden_actions"] = new JsonObject { ["type"] = "null" }
+                            }
+                        }
+                    });
+                }
                 if (properties["timeout_seconds"] is JsonObject timeout)
                 {
                     timeout["minimum"] = 1;

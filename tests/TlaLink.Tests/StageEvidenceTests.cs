@@ -7,6 +7,20 @@ public static class StageEvidenceTests
 {
     public static void RegisterCore(Action<string, Action> test, string root, string work)
     {
+        test("code-adjacent examples declare the implementation endpoints they ask humans to review", () =>
+        {
+            foreach (var example in new[] {
+                (Path: "Components", Source: Path.Combine("src", "Counter", "Counter.cs"),
+                    Ids: new[] { "counter::value", "counter::step" }),
+                (Path: "Evidence", Source: Path.Combine("src", "Increment", "Increment.cs"),
+                    Ids: new[] { "increment-spec::increment" })
+            })
+            {
+                CSharpScope source = CSharpScope.Parse([Path.Combine(root, "examples", example.Path, example.Source)]);
+                CoreTests.True(source.Diagnostics.All(d => d.Severity != "error"));
+                CoreTests.True(source.Bindings.Select(b => b.BindingId).ToHashSet(StringComparer.Ordinal).SetEquals(example.Ids));
+            }
+        });
         test("public project examples retain their approved configuration bytes after checkout", () =>
         {
             foreach (string relative in new[] { "Workflow", "Evidence", "Components" })
@@ -29,8 +43,8 @@ public static class StageEvidenceTests
             CoreTests.Equal(new TlcResources(1, 1024), TlcResources.Effective("trace", null));
             foreach (TlcResources invalid in new[] { new TlcResources(0, 512), new(65, 512), new(1, 127), new(1, 65537) })
                 CoreTests.ThrowsAny<InputException>(() => TlcResources.Effective("tlc", invalid));
-            CoreTests.Equal(new TlcResources(2, 2048), TlcResources.FromCli(new(["validate-trace", "--annotation-version", "2", "--workers", "2", "--max-heap-mib", "2048"])));
-            CoreTests.ThrowsAny<InputException>(() => TlcResources.FromCli(new(["validate-trace", "--annotation-version", "2", "--workers", "auto"])));
+            CoreTests.Equal(new TlcResources(2, 2048), TlcResources.FromCli(new(["validate-trace", "--annotation-version", "4", "--workers", "2", "--max-heap-mib", "2048"])));
+            CoreTests.ThrowsAny<InputException>(() => TlcResources.FromCli(new(["validate-trace", "--annotation-version", "4", "--workers", "auto"])));
         });
         string fixture = Path.Combine(work, "regression-stage");
         Directory.CreateDirectory(fixture);
@@ -79,8 +93,37 @@ public static class StageEvidenceTests
             CSharpRegressionResult result = ProjectInputs.Read<CSharpRegressionResult>(Path.Combine(output, "result.json"));
             CoreTests.Equal(2, result.Tests.Count);
             CoreTests.True(result.Build.CompileInputs.ContainsKey(Path.Combine(fixture, "Program.cs")));
+            CoreTests.True(result.Build.CompileInputs.ContainsKey(Path.Combine(fixture, "Increment.cs")));
             CoreTests.True(result.Build.BuildInputs.ContainsKey(Path.Combine(fixture, "Regression.csproj")));
             CoreTests.Equal("passed", result.Status);
+        });
+        test("source inventory reuses a verified observed compiler context without command-line reference expansion", () =>
+        {
+            string output = Good(), resultPath = Path.Combine(output, "result.json");
+            CSharpRegressionResult result = ProjectInputs.Read<CSharpRegressionResult>(resultPath);
+            string source = result.Build.CompileInputs.Keys.Single(p => p.EndsWith(".AssemblyInfo.cs", StringComparison.Ordinal));
+            string inventoryPath = Path.Combine(work, "observed-inventory.json");
+            var response = TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", source,
+                "--regression-result", resultPath, "--output", inventoryPath]);
+            if (response.Code != 0) throw new InvalidOperationException(response.Json);
+            SourceInventoryResult inventory = ProjectInputs.Read<SourceInventoryResult>(inventoryPath);
+            CoreTests.Equal("explicit", inventory.Compiler.FrameworkReferences);
+            CoreTests.Equal(resultPath, inventory.Compiler.RegressionResult);
+            CoreTests.Equal(result.Build.CompilerContext["Nullable"], inventory.Compiler.Nullable);
+            CoreTests.Equal(source, inventory.Sources.Single());
+            CoreTests.Equal(Files.Hash(resultPath), inventory.Fingerprints[resultPath]);
+            foreach (var pin in result.Build.References) CoreTests.Equal(pin.Value, inventory.Fingerprints[pin.Key]);
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", source,
+                "--regression-result", resultPath, "--define", "OTHER"]).Code);
+            string unobserved = Path.Combine(work, "unobserved.cs");
+            File.WriteAllText(unobserved, "class Unobserved {}");
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", unobserved,
+                "--regression-result", resultPath]).Code);
+            string damaged = Path.Combine(work, "inventory-context-damaged");
+            Copy(output, damaged);
+            File.AppendAllText(Path.Combine(damaged, "build", "context.txt"), "changed");
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", source,
+                "--regression-result", Path.Combine(damaged, "result.json")]).Code);
         });
         void Mutate(string name, Action<JsonObject, JsonObject> change)
         {
@@ -200,6 +243,39 @@ public static class StageEvidenceTests
     public static void RegisterNative(Action<string, Action> test, string root, string work)
     {
         string dafny = TestTools.Dafny(root), jar = TestTools.Jar(root);
+        test("code-adjacent examples resolve their authored endpoints without fixture-generated markers", () =>
+        {
+            string counter = Path.Combine(root, "examples", "Components", "src", "Counter");
+            var links = TestCli.Run(["inspect", "--annotation-version", "4", "--source", Path.Combine(counter, "Counter.cs"),
+                "--scope", Path.Combine(counter, "verification", "scope.json"), "--target", "counter", "--jar", jar]);
+            if (links.Code != 0) throw new InvalidOperationException(links.Json);
+            string increment = Path.Combine(root, "examples", "Evidence", "src", "Increment", "verification", "bindings.json");
+            var evidence = TestCli.Run(["inspect-integrated", "--annotation-version", "4", "--bindings", increment,
+                "--dafny", dafny, "--output", Path.Combine(work, "increment-links")]);
+            if (evidence.Code != 0) throw new InvalidOperationException(evidence.Json);
+        });
+        test("integrated unit-return model reaches an accepted return from an empty window", () =>
+        {
+            string directory = Directory.CreateDirectory(Path.Combine(work, "integrated-reachability")).FullName;
+            string model = Path.Combine(directory, "Credits.tla"), config = Path.Combine(directory, "Credits.cfg");
+            string original = Files.Read(Path.Combine(root, "examples", "Integrated", "Credits.tla"));
+            int end = original.LastIndexOf("\n====", StringComparison.Ordinal);
+            File.WriteAllText(model, original[..end] + "\nNeverReturned == available # 1\n====\n");
+            File.WriteAllText(config, "CONSTANT Window = 2\nINIT Init\nNEXT Next\nINVARIANT NeverReturned\nCHECK_DEADLOCK FALSE\n");
+            string project = Path.Combine(directory, "project.json");
+            Save(project, new AnalysisProject(Schema.Version, "analysis-project", "unit-return-reachability",
+                new(Jar: new(jar, Files.Hash(jar))), new("net10.0", "14", "enable", false, true, []),
+                "requirements.json", [new("reachability", [new("return", "tlc", [], 60, Models: [model], Config: config)])],
+                [], "reviews"));
+            Save(Path.Combine(directory, "requirements.json"), new AcceptancePolicy(Schema.Version, "acceptance-policy",
+                "unit-return-reachability", [new("reachable", "reachability", "return", "rejected",
+                    Diagnostic: "TLC2110", DiagnosticText: "Invariant NeverReturned is violated.", ConfigSha256: Files.Hash(config))]));
+            string output = Path.Combine(directory, "run");
+            var run = TestCli.Run(["run", "--project", project, "--scenario", "reachability", "--output", output]);
+            if (run.Code != 0) throw new InvalidOperationException(run.Json);
+            var accepted = TestCli.Run(["accept", "--project", project, "--run", output]);
+            if (accepted.Code != 0) throw new InvalidOperationException(accepted.Json);
+        });
         test("project acceptance distinguishes a completed trace rejection from an incomplete control", () =>
         {
             string directory = Directory.CreateDirectory(Path.Combine(work, "trace-rejection-control")).FullName;
@@ -207,7 +283,8 @@ public static class StageEvidenceTests
             string config = Path.Combine(lanes, "verification", "Lanes.cfg");
             string path = Path.Combine(directory, "project.json");
             AnalysisStage stage = new("control", "trace", [], 60, Sources: [Path.Combine(lanes, "Lanes.cs")],
-                Models: [Path.Combine(lanes, "verification", "Lanes.tla")], Config: config, Arguments: ["corrupt"]);
+                Models: [Path.Combine(lanes, "verification", "Lanes.tla")], Config: config, Arguments: ["corrupt"],
+                Scope: Path.Combine(lanes, "verification", "scope.json"), Target: "WorkflowLanes");
             Save(path, new AnalysisProject(Schema.Version, "analysis-project", "trace-control",
                 new(Jar: new(jar, Files.Hash(jar))), new("net10.0", "14", "enable", false, true, []),
                 "requirements.json", [new("control", [stage])], [], "reviews"));
@@ -371,6 +448,23 @@ public static class StageEvidenceTests
             if (report.Code != 0) throw new InvalidOperationException(report.Json);
             CoreTests.True(Files.Read(pending).Contains("not-accepted", StringComparison.Ordinal));
             CoreTests.True(Files.Read(pending + ".json").Contains("evidence-report", StringComparison.Ordinal));
+            string presentation = Directory.CreateDirectory(Path.Combine(work, "source-presentation")).FullName;
+            string source = Path.Combine(presentation, "Coverage.cs"), inventory = Path.Combine(presentation, "inventory.json");
+            File.WriteAllText(source, "class Coverage { void Run() {} }");
+            Files.WriteNew(inventory, SourceInventory.Build([source]));
+            string supplement = Path.Combine(presentation, "source-report.json");
+            Files.WriteNew(supplement, new EvidenceReportManifest(Schema.Version, "evidence-report",
+                "Explicit source presentation", "Independent authored dispositions, not a composition theorem.",
+                new() { ["Coverage.cs"] = Files.Hash(source), ["inventory.json"] = Files.Hash(inventory) },
+                [], [], [], ["Source correspondence remains a review obligation."],
+                [new(null, [new("Coverage.cs", "synthetic", "inventory-only", [], "Not validated code.")])]));
+            string combined = Path.Combine(work, "combined-evidence.md");
+            var combinedReport = TestCli.Run(["report", "--project", path, "--run", output,
+                "--source-report", supplement, "--source-inventory", inventory, "--output", combined, "--format", "summary"]);
+            if (combinedReport.Code != 0) throw new InvalidOperationException(combinedReport.Json);
+            CoreTests.True(Files.Read(combined).Contains("Explicit source presentation", StringComparison.Ordinal));
+            CoreTests.True(Files.Read(combined).Contains("inventory-only", StringComparison.Ordinal));
+            CoreTests.True(Files.Read(combined).Contains("not-accepted", StringComparison.Ordinal));
             CoreTests.Equal(0, TestCli.Run(["record-review", "--project", path, "--obligation", "source-correspondence",
                 "--reviewer", "synthetic-test", "--rationale", "Explicit test-only review assertion.", "--evidence", Path.Combine("src", "Increment", "Program.cs")]).Code);
             var acceptance = TestCli.Run(["accept", "--project", path, "--run", output]);
@@ -397,6 +491,7 @@ public static class StageEvidenceTests
                 Scenarios = [lanes with { Stages = lanes.Stages.Select(s => s with {
                     Sources = s.Sources?.Select(p => Path.Combine(example, p)).ToList(),
                     Models = s.Models?.Select(p => Path.Combine(example, p)).ToList(),
+                    Scope = s.Scope == null ? null : Path.Combine(example, s.Scope),
                     Config = Path.Combine(example, s.Config!), Resources = new(2, 512) }).ToList() }]
             });
             AcceptancePolicy policy = ProjectInputs.Read<AcceptancePolicy>(ProjectInputs.Resolve(examplePath, original.Requirements));

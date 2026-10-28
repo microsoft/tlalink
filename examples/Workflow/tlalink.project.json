@@ -2,7 +2,7 @@
   "$schema": "../../schemas/project.schema.json",
   "schema_version": 4,
   "kind": "analysis-project",
-  "annotation_version": 2,
+  "annotation_version": 4,
   "id": "workflow-pilots",
   "tools": {
     "dafny": {
@@ -30,8 +30,23 @@
     "src/Cancellation/verification/component.json"
   ],
   "scenarios": [
-    { "id": "credits", "components": ["credits"] },
-    { "id": "lanes", "components": ["lanes"] },
-    { "id": "cancellation", "components": ["cancellation"] }
+    {
+      "id": "credits",
+      "components": [
+        "credits"
+      ]
+    },
+    {
+      "id": "lanes",
+      "components": [
+        "lanes"
+      ]
+    },
+    {
+      "id": "cancellation",
+      "components": [
+        "cancellation"
+      ]
+    }
   ]
 }

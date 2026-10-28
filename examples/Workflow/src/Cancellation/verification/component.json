@@ -12,7 +12,7 @@
       "id": "cleanup-adapter",
       "claim": "The adapter invokes Process, observes its finally cleanup, and catches only the expected cancellation exception.",
       "assumptions": ["Single-threaded execution of this illustrative adapter.", "Output comparison does not establish general exception equivalence."],
-      "inputs": ["../Cancellation.cs", "Cancellation.dfy", "cancellation-bindings.json"]
+      "inputs": ["../Cancellation.cs", "Cancellation.dfy", "cancellation-bindings.json", "scope.json"]
     }
   ]
 }

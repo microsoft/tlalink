@@ -5,10 +5,25 @@ using Microsoft.CodeAnalysis.Text;
 
 namespace TlaLink;
 
-public sealed record SourceBinding(string Model, Tag Tag, SyntaxNode Node, ISymbol? Symbol,
+public sealed record SourceBinding(BindAnnotation Declaration, CaptureAnnotation? Capture,
+    SourceBindingKind Kind, int Start, int End, string EventIdentity, SyntaxNode Node, ISymbol? Symbol,
     SemanticModel Semantics, string Path, string Text)
 {
-    public string Key => $"{Model}:{Tag.Kind}:{Tag.Identity}";
+    public string Model => Markup.Name(Declaration.Id).Alias;
+    public FormalLinkDeclaration? Formal { get; set; }
+    public string NativeEndpoint => Formal?.Endpoint.Name ??
+        throw new InputException(ErrorCode.MissingModelEndpoint, "Formal endpoint is not resolved for " + BindingId);
+    public string BindingId => Declaration.Id;
+    public Tag Tag
+    {
+        get
+        {
+            Dictionary<string, string> options = Capture?.BackendOptions() ?? new(StringComparer.Ordinal);
+            if (Declaration.Reason != null) options["justification"] = Declaration.Reason;
+            return new(Kind.ToString().ToLowerInvariant(), EventIdentity, options, Start, End);
+        }
+    }
+    public string Key => EventIdentity;
     public Endpoint Endpoint => new(Symbol?.Name ?? Node.Kind().ToString(),
         Symbol?.ContainingType?.ToDisplayString() ?? Node.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault()?.Identifier.Text ?? "",
         Tag.Kind, Files.At(Path, Text, Node.SpanStart, Node.Span.End), Text[Node.SpanStart..Node.Span.End]);
@@ -17,7 +32,7 @@ public sealed record SourceBinding(string Model, Tag Tag, SyntaxNode Node, ISymb
         .OfType<LockStatementSyntax>().Reverse().Select(n => n.Expression.ToString()).ToList();
 }
 
-public sealed class CSharpScope
+public sealed partial class CSharpScope
 {
     public required CSharpCompilation Compilation { get; init; }
     public List<SourceBinding> Bindings { get; } = [];
@@ -25,6 +40,9 @@ public sealed class CSharpScope
     public List<Access> Accesses { get; } = [];
     public Dictionary<string, string> Fingerprints { get; } = new(FilePaths.Comparer);
     public Dictionary<string, string> Texts { get; } = new(FilePaths.Comparer);
+    public HashSet<string>? SelectedTargets { get; set; }
+    public List<SourceLinkDeclaration> DeclaredLinks => Bindings.Select(b =>
+        new SourceLinkDeclaration(b.Declaration, b.Capture, b.Kind, b.Endpoint.Location)).ToList();
 
     public static CSharpScope Parse(List<string> paths, IEnumerable<string>? references = null, IEnumerable<string>? defines = null,
         NullableContextOptions nullable = NullableContextOptions.Enable, bool includeFrameworkReferences = true)
@@ -65,27 +83,22 @@ public sealed class CSharpScope
                 result.Diagnostics.Add(new(ErrorCode.CSharpSyntaxError, syntaxError.GetMessage(),
                     new(path, location.StartLinePosition.Line + 1, location.EndLinePosition.Line + 1, location.StartLinePosition.Character + 1)));
             }
-            List<SyntaxNode> targets = root.DescendantNodes().Where(n => n is TypeDeclarationSyntax or FieldDeclarationSyntax or StatementSyntax or InvocationExpressionSyntax)
+            List<SyntaxNode> targets = root.DescendantNodes().Where(n => n is MemberDeclarationSyntax or StatementSyntax or InvocationExpressionSyntax)
                 .OrderBy(n => n.SpanStart).ThenByDescending(n => n.Span.Length).ToList();
-            List<(Tag Tag, SyntaxNode Node)> attached = [];
+            List<(LocatedAnnotation Annotation, SyntaxNode Node)> attached = [];
             foreach (SyntaxTrivia trivia in root.DescendantTrivia(descendIntoTrivia: false))
             {
                 if (!trivia.IsKind(SyntaxKind.MultiLineCommentTrivia)) continue;
                 string raw = trivia.ToString(), content = raw[2..^2];
                 try
                 {
-                    foreach (Tag tag in Markup.Parse(content, trivia.SpanStart, trivia.Span.End))
+                    foreach (LocatedAnnotation annotation in Markup.Parse(content, trivia.SpanStart, trivia.Span.End))
                     {
-                        SyntaxNode? target = targets.FirstOrDefault(n => n.SpanStart >= trivia.Span.End &&
-                            OnlyCSharpTrivia(text, trivia.Span.End, n.SpanStart));
-                        if (target is null ||
-                            tag.Kind == "model" && target is not TypeDeclarationSyntax ||
-                            tag.Kind == "state" && (target is not FieldDeclarationSyntax field || field.Declaration.Variables.Count != 1) ||
-                            tag.Kind == "step" && target is not (StatementSyntax or InvocationExpressionSyntax) ||
-                            tag.Kind == "step" && target is InvocationExpressionSyntax && tag.Options.ContainsKey("point"))
-                            throw new InputException(ErrorCode.InvalidAttachment, $"Invalid {tag.Kind} attachment; steps attach to statements or review-only invocation expressions, state to a single field, model to a type.");
-                        if (tag.Options.ContainsKey("visibility")) throw new InputException(ErrorCode.InvalidAttachment, "visibility is a model-only hidden-action declaration.");
-                        attached.Add((tag, target));
+                        SyntaxNode? target = Attachment(targets, text, trivia.Span.End);
+                        if (target is null || target is FieldDeclarationSyntax field && field.Declaration.Variables.Count != 1 ||
+                            annotation.Declaration is ExcludeAnnotation && target is InvocationExpressionSyntax)
+                            throw new InputException(ErrorCode.InvalidAttachment, "Use an unambiguous declaration, statement or supported expression.");
+                        attached.Add((annotation, target));
                     }
                 }
                 catch (InputException error)
@@ -93,21 +106,7 @@ public sealed class CSharpScope
                     result.Diagnostics.Add(new(ErrorCode.InvalidAnnotation, error.Message, Files.At(path, text, trivia.SpanStart, trivia.Span.End)));
                 }
             }
-            foreach (var group in attached.Where(e => e.Tag.Kind == "model").GroupBy(e => e.Node).Where(g => g.Count() > 1))
-                result.Diagnostics.Add(new(ErrorCode.DuplicateBinding, "A C# type must have exactly one model namespace annotation.",
-                    Files.At(path, text, group.Key.SpanStart, group.Key.Span.End)));
-            foreach (var entry in attached.Where(e => e.Tag.Kind != "model"))
-            {
-                var models = attached.Where(e => e.Tag.Kind == "model" && e.Node.Span.Contains(entry.Node.Span)).OrderBy(e => e.Node.Span.Length).ToList();
-                if (models.Count == 0)
-                {
-                    result.Diagnostics.Add(new(ErrorCode.MissingModelNamespace, "C# state/step needs an enclosing annotated model type.", Files.At(path, text, entry.Tag.Start, entry.Tag.End)));
-                    continue;
-                }
-                SyntaxNode symbolNode = entry.Node is FieldDeclarationSyntax declaration ? declaration.Declaration.Variables[0] : entry.Node;
-                ISymbol? symbol = entry.Tag.Kind == "state" ? semantics.GetDeclaredSymbol(symbolNode) : null;
-                result.Bindings.Add(new(models[0].Tag.Identity, entry.Tag, entry.Node, symbol, semantics, path, text));
-            }
+            result.AttachCorrespondence(attached, semantics, path, text);
             foreach (IdentifierNameSyntax identifier in root.DescendantNodes().OfType<IdentifierNameSyntax>())
             {
                 ISymbol? symbol = semantics.GetSymbolInfo(identifier).Symbol;
@@ -124,6 +123,7 @@ public sealed class CSharpScope
             result.Diagnostics.Add(new(ErrorCode.UnresolvedCompilation, $"Unresolved compilation context: {error.Id}: {error.GetMessage()}",
                 new(place.Path, place.StartLinePosition.Line + 1, place.EndLinePosition.Line + 1, place.StartLinePosition.Character + 1)));
         }
+        result.ValidateDispositionIds();
         return result;
     }
 
@@ -135,6 +135,14 @@ public sealed class CSharpScope
 
     public static string SymbolId(ISymbol symbol) => symbol.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
         + "|" + symbol.OriginalDefinition.ContainingType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+    internal static string DeclarationId(SourceBinding binding)
+    {
+        if (binding.Symbol?.GetDocumentationCommentId() is string direct) return direct;
+        foreach (SyntaxNode node in binding.Node.AncestorsAndSelf())
+            if (binding.Semantics.GetDeclaredSymbol(node)?.GetDocumentationCommentId() is string id) return id;
+        throw new InputException(ErrorCode.InvalidIntegratedBinding, "Binding needs a resolved containing C# declaration: " + binding.BindingId);
+    }
 
     public static bool IsWrite(SyntaxNode expression)
     {
@@ -156,4 +164,7 @@ public sealed class CSharpScope
 
     private static bool OnlyCSharpTrivia(string text, int start, int end) =>
         SyntaxFactory.ParseLeadingTrivia(text[start..end]).FullSpan.Length == end - start;
+
+    internal static SyntaxNode? Attachment(IEnumerable<SyntaxNode> targets, string text, int end) =>
+        targets.FirstOrDefault(n => n.SpanStart >= end && OnlyCSharpTrivia(text, end, n.SpanStart));
 }

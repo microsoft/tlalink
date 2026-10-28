@@ -4,13 +4,20 @@
   "project": "evidence-stages",
   "requirements": [
     {
+      "id": "paired-endpoints",
+      "scenario": "arithmetic",
+      "stage": "correspondence",
+      "expected": "passed",
+      "reviews": ["source-correspondence"]
+    },
+    {
       "id": "selected-regressions",
       "scenario": "arithmetic",
       "stage": "regressions",
       "expected": "passed",
       "claim": "selected-csharp-regressions",
       "tests": ["increment", "limit"],
-      "config_sha256": "E68C25D6512F6924C8F533C7E99D6C8416B43B624C9099F33EBA802F55DA476A"
+      "config_sha256": "5589E02CEA0D51149BA357663634CA71BE877605CBC16AA5D7B00DA500AF6DBC"
     },
     {
       "id": "dafny-contracts",

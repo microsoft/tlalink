@@ -5,6 +5,51 @@ namespace TlaLink.Tests;
 
 public static class TestCli
 {
+    public static (int Code, string Json) Tla(string[] args, List<HiddenModelAction>? hidden = null)
+    {
+        string Value(string key) => args[Array.IndexOf(args, key) + 1];
+        string model = FilePaths.Full(Value("--model"));
+        string alias;
+        List<string> bindingIds;
+        if (args.Contains("--source", StringComparer.Ordinal))
+        {
+            List<string> sources = args.Select((arg, index) => (arg, index)).Where(e => e.arg == "--source")
+                .Select(e => FilePaths.Full(args[e.index + 1])).ToList();
+            List<string> Many(string key) => args.Select((arg, index) => (arg, index)).Where(e => e.arg == key)
+                .Select(e => args[e.index + 1]).ToList();
+            CSharpScope source = CSharpScope.Parse(sources, Many("--reference"),
+                args.Contains("--define", StringComparer.Ordinal) ? Many("--define") : null);
+            alias = source.Bindings.Select(b => b.Model).Distinct(StringComparer.Ordinal).Single();
+            bindingIds = source.Bindings.Select(b => b.BindingId).Distinct(StringComparer.Ordinal).ToList();
+            TlaDocument native = TlaBackend.Parse(model, Value("--jar"), 60);
+            string text = Files.Read(model);
+            foreach (string id in bindingIds)
+            {
+                if (text.Contains("\"" + id + "\"", StringComparison.Ordinal)) continue;
+                string name = Markup.Name(id).Endpoint;
+                var candidates = native.Endpoints.Where(e => e.Name == name).ToList();
+                if (candidates.Any(e => e.Kind == "label")) candidates = candidates.Where(e => e.Kind == "label").ToList();
+                if (candidates.Count != 1) throw new InvalidOperationException("Fixture needs an explicit formal endpoint: " + id);
+                var endpoint = candidates[0];
+                text = text.Insert(endpoint.Start, "(* @link " + Markup.Encode(new() { Bind = [new(id)] }) + " *) ");
+                File.WriteAllText(model, text);
+                native = TlaBackend.Parse(model, Value("--jar"), 60);
+            }
+        }
+        else
+        {
+            InstrumentManifest manifest = Instrumentation.ReadManifest(Value("--manifest"));
+            alias = manifest.Events.Select(e => e.Model).Distinct(StringComparer.Ordinal).Single();
+            string originalScope = manifest.Fingerprints.Keys.Where(FilePaths.IsNativeAbsolute)
+                .Single(p => Path.GetFileName(p).StartsWith("scope-", StringComparison.Ordinal) && Path.GetExtension(p) == ".json");
+            return Run([.. args, "--scope", originalScope, "--target", alias]);
+        }
+        string scope = Path.Combine(Path.GetDirectoryName(model)!, "scope-" + Guid.NewGuid().ToString("N") + ".json");
+        Files.WriteNew(scope, new CorrespondenceConfiguration(Schema.Version, "correspondence-scope", Markup.Version,
+            [new(alias, "tla", [model], hidden, bindingIds)], []));
+        return Run([.. args, "--scope", scope, "--target", alias]);
+    }
+
     public static (int Code, string Json) Run(string[] args)
     {
         TextWriter previous = Console.Out;

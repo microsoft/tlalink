@@ -35,12 +35,12 @@ public static class IntegratedEvidence
         using JsonDocument document = JsonDocument.Parse(Files.Read(path), new JsonDocumentOptions { AllowDuplicateProperties = false });
         JsonElement result = document.RootElement;
         RequireSchema(result);
-        List<Issue> issues = Validate(result);
+        string archive = Path.Combine(Path.GetDirectoryName(path)!, "inputs");
+        List<Issue> issues = Validate(result, archive);
         string semantic = issues.Count == 0 ? "consistent" : "inconsistent";
         if (!result.TryGetProperty("fingerprints", out JsonElement inputs) || inputs.ValueKind != JsonValueKind.Object ||
             !result.TryGetProperty("generated_files", out JsonElement generated) || generated.ValueKind != JsonValueKind.Object)
             throw new InputException(ErrorCode.InvalidIntegratedEvidence, "Expected fingerprint and generated-file objects.");
-        string archive = Path.Combine(Path.GetDirectoryName(path)!, "inputs");
         int count = 0;
         foreach (JsonProperty pin in inputs.EnumerateObject().Concat(generated.EnumerateObject()).Where(p => FilePaths.IsAbsolute(p.Name)))
         {
@@ -74,7 +74,7 @@ public static class IntegratedEvidence
             throw new InputException(ErrorCode.InvalidIntegratedEvidence, "Expected current-schema integrated-result packet; unsupported schemas are not upgraded.");
     }
 
-    public static List<Issue> Validate(JsonElement result)
+    public static List<Issue> Validate(JsonElement result, string? archiveDirectory = null)
     {
         List<Issue> issues = [];
         void Error(string message) => issues.Add(new(ErrorCode.IntegratedEvidenceInconsistent, message));
@@ -112,6 +112,106 @@ public static class IntegratedEvidence
                     Error("Malformed fingerprint: " + pin.Name + ".");
         JsonElement links = Object("links", JsonValueKind.Array);
         JsonElement claims = Object("correspondences", JsonValueKind.Array);
+        string sourceStatus = "not-specified";
+        List<SourceObligationResult> premises = [];
+        if (result.TryGetProperty("source_obligations", out JsonElement sourceObligations))
+        {
+            try
+            {
+                premises = sourceObligations.Deserialize<List<SourceObligationResult>>(IntegratedInputs.Json)
+                    ?? throw new JsonException("Source obligations must be an array.");
+                if (premises.Any(p => p == null || p.Obligation == null))
+                    throw new JsonException("Source obligation records cannot be null.");
+                List<string> bindingIds = links.ValueKind == JsonValueKind.Array
+                    ? links.EnumerateArray().Select(l => Text(l, "id") ?? "").ToList() : [];
+                SourceObligations.Validate(premises.Select(p => p.Obligation).ToList(), bindingIds);
+                foreach (SourceObligationResult premise in premises)
+                {
+                    if (premise.Status is not ("passed" or "rejected" or "incomplete") ||
+                        string.IsNullOrWhiteSpace(premise.Reason) || premise.Evidence == null ||
+                        premise.Status == "passed" && premise.Evidence.Count == 0)
+                        Error("Source obligations require a supported outcome, explanation and source evidence.");
+                    if (premise.Status == "passed" && premise.Obligation.Kind is "guarded-effect" or "guarded-try-effect" && premise.Flow == null)
+                        Error("Passed guarded effects require recorded source-flow facts.");
+                }
+                sourceStatus = SourceObligations.Status(premises);
+            }
+            catch (Exception error) when (error is JsonException or InputException)
+            {
+                Error("Invalid source obligations: " + error.Message);
+                sourceStatus = "incomplete";
+                premises = [];
+            }
+        }
+        if (result.TryGetProperty("source_obligations_status", out _) &&
+            Text(result, "source_obligations_status") != sourceStatus)
+            Error("Source obligation status disagrees with recorded premises.");
+        if (premises.Count > 0 && Text(result, "bindings") == null)
+            Error("Source obligations require an explicit pinned binding manifest.");
+        if (archiveDirectory != null && Text(result, "bindings") is string manifestPath)
+        {
+            try
+            {
+                if (fingerprints.ValueKind != JsonValueKind.Object ||
+                    !fingerprints.TryGetProperty(manifestPath, out JsonElement pin) || pin.ValueKind != JsonValueKind.String ||
+                    pin.GetString() is not string hash || hash.Length != 64 || hash.Any(c => !char.IsAsciiHexDigit(c)))
+                    throw new InputException(ErrorCode.InvalidIntegratedEvidence, "Binding manifest must have an explicit file pin.");
+                string archived = Path.Combine(archiveDirectory, hash);
+                if (!File.Exists(archived) || Files.Hash(archived) != hash)
+                    throw new InputException(ErrorCode.InvalidIntegratedEvidence, "Missing or changed archived binding manifest.");
+                IntegratedManifest policy = IntegratedInputs.Parse(Files.Read(archived));
+                if (policy.SchemaVersion != Schema.Version || policy.Kind != "integrated-bindings" ||
+                    policy.Bindings == null || policy.Bindings.Any(b => b == null))
+                    throw new InputException(ErrorCode.InvalidIntegratedEvidence, "Invalid archived binding manifest.");
+                SourceObligations.Validate(policy.SourceObligations, policy.Bindings.Select(b => b.Id));
+                if (linksStatus == "passed")
+                {
+                    Dictionary<string, string> recordedPins = fingerprints.Deserialize<Dictionary<string, string>>(Files.Json)!;
+                    string Recorded(string file)
+                    {
+                        if (!recordedPins.TryGetValue(file, out string? fileHash))
+                            throw new InputException(ErrorCode.InvalidIntegratedEvidence, "Missing archived correspondence pin: " + file);
+                        string copy = Path.Combine(archiveDirectory, fileHash);
+                        if (!File.Exists(copy) || Files.Hash(copy) != fileHash)
+                            throw new InputException(ErrorCode.InvalidIntegratedEvidence, "Changed archived correspondence input: " + file);
+                        return Files.Read(copy);
+                    }
+                    Dictionary<string, ArchivedSourceBinding> inline = CorrespondenceEvidence.Bindings(
+                        policy.Sources.Select(p => ProjectInputs.Resolve(manifestPath, p)), recordedPins, Recorded);
+                    CorrespondenceConfiguration scope = CorrespondenceEvidence.Scope(
+                        ProjectInputs.Resolve(manifestPath, policy.Scope), Recorded);
+                    List<FormalLinkDeclaration> formal = FormalCorrespondence.Dafny(
+                        result.GetProperty("inventory").Deserialize<List<DafnyDeclaration>>(Files.Json)!, recordedPins, Recorded);
+                    bool hasTla = result.TryGetProperty("tla", out JsonElement tla) && tla.ValueKind == JsonValueKind.Object;
+                    if (hasTla != (policy.TlaTargets.Count > 0) || hasTla &&
+                        (!tla.TryGetProperty("selected_targets", out JsonElement selectedTargets) ||
+                         selectedTargets.ValueKind != JsonValueKind.Array ||
+                         !selectedTargets.EnumerateArray().Select(t => t.GetString()).ToHashSet(StringComparer.Ordinal)
+                             .SetEquals(policy.TlaTargets)))
+                        Error("Recorded TLA+ selection differs from the pinned binding manifest.");
+                    foreach (JsonElement link in links.EnumerateArray())
+                    {
+                        string id = Text(link, "id") ?? "";
+                        if (!inline.TryGetValue(id, out ArchivedSourceBinding? declaration) ||
+                            !policy.Bindings.Any(b => b.Id == id) ||
+                            formal.Count(f => f.Binding.Id == id && f.Endpoint.Name == Text(link.GetProperty("specification"), "name")) != 1 ||
+                            link.GetProperty("implementation").GetProperty("location").Deserialize<Place>(Files.Json) != declaration.Location ||
+                            !scope.Targets.Any(t => t.Id == Markup.Name(id).Alias && t.Language == "dafny"))
+                            Error("Recorded link differs from its pinned inline binding: " + id);
+                    }
+                }
+                if ((linksStatus == "passed" || premises.Count > 0) &&
+                    JsonSerializer.Serialize(policy.SourceObligations, Files.Json) !=
+                    JsonSerializer.Serialize(premises.Select(p => p.Obligation).ToList(), Files.Json))
+                    Error("Recorded source obligations differ from the pinned binding manifest.");
+            }
+            catch (Exception error) when (error is JsonException or InputException or IOException or UnauthorizedAccessException)
+            {
+                Error("Cannot check source obligation policy: " + error.Message);
+            }
+        }
+        if (sourceStatus is "rejected" or "incomplete" && (proof != "not-run" || audit != "not-run" || conformance != "not-run"))
+            Error("Unmet source obligations must block native proof and conformance stages.");
         HashSet<string> linked = [];
         if (links.ValueKind == JsonValueKind.Array)
             foreach (JsonElement link in links.EnumerateArray())
@@ -217,12 +317,15 @@ public static class IntegratedEvidence
         else if (executionPresent) Error("Execution receipt contradicts unexecuted conformance status.");
         if (status is "ready" or "passed" or "rejected")
         {
+            if (sourceStatus == "incomplete" || sourceStatus == "rejected" && status != "rejected")
+                Error("Completed root outcome contradicts source obligations.");
             if (linksStatus != "passed" || provenance != "consistent") Error("Completed root outcome requires links and provenance.");
             if (status == "ready" && command != "inspect-integrated") Error("Only inspection can be ready.");
             if (status == "passed" && (command == "inspect-integrated" || proof != "verified" || audit != "passed" ||
                 command == "test-integrated" && conformance != "conforms"))
                 Error("Passed root outcome contradicts required stages.");
-            if (status == "rejected" && proof != "rejected" && audit != "findings" && conformance != "rejected")
+            if (status == "rejected" && proof != "rejected" && audit != "findings" && conformance != "rejected" &&
+                sourceStatus != "rejected")
                 Error("Rejected root outcome has no rejecting evidence.");
         }
         return issues;

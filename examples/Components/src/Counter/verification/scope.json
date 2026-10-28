@@ -1,0 +1,14 @@
+{
+  "schema_version": 4,
+  "kind": "correspondence-scope",
+  "annotation_version": 4,
+  "targets": [
+    {
+      "id": "counter",
+      "language": "tla",
+      "inputs": ["Counter.tla"],
+      "required_bindings": ["counter::value", "counter::step"]
+    }
+  ],
+  "omissions": []
+}

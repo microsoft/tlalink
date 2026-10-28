@@ -17,7 +17,8 @@ namespace TlaLink.Runtime;
 public sealed record TraceEvent(long Sequence, string Model, string Step, string Point, string Classification,
     object Connection, object Actor, object Operation, Dictionary<string, object> Observations, long? Guard,
     int Thread, long[] Causes, long[] Predecessors,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] object? Entity = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] object? Entity = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] object[]? Arguments = null);
 
 public sealed class TraceHandoff
 {
@@ -66,14 +67,26 @@ public static class TraceRuntime
 
     public static long Emit(string bindingId, string model, string step, string point, string classification,
         object connection, object actor, object operation, object? guard, Dictionary<string, object> observations, params long[] causes)
-        => EmitCore(bindingId, model, step, point, classification, connection, actor, operation, null, guard, observations, causes);
+        => EmitCore(bindingId, model, step, point, classification, connection, actor, operation, null, null, guard, observations, causes);
 
     public static long EmitEntity(string bindingId, string model, string step, string point, string classification,
         object connection, object actor, object operation, object entity, object? guard, Dictionary<string, object> observations, params long[] causes)
     {
         Validate(entity);
         if (entity is bool) throw new InvalidOperationException("Trace entity identities require integers or strings.");
-        return EmitCore(bindingId, model, step, point, classification, connection, actor, operation, entity, guard, observations, causes);
+        return EmitCore(bindingId, model, step, point, classification, connection, actor, operation, entity, null, guard, observations, causes);
+    }
+
+    public static long EmitArguments(string bindingId, string model, string step, string point, string classification,
+        object connection, object actor, object operation, object? entity, object[] arguments,
+        object? guard, Dictionary<string, object> observations, params long[] causes)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (arguments.Length is < 1 or > 8) throw new InvalidOperationException("Action arguments require 1..8 scalar values.");
+        foreach (object value in arguments) Validate(value);
+        if (entity != null) { Validate(entity); if (entity is bool) throw new InvalidOperationException("Entity identities require integers or strings."); }
+        return EmitCore(bindingId, model, step, point, classification, connection, actor, operation, entity,
+            arguments.ToArray(), guard, observations, causes);
     }
 
     public static TraceHandoff CaptureHandoff(long predecessor)
@@ -111,7 +124,8 @@ public static class TraceRuntime
     }
 
     private static long EmitCore(string bindingId, string model, string step, string point, string classification,
-        object connection, object actor, object operation, object? entity, object? guard, Dictionary<string, object> observations, long[] causes)
+        object connection, object actor, object operation, object? entity, object[]? arguments,
+        object? guard, Dictionary<string, object> observations, long[] causes)
     {
         Validate(connection); Validate(actor); Validate(operation);
         if (connection is bool || actor is bool || operation is bool)
@@ -144,7 +158,7 @@ public static class TraceRuntime
             Last[threadKey] = current;
             if (guardKey is not null) Last[guardKey] = current;
             Events.Enqueue(new(current, model, step, point, classification, connection, actor, operation,
-                new(observations), guardId, thread, explicitCauses.Order().ToArray(), predecessors.Order().ToArray(), entity));
+                new(observations), guardId, thread, explicitCauses.Order().ToArray(), predecessors.Order().ToArray(), entity, arguments));
             return current;
         }
     }

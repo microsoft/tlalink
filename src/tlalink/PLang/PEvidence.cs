@@ -74,8 +74,7 @@ public static class PEvidence
             if (!packet.Fingerprints.TryGetValue(packet.Config, out string? configHash) || configHash != packet.ConfigSha256)
                 Error("Configuration identity disagrees with its input pins.");
             string configCopy = Safe(output, Path.Combine("inputs", packet.ConfigSha256));
-            PAnalysis config = JsonSerializer.Deserialize<PAnalysis>(Files.Read(configCopy), ProjectInputs.Json)
-                ?? throw new InputException(ErrorCode.InvalidPEvidence, "Missing archived P analysis.");
+            PAnalysis config = PInputs.Parse(Files.Read(configCopy));
             if (config.Engine != packet.Engine) Error("Analysis engine differs from archived configuration.");
             if (packet.Status is not ("passed" or "ready" or "rejected" or "incomplete")) Error("Unknown P outcome.");
             if (packet.Status != "incomplete")
@@ -93,13 +92,34 @@ public static class PEvidence
                 if (packet.Links.Select(l => l.Id).Distinct(StringComparer.Ordinal).Count() != packet.Links.Count ||
                     !packet.Links.Select(l => l.Id).Order().SequenceEqual(config.Bindings.Select(b => b.Id).Order()))
                     Error("Source binding coverage differs from configuration.");
+                string Recorded(string file)
+                {
+                    if (!packet.Fingerprints.TryGetValue(file, out string? hash))
+                        throw new InputException(ErrorCode.InvalidPEvidence, "Missing archived correspondence pin: " + file);
+                    string copy = Safe(output, Path.Combine("inputs", hash));
+                    if (!File.Exists(copy) || Files.Hash(copy) != hash)
+                        throw new InputException(ErrorCode.InvalidPEvidence, "Changed archived correspondence input: " + file);
+                    return Files.Read(copy);
+                }
+                Dictionary<string, ArchivedSourceBinding> inline = config.Bindings.Count == 0 ? [] :
+                    CorrespondenceEvidence.Bindings(config.Sources.Select(p => ProjectInputs.Resolve(packet.Config, p)),
+                        packet.Fingerprints, Recorded);
+                CorrespondenceConfiguration? scope = config.Bindings.Count == 0 ? null :
+                    CorrespondenceEvidence.Scope(ProjectInputs.Resolve(packet.Config, config.Scope ??
+                        throw new InputException(ErrorCode.InvalidPEvidence, "Missing correspondence scope.")), Recorded);
+                List<FormalLinkDeclaration> formal = config.Bindings.Count == 0 ? [] :
+                    FormalCorrespondence.P(packet.Inventory, packet.Fingerprints, Recorded);
                 foreach (PSourceLink link in packet.Links)
                 {
                     if (!packet.Inventory.Contains(link.Specification) ||
                         !packet.Fingerprints.ContainsKey(link.Implementation.Location.Path))
                         Error("Link endpoints are not in the pinned source/native inventory.");
                     PBinding binding = config.Bindings.Single(b => b.Id == link.Id);
-                    if (link.Specification.Name != binding.Declaration || link.Relation != binding.Relation ||
+                    if (!inline.TryGetValue(link.Id, out ArchivedSourceBinding? declaration) ||
+                        formal.Count(f => f.Binding.Id == link.Id && f.Endpoint.Name == link.Specification.Name) != 1 ||
+                        declaration.Location != link.Implementation.Location ||
+                        !scope!.Targets.Any(t => t.Id == Markup.Name(link.Id).Alias && t.Language == "p") ||
+                        link.Relation != binding.Relation ||
                         !link.Assumptions.SequenceEqual(binding.Assumptions))
                         Error("P source relation differs from the archived binding.");
                 }

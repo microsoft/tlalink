@@ -31,7 +31,7 @@ public sealed record Endpoint(string Name, string Scope, string Kind, Place Loca
 public sealed record Boundary(string Kind, string Text, Place Location);
 public sealed record Access(string Name, string Symbol, string Expression, string Mode, Place Location);
 public sealed record Link(string Key, string Identity, string Kind, string Model, Endpoint Implementation,
-    Endpoint Specification, Dictionary<string, string> Binding, List<string> Locks,
+    Endpoint Specification, BindAnnotation Binding, CaptureAnnotation? Capture, List<string> Locks,
     List<Boundary> Boundaries, List<Access> CandidateAccesses, List<string> Questions)
 {
     public string Assessment => "unreviewed";
@@ -49,6 +49,10 @@ public sealed class Packet(string command)
     public List<Issue> Diagnostics { get; } = [];
     public List<Link> Links { get; set; } = [];
     public List<Endpoint> Inventory { get; } = [];
+    public List<SourceDisposition> Dispositions { get; } = [];
+    public List<OmissionRuleMatch> OmissionMatches { get; } = [];
+    public List<SourceLinkDeclaration> SourceBindings { get; } = [];
+    public List<string> SelectedTargets { get; } = [];
     public Dictionary<string, string> Fingerprints { get; } = new(FilePaths.Comparer);
     public List<string> Uncertainties { get; } = [
         "Roslyn resolves only the supplied sources, references and preprocessor symbols.",
@@ -114,6 +118,14 @@ public static class Files
             return new UnicodeEncoding(true, true, true).GetString(bytes, 2, bytes.Length - 2);
         int skip = bytes.AsSpan().StartsWith(new byte[] { 0xef, 0xbb, 0xbf }) ? 3 : 0;
         return new UTF8Encoding(false, true).GetString(bytes, skip, bytes.Length - skip);
+    }
+
+    internal static byte[] EncodeLike(string text, byte[] original)
+    {
+        Encoding encoding = original.AsSpan().StartsWith(new byte[] { 0xff, 0xfe }) ? new UnicodeEncoding(false, true, true) :
+            original.AsSpan().StartsWith(new byte[] { 0xfe, 0xff }) ? new UnicodeEncoding(true, true, true) :
+            new UTF8Encoding(original.AsSpan().StartsWith(new byte[] { 0xef, 0xbb, 0xbf }), true);
+        return [.. encoding.GetPreamble(), .. encoding.GetBytes(text)];
     }
 
     public static List<string> Discover(IEnumerable<string> inputs, string extension)

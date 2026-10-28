@@ -31,6 +31,31 @@ public static class ProjectReport
         }
         Pin(path);
         Pin(ProjectInputs.Resolve(path, project.Requirements));
+        EvidenceReportManifest? sourceReport = null;
+        if (options.Has("source-inventory") && !options.Has("source-report"))
+            throw new InputException(ErrorCode.InvalidReportInput, "--source-inventory requires an explicit --source-report policy.");
+        if (options.Optional("source-report") is string sourcePath)
+        {
+            sourcePath = FilePaths.Full(sourcePath);
+            Pin(sourcePath);
+            sourceReport = EvidenceReport.Rebase(ProjectInputs.Read<EvidenceReportManifest>(sourcePath), Path.GetDirectoryName(sourcePath)!);
+            if (options.Optional("source-inventory") is string inventoryPath)
+            {
+                if (sourceReport.SourceInventories is not { Count: 1 } ||
+                    sourceReport.SourceInventories[0].Inventory != null)
+                    throw new InputException(ErrorCode.InvalidReportInput,
+                        "--source-inventory binds exactly one null inventory slot; it cannot replace a declared inventory.");
+                inventoryPath = FilePaths.Full(inventoryPath);
+                sourceReport.SourceInventories[0] = sourceReport.SourceInventories[0] with { Inventory = inventoryPath };
+                Observe(inventoryPath);
+                Files.Pin(sourceReport.Fingerprints, inventoryPath, Files.Hash(inventoryPath));
+            }
+            foreach (var pin in sourceReport.Fingerprints)
+            {
+                Observe(pin.Key);
+                Files.Pin(pins, pin.Key, pin.Value);
+            }
+        }
         List<EvidenceReportNode> nodes = [];
         List<(string File, JsonElement Report)> pending = [];
         List<string> gaps = ["Source dispositions and source/model correspondence are not inferred from project stages. No code inventory is manufactured."];
@@ -124,9 +149,11 @@ public static class ProjectReport
             Files.WriteNew(evaluation.File, evaluation.Report);
             Files.Pin(pins, evaluation.File, Files.Hash(evaluation.File));
         }
-        EvidenceReportManifest manifest = new(Schema.Version, "evidence-report", project.Id,
-            "Explicit project-run snapshots. Milestone nodes preserve each independently checked archive/applicability/acceptance result. Report freshness concerns this presentation snapshot, not acceptance of every run.",
-            pins, nodes, [], ["Producing hosts, build projects and reviewer identities are trusted, not authenticated."], gaps);
+        EvidenceReportManifest manifest = new(Schema.Version, "evidence-report", sourceReport?.Title ?? project.Id,
+            sourceReport?.Scope ?? "Explicit project-run snapshots. Milestone nodes preserve each independently checked archive/applicability/acceptance result. Report freshness concerns this presentation snapshot, not acceptance of every run.",
+            pins, [.. nodes, .. sourceReport?.Nodes ?? []], sourceReport?.CodeRegions ?? [],
+            ["Producing hosts, build projects and reviewer identities are trusted, not authenticated.", .. sourceReport?.Assumptions ?? []],
+            [.. gaps, .. sourceReport?.Gaps ?? []], sourceReport?.SourceInventories);
         Files.WriteNew(manifestPath, manifest);
         return EvidenceReport.Run(new(["report", "--manifest", manifestPath, "--output", output, "--format", options.Get("format", "json")]));
     }

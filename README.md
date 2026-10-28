@@ -19,12 +19,16 @@ confidence.
 TlaLink is a local .NET 10 command-line tool that keeps that link explicit and
 checkable:
 
-- **Links live in your code.** The agent annotates the C# to show which code
-  each model step and variable represents. TlaLink checks that every link
-  still resolves to real code and model declarations.
+- **Both sides declare their links.** The agent marks a C# location and its
+  formal counterpart with the same unique name. TlaLink independently resolves
+  both endpoints and rejects missing or duplicate counterparts.
+  Selected source premises can also be checked, such as whether only the
+  authorized gate outcome reaches an effect. These checks do not prove that
+  the implementation matches the model.
 - **Executions are checked against the model.** Where supported, TlaLink runs
   instrumented copies of your code and checks the recorded behavior against
-  the model.
+  the model. Selected cleanup and exception paths can be observed explicitly,
+  rather than treating scope exit as successful resource release.
 - **Evidence knows when it is stale.** TlaLink records exactly which code,
   models and tool versions each result used, and reports when changes mean
   earlier results no longer apply. The agent then updates the model and
@@ -63,12 +67,40 @@ says the increment under the lock is the model step `Admit`:
 ```csharp
 lock (this.gate)
 {
-    /* @link
-    step Admit justification=lock actor="1" operation="1" point=commit classification=transition observe=active;
-    */
+    /* @link {
+  "bind": [
+    {
+      "id": "lifecycle::admit",
+      "reason": "Update under the gate."
+    }
+  ],
+  "capture": [
+    {
+      "binding": "lifecycle::admit",
+      "actor": "1",
+      "operation": "1",
+      "point": "commit",
+      "classification": "transition",
+      "observe": [
+        "lifecycle::active"
+      ]
+    }
+  ]
+} */
     this.active++;
 }
 ```
+
+The formal declaration owns the same common name, independently of its native
+operator name:
+
+```tla
+(* @link {"bind":[{"id":"lifecycle::admit"}]} *)
+Admit == active' = active + 1
+```
+
+The observed field and its formal state endpoint also need the paired
+`lifecycle::active` declaration; this excerpt is not a complete capture setup.
 
 ## What you do, and what the agent does
 

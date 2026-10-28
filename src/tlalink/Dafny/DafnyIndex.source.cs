@@ -53,6 +53,8 @@ internal static class DafnyIndex
                 name = member.FullDafnyName, module = module.IsDefaultModule ? "" : module.FullDafnyName,
                 kind = member.WhatKind, path = uri.LocalPath,
                 line = member.StartToken.line, end_line = member.EndToken.line,
+                start = member.StartToken.pos, end = member.EndToken.pos + member.EndToken.val.Length,
+                column = member.StartToken.col,
                 is_static = member.IsStatic, ghost = member.IsGhost,
                 has_body = member switch { Method m => m.Body != null, Function f => f.Body != null, _ => false },
                 inputs = inputs.Select(p => new { name = p.Name, type = p.Type.ToString(), ghost = p.IsGhost }),

@@ -7,20 +7,26 @@ namespace TlaLink;
 
 public sealed record EvidenceReportManifest(int SchemaVersion, string Kind, string Title, string Scope,
     Dictionary<string, string> Fingerprints, List<EvidenceReportNode> Nodes,
-    List<EvidenceReportRegion> CodeRegions, List<string> Assumptions, List<string> Gaps);
+    List<EvidenceReportRegion> CodeRegions, List<string> Assumptions, List<string> Gaps,
+    List<ReportSourceInventory>? SourceInventories = null);
+public sealed record ReportSourceInventory(string? Inventory, List<ReportSourceDisposition> Dispositions);
+public sealed record ReportSourceDisposition(string File, string Profile, string Disposition,
+    List<string> Contracts, string Reason, string? SymbolPrefix = null);
 public sealed record EvidenceReportNode(string Id, string Kind, string Title, string Claim,
     string RecordedStatus, string? ExpectedStatus, List<string> DependsOn, List<string> Evidence,
     List<string> Assumptions, List<string> Gaps);
 public sealed record EvidenceReportRegion(string File, int Line, int EndLine, string Symbol,
     string Profile, string Disposition, List<string> Contracts, string Reason);
 
-public static class EvidenceReport
+public static partial class EvidenceReport
 {
     public const string Boundary = "Presentation of supplied recorded claims and source dispositions, not independent native verification, acceptance, authentication, or general C# refinement. Matching input bytes do not validate a code region. Dependencies do not compose a theorem. Retention requires separate explicit roots.";
 
     public static int Run(CliOptions options)
     {
         if (options.Has("project") || options.Has("run")) return ProjectReport.Run(options);
+        if (options.Has("source-report") || options.Has("source-inventory"))
+            throw new InputException(ErrorCode.InvalidReportInput, "--source-report/--source-inventory accompany --project and explicit --run inputs.");
         string manifestPath = FilePaths.Full(options.Required("manifest"));
         string output = FilePaths.Full(options.Required("output"));
         if (File.Exists(output) || Directory.Exists(output))
@@ -40,6 +46,8 @@ public static class EvidenceReport
             if (!string.Equals(actual, pin.Value, StringComparison.OrdinalIgnoreCase))
                 issues.Add(new(ErrorCode.ReportInputStale, "Changed or missing report input: " + pin.Key));
         }
+        manifest = ExpandInventories(manifest, directory, pins, observed);
+        Validate(manifest, directory);
         string markdown = Markdown(manifest, pins, issues, directory, manifestPath, output);
         foreach (var pin in observed)
             if (!string.Equals(CurrentHash(pin.Key), pin.Value, StringComparison.Ordinal))
@@ -82,6 +90,18 @@ public static class EvidenceReport
             Require(!string.IsNullOrWhiteSpace(pin.Key) && pin.Value is { Length: 64 } &&
                 pin.Value.All(char.IsAsciiHexDigit), "Invalid report input path/SHA256.");
             Require(pins.TryAdd(FilePaths.Full(pin.Key, directory), pin.Value), "Duplicate canonical report input.");
+        }
+        foreach (ReportSourceInventory inventory in manifest.SourceInventories ?? [])
+        {
+            Require(inventory != null && !string.IsNullOrWhiteSpace(inventory.Inventory) &&
+                pins.ContainsKey(FilePaths.Full(inventory.Inventory, directory)) && inventory.Dispositions.Count > 0,
+                "Source inventories need pinned input and explicit dispositions.");
+            foreach (ReportSourceDisposition rule in inventory!.Dispositions)
+                Require(rule != null && !string.IsNullOrWhiteSpace(rule.File) &&
+                    pins.ContainsKey(FilePaths.Full(rule.File, directory)) &&
+                    !string.IsNullOrWhiteSpace(rule.Profile) && !string.IsNullOrWhiteSpace(rule.Disposition) &&
+                    !string.IsNullOrWhiteSpace(rule.Reason) && (rule.SymbolPrefix == null || rule.SymbolPrefix.Length > 0) &&
+                    rule.Contracts.All(c => !string.IsNullOrWhiteSpace(c)), "Invalid source disposition.");
         }
         HashSet<string> ids = new(StringComparer.Ordinal);
         string[] kinds = ["code", "check", "proof", "test", "trace", "review", "requirement", "milestone", "audit"];

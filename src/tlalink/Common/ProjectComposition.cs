@@ -13,13 +13,14 @@ public sealed record ScenarioAuthoring(string Id, List<StageAuthoring>? Stages =
 public sealed record StageAuthoring(string Id, string Kind, List<string>? DependsOn = null,
     int? TimeoutSeconds = null, string? Bindings = null, List<string>? Sources = null,
     List<string>? Models = null, string? Config = null, List<string>? Arguments = null,
-    TlcResources? Resources = null, string? Profile = null, int? Fingerprint = null);
+    TlcResources? Resources = null, string? Profile = null, int? Fingerprint = null,
+    string? Scope = null, string? Target = null);
 public sealed record ReviewAuthoring(string Id, string Claim, List<string> Assumptions,
     List<string>? Inputs = null, List<string>? InputSets = null);
 public sealed record ProjectComponent(int SchemaVersion, string Kind, string Id, List<StageAuthoring> Stages,
     List<ReviewAuthoring>? Obligations = null, List<CheckObligation>? CheckObligations = null,
     List<string>? Components = null, [property: JsonPropertyName("$schema")] string? EditorSchema = null);
-public sealed record ProjectInputSet(string Id, List<string> Inputs);
+public sealed record ProjectInputSet(string Id, List<string> Inputs, List<string>? PreparedSources = null);
 public sealed record ProjectInputSets(int SchemaVersion, string Kind, List<ProjectInputSet> Sets,
     [property: JsonPropertyName("$schema")] string? EditorSchema = null);
 public sealed record ExecutionProfile(string Id, string Kind, int TimeoutSeconds, TlcResources? Resources = null);
@@ -157,8 +158,29 @@ public static class ProjectComposition
                 foreach (ProjectInputSet set in document.Sets)
                 {
                     Id(file, set.Id);
-                    if (set.Inputs.Count == 0) throw Error(file, "Input sets cannot be empty: " + set.Id);
-                    if (!inputSets.TryAdd(set.Id, set.Inputs.Select(p => Rebase(file, p)).ToList()))
+                    List<string> inputs = set.Inputs.Select(p => Rebase(file, p)).ToList();
+                    HashSet<string> selectedLedgers = new(FilePaths.Comparer);
+                    foreach (string reference in set.PreparedSources ?? [])
+                    {
+                        string ledgerPath = Import(file, reference);
+                        if (!selectedLedgers.Add(ledgerPath)) throw Error(file, "Duplicate prepared-source reference.");
+                        PreparedSources ledger = Document<PreparedSources>(ledgerPath, "prepared-sources");
+                        if (ledger.Status != "prepared" || ledger.AnnotationVersion != source.AnnotationVersion ||
+                            ledger.Files.Count is < 1 or > 1000)
+                            throw Error(ledgerPath, "Invalid prepared-source file list.");
+                        inputs.Add(Rebase(ledgerPath, ledgerPath));
+                        HashSet<string> destinations = new(FilePaths.Comparer);
+                        foreach (PreparedFile prepared in ledger.Files)
+                        {
+                            if (prepared == null || FilePaths.IsAbsolute(prepared.Destination))
+                                throw Error(ledgerPath, "Prepared-source destinations must be relative.");
+                            string path = ProjectAcceptance.SafePath(Path.GetDirectoryName(ledgerPath)!, prepared.Destination);
+                            if (!destinations.Add(path)) throw Error(ledgerPath, "Duplicate prepared-source destination.");
+                            inputs.Add(Rebase(ledgerPath, path));
+                        }
+                    }
+                    if (inputs.Count == 0) throw Error(file, "Input sets cannot be empty: " + set.Id);
+                    if (!inputSets.TryAdd(set.Id, inputs))
                         throw Error(file, "Duplicate input set: " + set.Id);
                 }
             }
@@ -265,7 +287,8 @@ public static class ProjectComposition
                 source.Bindings == null ? null : Rebase(file, source.Bindings),
                 source.Sources?.Select(p => Rebase(file, p)).ToList(),
                 source.Models?.Select(p => Rebase(file, p)).ToList(),
-                source.Config == null ? null : Rebase(file, source.Config), source.Arguments, resources, source.Fingerprint);
+                source.Config == null ? null : Rebase(file, source.Config), source.Arguments, resources, source.Fingerprint,
+                source.Scope == null ? null : Rebase(file, source.Scope), source.Target);
         }
 
         private ReviewObligation Review(string file, ReviewAuthoring source)
