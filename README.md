@@ -46,8 +46,8 @@ your code. It is designed for the **C#/.NET toolchain**.
 1. **Pick one question.** You describe a concrete concern, such as "Can
    cancellation leak a credit?", and point the agent at the relevant code.
 2. **The agent models it and maps it to your code.** It writes a small model
-   of just that behavior and annotates the C# to show which code each model
-   step and variable represents.
+   of just that behavior and annotates both the C# and formal declarations
+   with shared names for the selected relationships.
 3. **TlaLink checks the links and runs the checkers.** It confirms that the
    annotations resolve to real C# symbols and model declarations, then runs
    the selected checker. Where supported, it also runs instrumented copies of
@@ -60,33 +60,17 @@ your code. It is designed for the **C#/.NET toolchain**.
    simplified or assumed, and what is still open. You decide whether that is
    good enough.
 
-The project declares the annotation version once; it is not repeated in source.
-The mapping lives in your source as short `@link` annotations. For example, this
-says the increment under the lock is the model step `Admit`:
+### Paired `@link` annotations
+
+Declare `"annotation_version": 4` once in the root project, not in each comment.
+Both C# and formal declarations use a native block comment containing `@link`
+and standard JSON. Each `bind` owns the same unique `scope::name`; neither side
+names the other's native declaration. For example:
 
 ```csharp
 lock (this.gate)
 {
-    /* @link {
-  "bind": [
-    {
-      "id": "lifecycle::admit",
-      "reason": "Update under the gate."
-    }
-  ],
-  "capture": [
-    {
-      "binding": "lifecycle::admit",
-      "actor": "1",
-      "operation": "1",
-      "point": "commit",
-      "classification": "transition",
-      "observe": [
-        "lifecycle::active"
-      ]
-    }
-  ]
-} */
+    /* @link {"bind":[{"id":"lifecycle::admit"}]} */
     this.active++;
 }
 ```
@@ -99,8 +83,37 @@ operator name:
 Admit == active' = active + 1
 ```
 
-The observed field and its formal state endpoint also need the paired
-`lifecycle::active` declaration; this excerpt is not a complete capture setup.
+The shared ID is `lifecycle::admit`, even though the TLA+ operator is named
+`Admit`. The same paired `bind` syntax works with authored PlusCal labels,
+Dafny declarations and P declarations. An explicit correspondence scope selects
+the formal inputs; a resolved pair is not proof of equivalent behavior.
+
+Bindings alone need no executable metadata. For supported C# trace observations,
+add an optional `capture` array to the same JSON object:
+
+```json
+{
+  "bind": [{"id": "lifecycle::admit"}],
+  "capture": [{
+    "binding": "lifecycle::admit",
+    "actor": "1",
+    "operation": "1",
+    "point": "commit",
+    "classification": "transition",
+    "observe": ["lifecycle::active"]
+  }]
+}
+```
+
+The observed field and formal state endpoint also need a paired
+`lifecycle::active` binding, with the C# capture declaring its guard and type.
+This excerpt is not a complete capture setup; see the
+[Demo source](examples/Demo.cs), [model](examples/Demo.tla) and
+[scope](examples/demo-scope.json).
+`capture` and reasoned `exclude` entries are C#-only; formal comments contain
+`bind` entries only. Exclusions scope correspondence, not runtime execution,
+input pinning or relevant argument/callee effects. See the
+[annotation reference](REFERENCE.md#one-maintained-markup-link) for the full format.
 
 ## What you do, and what the agent does
 
