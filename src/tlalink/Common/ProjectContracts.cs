@@ -16,15 +16,18 @@ public sealed record CompilerProfile(string TargetFramework, string LanguageVers
 public sealed record AnalysisStage(string Id, string Kind, List<string> DependsOn, int TimeoutSeconds,
     string? Bindings = null, List<string>? Sources = null, List<string>? Models = null,
     string? Config = null, List<string>? Arguments = null, TlcResources? Resources = null, int? Fingerprint = null,
-    string? Scope = null, string? Target = null);
+    string? Scope = null, string? Target = null, List<MethodSummaryUse>? MethodSummaries = null);
 public sealed record AnalysisScenario(string Id, List<AnalysisStage> Stages);
-public sealed record ReviewObligation(string Id, string Claim, List<string> Assumptions, List<string> Inputs);
+public enum ReviewOrigin { Human, Agent }
+public sealed record ReviewObligation(string Id, string Claim, List<string> Assumptions, List<string> Inputs,
+    ReviewOrigin Origin = ReviewOrigin.Human);
 public sealed record CheckObligation(string Id, string Kind, string Scenario, List<string> Requirements);
 public sealed record CheckCoverage(string Id, string Kind, string Scenario, string Status,
     List<string> Requirements, List<string> Gaps);
 public sealed record ReviewDecision(int SchemaVersion, string Kind, string Obligation, string ObligationSha256,
     string Disposition, string Reviewer, string Rationale, DateTimeOffset RecordedAt,
-    Dictionary<string, string> Fingerprints, List<string> Evidence);
+    Dictionary<string, string> Fingerprints, List<string> Evidence, ReviewOrigin Origin = ReviewOrigin.Human,
+    MethodSummarySupport? SummarySupport = null);
 public sealed record AnalysisProject(int SchemaVersion, string Kind, string Id, ProjectTools Tools,
     CompilerProfile Compiler, string Requirements, List<AnalysisScenario> Scenarios,
     List<ReviewObligation> Obligations, string ReviewDirectory, List<CheckObligation>? CheckObligations = null,
@@ -46,8 +49,10 @@ public sealed record StoredStageResult(int Fingerprint, string Key, string Famil
     bool Primary, string Directory, string EntrySha256);
 public sealed class WorkflowRun
 {
-    public int SchemaVersion => Schema.Version;
-    public string Kind => "analysis-run";
+    [JsonRequired]
+    public int SchemaVersion { get; init; } = Schema.Version;
+    [JsonRequired]
+    public string Kind { get; init; } = "analysis-run";
     public required string Project { get; init; }
     public required string ProjectDirectory { get; init; }
     public required string Scenario { get; init; }
@@ -59,6 +64,7 @@ public sealed class WorkflowRun
     public Dictionary<string, string> Fingerprints { get; init; } = new(FilePaths.Comparer);
     public Dictionary<string, string> Artifacts { get; init; } = new(StringComparer.Ordinal);
     public List<Issue> Diagnostics { get; init; } = [];
+    public List<MethodSummaryResolution> MethodSummaries { get; init; } = [];
 }
 
 public static class ProjectInputs
@@ -88,9 +94,9 @@ public static class ProjectInputs
             throw new InputException(ErrorCode.InvalidWorkflowInput, "Expected the current analysis-project schema.");
         Id(project.Id);
         CompilerProfile compiler = project.Compiler;
-        if (compiler.TargetFramework != "net10.0" || compiler.LanguageVersion != "14" ||
+        if (compiler.TargetFramework != "net10.0" || !CSharpLanguages.Supported(compiler.LanguageVersion) ||
             compiler.Nullable != "enable" || compiler.Checked || !compiler.AllowUnsafe || compiler.Defines is { Count: 0 })
-            throw new InputException(ErrorCode.WorkflowPrerequisiteMissing, "Supported compiler profile is net10.0, C# 14, nullable enable, unchecked, unsafe enabled.");
+            throw new InputException(ErrorCode.WorkflowPrerequisiteMissing, "Supported compiler profile is net10.0, C# 8 or 14, nullable enable, unchecked, unsafe enabled.");
         AcceptancePolicy policy = Read<AcceptancePolicy>(Resolve(path, project.Requirements));
         if (policy.SchemaVersion != Schema.Version || policy.Kind != "acceptance-policy" || policy.Project != project.Id)
             throw new InputException(ErrorCode.InvalidWorkflowInput, "Acceptance policy schema/kind/project mismatch.");
@@ -219,11 +225,12 @@ public static class ProjectInputs
         }
         foreach (ReviewObligation obligation in project.Obligations)
         {
-            if (string.IsNullOrWhiteSpace(obligation.Claim) || obligation.Inputs.Count == 0 ||
+            if (!Enum.IsDefined(obligation.Origin) || string.IsNullOrWhiteSpace(obligation.Claim) || obligation.Inputs.Count == 0 ||
                 obligation.Assumptions.Any(string.IsNullOrWhiteSpace))
                 throw new InputException(ErrorCode.InvalidWorkflowInput, "Review obligations require a claim, explicit inputs and nonempty assumptions.");
             foreach (string input in obligation.Inputs) _ = Resolve(path, input);
         }
+        MethodSummaries.Select(path, project, project.Scenarios.SelectMany(s => s.Stages));
         if (string.IsNullOrWhiteSpace(project.ReviewDirectory))
             throw new InputException(ErrorCode.InvalidWorkflowInput, "A review directory must be explicitly selected.");
         if (project.ResultStore != null && string.IsNullOrWhiteSpace(project.ResultStore))

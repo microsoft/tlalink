@@ -20,9 +20,12 @@ root-relative because this document lives beside the README.
 - [Apalache setup and analysis](#using-apalache-with-tla)
 - [P analysis workflow](#p-analysis-workflow)
 - [Project workflow and acceptance](#project-workflow)
+- [Reviewed method summaries](#reviewed-method-summaries)
 - [Evidence retention and recheck planning](#evidence-retention-and-recheck-planning)
 - [Integrated TLA+ and Dafny workflow](#integrated-tla-and-dafny-workflow)
 - [Review commands](#review-commands)
+- [Finding C# symbols](#finding-c-symbols)
+- [Maintaining model-owned links](#maintaining-model-owned-links)
 - [Current C# source inventory](#current-c-source-inventory)
 - [Preparing annotated source copies](#preparing-annotated-source-copies)
 - [Source annotation grammar](#one-maintained-markup-link)
@@ -361,6 +364,15 @@ flat names. See [the architecture](DESIGN.md#architecture) for component ownersh
 and evidence boundaries.
 Tool selection follows the obligation, modeling fit, available dependencies and
 required evidence, rather than a fixed tool priority or reuse of an existing model.
+
+Fixed JSON documents, receipts, native messages and summary views use named
+C# contracts in their owning directories. Workflow/acceptance consume typed
+results after strict schema/kind dispatch. Unknown summary result types fail
+explicitly rather than producing a partial success-shaped summary. Full
+receipts remain separate from presentation, and section-selected inspection
+JSON distinguishes omitted fields from selected null values. JSON Schema
+generation and genuinely variable native payloads retain narrowly scoped raw
+JSON; variable dictionary keys alone do not require a JSON DOM.
 
 ## Model authoring and self-checks
 
@@ -818,7 +830,8 @@ Trace stages
 select copied C# sources including their entry point; the generated standalone
 project passes the trace path as the first entry-point argument, followed by
 the stage's optional `arguments`. No arbitrary shell commands are accepted.
-The compiler profile is explicit: net10.0/C#14, nullable enabled, unchecked,
+The compiler profile is explicit: net10.0 with `language_version` set to `"8"`
+or `"14"`, nullable enabled, unchecked,
 unsafe enabled, explicit references and optional replacement defines.
 Unsupported settings fail rather than approximate another build.
 
@@ -958,7 +971,7 @@ A `csharp-regression` config declares `schema_version`, `kind`, `project`,
 explicit `sources`, `compiler`, exact `tests`, additional pinned `inputs`,
 entry-point `arguments`, and optional `configuration` (`Debug`, the default, or
 `Release`). Paths resolve from the config. The regression compiler profile is
-independent of the trace/Roslyn profile: net10.0 or net10.0-windows, C# 14,
+independent of the trace/Roslyn profile: net10.0 or net10.0-windows, C# 8 or 14,
 nullable enable/disable, explicit checked/unsafe flags, exact `defines`
 (including SDK/configuration symbols) and explicit additional references.
 Actual sources must match the declared sources plus SDK-generated assembly-info,
@@ -1170,6 +1183,91 @@ claim/assumption/input identity and supporting evidence hashes must still
 match. Changed claims or inputs make reviews stale. Acceptance reports retain
 the decisions used. Reviewer names are explicit assertions, not authenticated
 identities, and accepted review is not an automatic refinement proof.
+
+### Reviewed method summaries
+
+A summary is an ordinary stateless, parameterized TLA+ relation paired with one
+C# method/constructor through the existing `bind` ID. It does not declare retry
+locals or helper PC variables. The caller supplies abstract state and outcomes
+and preserves unrelated state. See the runnable
+[synthetic example](examples/MethodSummaries/README.md).
+
+The schema-4 `correspondence-scope` optionally declares:
+
+```json
+"method_summaries": [{
+  "binding": "permits::try-take",
+  "abstraction": "atomic",
+  "sources": ["..\\src\\PermitGate.cs"],
+  "inspection": "permit-summary",
+  "precondition": "Requires",
+  "assumptions": ["All accesses follow the selected counter protocol."],
+  "limits": ["No termination or fairness claim; inspection is not machine proof."],
+  "depends_on": []
+}]
+```
+
+`abstraction` is `pure` or `atomic`, an authored intent rather than a checked
+semantic theorem. Sources are explicit C# files relative to the scope document,
+not directories or discovered callees. Use the project compiler profile and
+explicit references/defines. Bindings must be unique and selected in a TLA+
+target's `required_bindings`. Up to 1000 summaries are supported.
+`depends_on` selects other summaries in that same scope; unknown IDs, duplicate
+edges and cycles are errors.
+
+Preflight requires a concrete synchronous nonvirtual method/constructor without
+capture metadata. Async, Task/ValueTask-returning, iterator, extern and
+ref-return providers are unsupported. The formal binding must resolve through
+SANY to a parameterized operator in a module with no state variables. The
+optional `precondition` names another parameterized native operator in that
+module. Abstract relation arity need not equal C# argument count: explicit
+state/result correspondence is an inspection obligation, not inferred pairing.
+
+TLC/trace stages declare explicit uses:
+
+```json
+"method_summaries": [{
+  "scope": "verification\\scope.json",
+  "bindings": ["permits::try-take"]
+}]
+```
+
+Component references resolve against the declaring component and are rebased
+into the ordinary project expansion. Preflight requires summary modules in the
+consumer's native import closure. Import presence does not establish semantic
+use or caller preconditions. Check preconditions explicitly as authored
+properties at the call boundary; using them only as action guards can hide
+misuse. Relations are reused through ordinary TLA+ imports/instantiations, not
+automatic C# translation.
+
+Each summary's `inspection` names an existing project review obligation.
+Obligations and decisions have `origin: "human"` by default; declare
+`origin: "agent"` for agent inspection, and record with
+`record-review --origin agent`. The origin must match the obligation exactly;
+agent decisions cannot discharge separate human requirements. Origins and
+reviewer identities are assertions, not authentication.
+
+Recording summary inspection resolves the endpoints and automatically adds
+source/compiler references, selected formal imports, scope and tool pins to the
+existing review fingerprints. `summary_support` records selection and compiler
+context identities and the supplemental input list. The rationale and explicit
+supporting evidence remain authored; there is no automatic C# refinement proof.
+Whole-file/context pins intentionally invalidate conservatively.
+Automatically selected compiler/tool inputs outside the project retain their
+observed absolute identities; project-local supplemental inputs are relative.
+
+`doctor`/`plan` show resolved summaries and current inspection status. Pending
+inspection does not prevent exploring a model. `run` archives the resolved
+summary inventory and input closure. `accept` requires current accepted support
+for every declared transitive dependency, in addition to the native outcomes and
+any independent human reviews. `explain`, summary output and project reports
+preserve the conditional abstraction basis.
+
+Changing the implementation makes inspection stale without changing the
+summary's model semantics. An unchanged TLC search can still be reused through
+the existing result store, but current inspection must be re-established before
+acceptance. Changing the summary changes the caller's imported model closure.
+No new evidence cache or automatic proof composition is introduced.
 
 ### One current public format
 
@@ -1440,12 +1538,14 @@ case-sensitive semantic identities, not source text or CFG block numbers.
 |---|---|---|
 | `guarded-effect` | `gate`, `effect`: method documentation IDs; `when`: Boolean | Exactly one gate call on `this.storage` decides a direct Boolean branch. Every entry-to-effect path crosses the declared outcome edge, that outcome can reach the effect, and the one effect block cannot repeat. A value-type gate receiver must not be readonly. |
 | `guarded-try-effect` | Same as `guarded-effect` | Extends that check only to a selected first direct call in the body of one top-level try statement. The gate must be in the method prefix outside that region. Exception dispatch cannot enter the selected first site; handler behavior and arbitrary exception-flow summaries are not established. |
-| `stable-storage` | `allowed_calls`: nonempty unique source method documentation IDs; optional `allowed_properties`: getter property IDs | A private writable value-type field in a reference-type owner has no initializer, replacement, copy or ref escape in the selected scope. Every use is an authored direct method call or instance getter without a setter/ref return. Callee/getter effects and purity are not inferred. |
+| `stable-storage` | `allowed_calls`: nonempty unique source method documentation IDs; optional `allowed_properties`: getter property IDs | In a reference-type owner, either a private writable value-type field with no initializer, or a private readonly reference-type field initialized directly by fresh `new T(...)` (including target-typed `new(...)`, without an object initializer). No replacement, copy or ref escape is allowed in the selected scope. Every use is an authored direct method call or instance getter without a setter/ref return. Factories, constructor-only initialization and constructor replacement are unsupported or rejected, not inferred fresh. Callee/getter effects and purity are not inferred. |
 | `atomic-exchange-gate` | none | The bound synchronous instance method consists of `return Interlocked.Exchange(ref this.storage, 1) == 0`, or its expression-bodied/equality-operand-order equivalent, using writable private Int32 storage. |
 | `monotonic-int32` | none | Selected private writable Int32 storage starts at zero and every scoped use is a recognized `Volatile.Read`, `Volatile.Write(..., 1)` or `Interlocked.Exchange(..., 1)`. Direct writes, resets and unrecognized ref escapes do not pass. |
-| `reference-cas-gate` | `parameter`: source parameter name | The bound instance method returns generic reference `Interlocked.CompareExchange(ref this.storage, parameter, null) == null` with built-in, not overloaded, equality. This checks shape, not a nonnull input precondition. |
+| `reference-cas-gate` | `parameter`: source parameter name | The bound instance method returns recognized reference `Interlocked.CompareExchange(ref this.storage, parameter, null) == null` with built-in, not overloaded, equality. This checks shape, not a nonnull input precondition. |
+| `reference-cas-effect` | `effect`: method documentation ID | A synchronous instance source method performs exactly one recognized reference `CompareExchange(ref this.storage, nonnullCandidate, null)`, initializes or directly assigns its result to a local, immediately returns that local under built-in `if (local != null)`, then directly calls the one selected effect. CFG reachability and authorized-edge checks reject bypasses. This authorizes dispatch only, including a call to an async method; it does not check task settlement or progress. |
+| `callback-effect` | `gate`, `effect`: method documentation IDs | A synchronous instance source method contains only `this.readonlyHelper.Gate(this.PrivateCallback)` (an expression body, return or expression statement). Its single argument must be a private synchronous instance callback method group on the same owner. The callback has one first direct selected effect, in a block or one top-level try/catch, followed only by returns. Its only selected-source reference is that argument; direct callback bypasses, delegate escapes, additional references and other direct selected effect calls in the owner are rejected. This checks wiring, not helper authority or automatic composition. |
 | `reference-read` | none | The selected instance getter or synchronous method returns a direct generic reference `Volatile.Read(ref this.storage)`. |
-| `reference-cell` | none | Private writable reference storage starts null. Every scoped use is a recognized generic reference Volatile.Read or CompareExchange with null comparand. Nonnull replacement comparands, resets, aliases and unrecognized operations do not pass. |
+| `reference-cell` | none | Private writable reference storage starts null. Every scoped use is a recognized reference Volatile.Read or CompareExchange with null comparand. Nonnull replacement comparands, resets, aliases and unrecognized operations do not pass. |
 
 For example, independently authored notification logic could declare:
 
@@ -1479,7 +1579,7 @@ replacement is rejected; escapes, copies or calls on the containing
 value-type `this` require unsupported effect summaries rather than being ignored.
 These checks do not infer global heap aliasing or object lifetime. Recognized
 intrinsics must resolve to metadata methods with the expected Int32 or generic
-reference signatures;
+reference signatures (including the exact metadata object CompareExchange overload);
 source lookalikes do not qualify. Framework references and CLR intrinsic
 semantics remain trusted, not authenticated or proved.
 
@@ -1489,6 +1589,54 @@ nonnull publication and stable-first-reference claims differ from at-most-one
 true result or guarded callback; the latter need an explicit nonnull argument
 premise. Neither a source-shape pass nor nullable annotations supplies that
 runtime precondition.
+
+`reference-cas-effect` uses no `gate`, `when`, `parameter`, `allowed_calls` or
+`allowed_properties`; `callback-effect` likewise forbids `when`, `parameter`
+and both allowlists. Both require `storage` and `effect`, and only
+`callback-effect` requires `gate`. Nonnull CAS candidates are limited to a
+direct fresh construction without object initializer, `this`, a nonnull constant,
+or an unchanged local initialized by a fresh construction. One explicit BCL
+contract also admits `completion.Task` where `completion` is an unchanged,
+non-ref local initialized directly by fresh `new TaskCompletionSource<T>(...)`
+without an object initializer. The same getter may appear in the final return.
+The constructor's direct BCL `TaskCreationOptions` constants, including
+`RunContinuationsAsynchronously`, are supported. Both the constructed type and
+its nonvirtual `Task<T>` getter must resolve to the framework metadata types
+from the compiler's core assembly (or its explicit type forwarders), not
+source/shadow lookalikes. This trusts the BCL guarantee that the getter returns
+a nonnull task; it is not arbitrary getter purity, nullable-annotation inference,
+or proof of task settlement. Selected framework references and their contracts
+remain trusted, not authenticated. Factory-created, reassigned, ref-escaped or
+unknown receiver locals do not qualify. Nullable annotations, other property
+getters, factory results and parameter names are not runtime nonnull premises.
+A predeclared result local must be non-ref and either uninitialized or initialized
+by authoritative `Volatile.Read(ref this.storage)`. In the latter case its
+declaration must be immediately followed by a matching built-in nonnull return
+fast path, and the same unchanged local must then receive the CAS result before
+the checked authorization guard. A stale read, other-field read, discarded CAS
+result or intervening write/ref escape does not qualify.
+The optional prefix is limited to candidate declarations, that result
+declaration, and a direct `Volatile.Read(ref this.storage)` local with a matching
+built-in nonnull early return. A reference-parameter null check may throw a
+directly constructed BCL `ArgumentNullException` with constant arguments;
+returns, arbitrary exceptions and side-effecting validation are not this
+supported precondition. Only a simple return (including the recognized
+BCL completion-source getter) may follow the effect. The direct selected dispatch
+call may explicitly discard its return value with `_ = Dispatch(...)`; an
+assignment to another variable is not that supported discard pattern.
+Additional calls, fields, local writes/ref escapes, exception regions, loops,
+nested functions and other unsupported control remain incomplete. Known inverted
+or absent authorization, nonnull comparands and duplicate effects are rejected.
+
+Callback catch bodies are not effect summaries. The check inventories all
+selected source for references to the callback, including nested functions, and
+other direct selected effect invocations in its owner. It does not infer indirect
+callee effects, reflection behavior or behavior outside that source scope.
+Require separate helper `reference-cas-effect`, `reference-cell` and owner
+`stable-storage` premises when the claim depends on those properties; a wiring
+pass does not establish them or compose their results into a C# correctness,
+at-most-once completion, settlement or liveness proof. The callback's first-call
+try support does not establish exception-handler semantics.
 
 Inspection, verification and testing record `source_obligations` with per-item
 `passed` / `rejected` / `incomplete`, source locations, explanations and guard
@@ -1543,6 +1691,290 @@ each group's fixture bytes and retains all test outcomes in the final report.
 The session-wide immutable-tool hashes and read leases remain active until the
 whole run finishes; checker coverage and evidence validation are unchanged.
 
+## Finding C# symbols
+
+For task-oriented agent workflows, use the workspace
+[source navigation skill](.github/skills/tlalink-source-navigation/SKILL.md),
+[correspondence inspection skill](.github/skills/tlalink-inspect-correspondence/SKILL.md)
+and [link maintenance skill](.github/skills/tlalink-maintain-links/SKILL.md).
+They guide CLI use without defining another binding format or review policy.
+
+`symbols` discovers and resolves compiler-generated documentation declaration
+IDs without editing source or requiring annotation context:
+
+```powershell
+.\TlaLink.ps1 symbols find --source .\examples\MethodSummaries\src\PermitGate.cs --name TryTake --format summary
+.\TlaLink.ps1 symbols show --source .\examples\MethodSummaries\src\PermitGate.cs --id "M:SummaryExample.PermitGate.TryTake" --format summary
+.\TlaLink.ps1 symbols resolve --source .\examples\MethodSummaries\src\PermitGate.cs --line 17 --column 5 --format summary
+.\TlaLink.ps1 symbols callees --source .\examples\MethodSummaries\src\PermitGate.cs --id "M:SummaryExample.PermitGate.TryTake" --format summary
+.\TlaLink.ps1 symbols describe --source .\examples\MethodSummaries\src\PermitGate.cs --id "M:SummaryExample.PermitGate.TryTake" --format summary
+```
+
+Actions:
+
+- `find --name`: exact ordinal simple name, qualified name or displayed C#
+  signature. Returns all overloads/candidates; it does not choose one. Constructor
+  discovery uses the containing type's name, so it can also return that type.
+- `show --id`: resolve an exact Roslyn documentation declaration ID against the
+  supplied compilation, limited to selected source declarations.
+- `resolve --line [--column] [--file]`: find the innermost supported declaration
+  containing a physical source position, not the declaration referenced by an
+  identifier at that position. Multiple selected sources require `--file`.
+  Without a column, sibling declarations on the same line remain ambiguous.
+  There is no nearest-line or shortest-span fallback.
+- `references --id`: selected-source semantic use sites, including method
+  groups, `nameof`, documentation crefs, constructors, indexers and named type
+  uses. Candidate overload references are explicitly marked `candidate`;
+  comments/string literals are not spelling matches.
+- `callers --id`: explicit call sites targeting the selected method/instance
+  constructor. Each row records the containing declaration, native location,
+  dispatch kind and whether the site is inside a nested function. Multiple
+  sites in one caller remain separate rows.
+- `callees --id`: explicit calls owned by one selected source member, including
+  object creation, target-typed creation and explicit `this`/`base` constructor
+  initializers. IDs identify original declarations; constructed target signatures
+  retain actual generic arguments. Reduced extension calls resolve to their
+  original extension declaration.
+- `describe --id`: selected member source and signature plus references, outgoing
+  calls, locks, awaits, throws, using regions and candidate field accesses. It
+  reuses inventory member analysis without constructing a CFG for every member.
+
+`references` and `callers` also accept compiler-resolved metadata IDs, for
+example a framework method ID emitted by `callees`. Metadata bodies are never
+scanned; these commands still search only selected source. The symbol result's
+`assembly` distinguishes compiler identities, and metadata targets have no
+selected source spans. `show` remains a source-declaration lookup.
+`callees`/`describe` accept written methods/constructors, properties/indexers,
+events and fields, not whole types.
+
+Caller queries do not infer interface implementations, override dispatch,
+delegate destinations or reflection targets. Method groups, `nameof` and crefs
+are references, not call edges. Unknown dynamic calls cannot be attributed to an
+ID by `callers`; outgoing dynamic calls make `callees`/`describe` incomplete.
+Implicit property accessors, disposal, awaiter/operator/runtime calls and
+attribute activation are not enumerated as calls. Nested-function sites are
+attributed to their enclosing supported declaration and marked, not assumed
+executed. These are scoped structural queries, not whole-program call/effect
+analysis.
+
+All actions require explicit `--source` inputs. Use repeated sources/references
+and replacement defines, `--language-version 8|14`, `--nullable enable|disable`
+and `--framework-references implicit|explicit` exactly as with
+[source inventory](#current-c-source-inventory). Alternatively,
+`--regression-result` reuses independently checked observed compiler context
+with explicit selected sources, no implicit host references and no context
+overrides. This is not an MSBuild workspace or metadata-wide search.
+
+Full JSON is schema 4, kind `source-symbols`. It includes `query`, `status`,
+`match_count`, `symbols`, `compiler`, `sources`, `fingerprints`, diagnostics and
+boundaries. Each symbol has its exact ID, name, kind, C# signature, containing
+type, assembly and all selected declaration spans. Partial type/method declarations share
+one result ID with multiple locations. `--format summary` retains the query
+and matches; `--output` writes full JSON exclusively to a new file.
+Utility queries additionally return `details.references`, `details.calls` and/or
+`details.members`, with `reference_count` and `call_count`. `match_count` counts
+resolved target symbols, not use sites. A resolved target with zero scoped use
+sites is a successful empty query, not evidence that it is unused globally.
+
+Positions are one-based physical lines and UTF-16 columns, independent of
+`#line` mappings. Spans also record zero-based UTF-16 `start` and `length`, plus
+an exclusive end column. Source types, written methods/constructors/operators,
+fields, properties/indexers, events and enum members are supported. Namespaces,
+accessors, local functions and implicit/generated members are not separate
+endpoints; primary constructors are not listed separately.
+
+Exit 0 means discovery succeeded (`found`) or one declaration resolved
+(`resolved`). Exit 1 means `not-found` (`SY002`) or an ambiguous position
+(`SY003`). Invalid selectors/coordinates (`SY001`) and incomplete compiler
+context return 2. Incomplete context emits diagnostics rather than plausible
+partial symbol results.
+
+Comments, including `@link` payloads, are not interpreted by `symbols`.
+Annotation-aware commands retain their existing strict validation. IDs remain
+stable across formatting and line movement, but renames and signature changes
+can change them; unchanged IDs do not establish unchanged behavior. Source
+fingerprints remain necessary. In PowerShell, single-quote generic IDs containing
+backticks, or pass emitted IDs as string variables instead of reconstructing them.
+
+## Maintaining model-owned links
+
+The public examples keep binding metadata in TLA+/PlusCal, Dafny and P comments,
+not in C#. Each formal `bind` owns a typed `source` selector:
+
+```tla
+(* @link {"bind":[{"id":"counter::step","source":{
+  "symbol":"M:ComponentsExample.Counter.Step",
+  "syntax":"ExpressionStatement","tokens":"Value = (Value + 1) % 3;"
+}}]} *)
+Next == value' = (value + 1) % 3
+```
+
+`source` uses the same Roslyn declaration ID, optional syntax/token selector and
+explicit `match`/`expected_matches` contract as source preparation. It resolves
+against the explicitly supplied compilation, not a line number or inferred
+declaration spelling. Omit syntax/tokens for a whole declaration. Captures live
+in the same formal comment and reference its binding ID. Only the TLC adapter
+supports captures; Dafny/P capture entries are rejected.
+
+Use the `symbols` commands to discover IDs, then maintain the formal comments:
+
+```powershell
+.\TlaLink.ps1 links list --annotation-version 4 --scope .\examples\Components\src\Counter\verification\scope.json --target counter --jar .\.tools\tla\v1.8.0\tla2tools.jar --format summary
+.\TlaLink.ps1 links check --annotation-version 4 --scope .\examples\Components\src\Counter\verification\scope.json --target counter --source .\examples\Components\src\Counter\Counter.cs --jar .\.tools\tla\v1.8.0\tla2tools.jar
+.\TlaLink.ps1 links set --annotation-version 4 --scope .\examples\Components\src\Counter\verification\scope.json --target counter --source .\examples\Components\src\Counter\Counter.cs --jar .\.tools\tla\v1.8.0\tla2tools.jar --binding "counter::step" --endpoint Next --symbol "M:ComponentsExample.Counter.Step" --syntax ExpressionStatement --tokens "Value = (Value + 1) % 3;"
+```
+
+`list` inventories selected native endpoints and their metadata. `check`
+resolves source selectors, capture shapes and the target's required binding IDs.
+`set` creates or updates one connection; a new binding requires `--endpoint`.
+`remove --binding <id>` removes that binding and its capture entries, not the
+independent required-binding declaration or acceptance policy. A removal can
+therefore deliberately leave `check` failing.
+
+`links migrate --scope <file> --source <explicit files> ...` bulk-converts
+existing source-owned metadata. It indexes all targets in the scope unless
+`--target` selects one. Supply each selected language's pinned frontend tool.
+The default is a read-only `link-migration-result` plan; only `--apply true`
+writes changes. It verifies unique pairs, moves captures and preserves native
+executable text and C# token streams. Statement selectors use the containing
+Roslyn ID, syntax kind and explicit occurrence/count, so independently authored
+negative controls can still change statement contents.
+
+Different endpoint reasons block by default. After reviewing their meanings,
+`--reason-policy preserve-both` retains both labeled explanations without
+claiming compatibility. `--strip-source false` imports metadata from immutable
+copies without editing those inputs. Source exclusions move with their type/
+member selector and per-alias reason into formal comments. Nothing updates
+consumer source allowlists, independent configuration pins, acceptance policies
+or reviews automatically. Bulk edits are not a multi-file crash transaction;
+retain the before/after hashes and inspect any interrupted application.
+
+The selected scope determines the native language. TLA+ uses `--jar`, Dafny uses
+`--dafny`, and P uses `--p` with their documented pinned distributions. Native
+frontends supply attachment spans; the CLI does not parse model expressions.
+`set` and `check` require explicit C# `--source` inputs and accept the same
+references, defines, language/nullable/framework settings or recorded regression
+context as symbol queries.
+
+Set options include `--reason`, `--match`, `--expected-matches`, repeated
+`--capture '<typed CaptureAnnotation JSON>'`, and `--clear-capture true`.
+Capture JSON must name the edited binding. Existing capture entries are retained
+unless explicitly supplied or cleared. Native endpoint movement requires an
+explicit remove followed by set; there is no fuzzy retargeting. Use
+`--output <new-file.json>` to save a `link-maintenance-result`.
+
+Edits preserve native file encoding and executable text, check input hashes and
+use an exclusive file handle. Results record before/after hashes. They are
+authoring changes, not review approvals, transactional crash-recovery receipts
+or source/model proofs. PlusCal metadata belongs on authored labels, never
+generated translation bodies; regenerate translations explicitly when required.
+
+### Inspecting correspondence
+
+`links inspect` displays authoritative native declaration text alongside its
+resolved C# attachment. It is read-only and requires `--scope`, `--target`,
+explicit `--source` inputs, `--annotation-version 4`, the selected native tool,
+and sufficient compiler context, just like `links check`.
+
+```powershell
+.\TlaLink.ps1 links inspect --annotation-version 4 --scope .\examples\Components\src\Counter\verification\scope.json --target counter --source .\examples\Components\src\Counter\Counter.cs --jar .\.tools\tla\v1.8.0\tla2tools.jar --binding "counter::step" --format text
+.\TlaLink.ps1 links inspect --annotation-version 4 --scope .\examples\Components\src\Counter\verification\scope.json --target counter --source .\examples\Components\src\Counter\Counter.cs --jar .\.tools\tla\v1.8.0\tla2tools.jar --include-unlinked false --context member --calls true --format markdown --output .\Results\counter-inspection.md
+```
+
+| Option | Meaning |
+|---|---|
+| `--binding <id>` | Inspect a binding, including its observed-state attachments. Repeat for several bindings. |
+| `--endpoint <name>` | Inspect a native declaration, even if unlinked. Repeat for several names. Mutually exclusive with `--binding`. |
+| No binding/endpoint filter | Inspect root-input declarations and any imported declarations carrying this target's bindings. |
+| `--symbol <Roslyn-ID>` | Keep bindings attached within this exact C# declaration. Repeat for several declarations. |
+| `--syntax <Roslyn-SyntaxKind>` | Keep exact C# attachment kinds, such as `ExpressionStatement`, `InvocationExpression`, `ThrowStatement` or `MethodDeclaration`. Repeat for alternatives; separates a selected call statement from an enclosing region that also contains that call. |
+| `--source-file <path>` | Keep bindings resolved in an exact C# file. Repeat for several files; caller-relative paths use normal host path comparison. |
+| `--kind <native-kind>` | Keep native declaration kinds, such as `operator`, `label`, `variable` or a backend's `function`/`method`. Repeat for alternatives; spelling is backend-specific and case-sensitive. |
+| `--status <status>` | Keep `linked`, `unlinked`, `declared-hidden` or `unresolved` native endpoints. Repeat for alternatives. These describe attachments, not proof outcomes. |
+| `--capture-point <point>` | Keep bindings declaring `invoke`, `commit`, `complete`, `fault` or `cleanup`. `none` selects bindings without an executable point, including state metadata and review-only links. Repeat for alternatives. |
+| `--search <text>` | Case-insensitive literal substring search over native name/body, binding ID, source declaration ID and exact selected C# text. Not a regex or a search of surrounding context/callees. |
+| `--section <section>` | Include `model`, `source`, `context`, `captures`, `observations` or `calls`. Repeat to choose several; default all sections. Identities, locations, reasons, diagnostics and omission/paging metadata remain visible. Explicit `--section calls` also requests call resolution. |
+| `--limit <positive integer>` | Maximum returned native endpoints after filtering; default unbounded. Bindings on an endpoint stay together. |
+| `--offset <nonnegative integer>` | Skip this many matching endpoints in deterministic native file/span order. Default `0`; responses include matching totals and `next_offset`. |
+| `--context 0..20` | Surrounding physical C# lines; default `3`. Selected multiline syntax is always shown in full. |
+| `--context block` | Show the nearest enclosing C# block, including sibling statements. |
+| `--context member` | Show the containing member; useful for earlier guard clauses and cleanup paths. |
+| `--view compact` | Default. Concise readable captures; JSON omits the potentially large fingerprint map. Compiler settings, diagnostics and omission counts remain visible. |
+| `--view full` | Include raw capture/selector JSON in readable output and the complete checked fingerprint map in JSON. |
+| `--include-unlinked false` | Hide unlinked and declared-hidden native declarations; report how many were omitted. Default `true`. |
+| `--calls true` | Add statically resolved explicit calls within the selected C# syntax, declaration IDs, dispatch and available source-definition locations. Default `false`; no transitive body expansion. Cannot be combined with sections excluding calls; `--section calls` cannot be combined with `--calls false`. |
+| `--format json\|text\|markdown\|summary` | Structured `link-inspection`, readable code/context, Markdown report, or concise counts/diagnostics. Markdown is supported only by `links inspect`. |
+| `--output <new-file>` | Save the selected presentation format without overwriting an existing file. |
+
+Repeated values within one filter are alternatives (OR); different filters
+combine (AND). Member/file/capture filters must match the same binding, not
+different bindings sharing one model declaration. Search can match either
+the native declaration or that binding. Matching bindings retain all their
+capture entries, including points other than the matching point. Native
+attachment status is recorded before individual binding filters.
+
+For example, append these option suffixes after the common scope/source/tool
+options; no JSON post-processing is needed:
+
+```text
+# Only successful observation points for one C# member, with code on both sides.
+--symbol "M:ComponentsExample.Counter.Step" --capture-point commit --section model --section source
+# Review unresolved attachments, ten endpoints at a time.
+--status unresolved --limit 10 --offset 0 --format text
+# Show only resolved explicit call details for selected bindings.
+--binding "counter::step" --section calls --format json
+```
+
+Filters and sections control presentation, not prerequisite validation.
+Diagnostics from the binding/endpoint-selected inspection are always retained,
+including failures on excluded entries or later pages; filtering cannot turn
+an attachment failure into success. Counts distinguish candidate, matching and
+returned endpoints/bindings. A valid query matching nothing reports zero
+matches explicitly, not a coverage or correctness conclusion. Only unknown or
+ambiguous exact binding/endpoint selections are input errors; other filters
+can legitimately match nothing. Source-dependent filters exclude unlinked
+native declarations. Pagination assumes stable inputs between invocations;
+it is not a multi-command snapshot or acceptance protocol. Section selection
+omits unrequested JSON fields and readable blocks consistently; source context
+can itself contain selected code even when the separate `source` section is
+omitted.
+
+Use the existing explicit references/defines/language settings, or
+`--regression-result <native-engine-result.json>` to reuse a recorded compiler
+context; selected sources must actually occur in that compiler's input list.
+For project regression stages this is the native receipt under
+`<stage>/engine/result.json`, not the enclosing stage receipt.
+
+Inspection highlights exact selected syntax and intersecting lines, reports
+lexical branches/locks/try/catch/finally, capture timing and resolved observation
+fields/declared guards. Positional selectors explicitly warn that equal-count
+replacement/reordering can change their meaning. A failing selector remains
+unresolved with diagnostics rather than being silently repaired; other entries
+can still be displayed. Unknown/ambiguous exact binding/endpoint selections are input errors.
+Exit `0` means the selected inspection resolved structurally, `1` reports
+attachment/required-binding failures, and `2` means an input/prerequisite failure.
+
+`unlinked` does not mean model-only or uncovered implementation; supporting
+operators, variables and invariants can legitimately lack source attachments.
+Lexical context is not a computed path condition: earlier guard clauses can
+matter without enclosing the selection. Locks outside nested callbacks do not
+establish invocation-time locking. Calls list declared targets, not concrete
+virtual/interface dispatch, implicit disposal/awaiter calls or effects.
+`commit`/`complete` timing on selected syntax is not necessarily whole-method
+or returned-Task completion. Capture declarations are not an instrumentation
+readiness result. Model delegations are shown as authored, not recursively
+expanded by parsing expression text. Reports may contain sensitive source
+and are presentation snapshots, not correspondence approvals or acceptance
+receipts; do not insert generated C# copies into maintained models.
+Native failure logs are retained in the reported temporary work directory.
+
+Migration starts with the public examples. Existing nonmigrated callers and
+historical receipts are not rewritten. Within a connection, competing C# and
+formal owners are rejected rather than merged. No external link catalogue or
+second selector language is introduced. Archive readers reconstruct formal-owned
+source attachments from archived source/model bytes and the recorded compiler
+reference list, not the live checkout.
+
 ## Current C# source inventory
 
 `inspect-source` produces a schema-4 `source-inventory` from Roslyn without a
@@ -1556,6 +1988,9 @@ and replacement defines explicitly:
 The full inventory includes declared methods, constructors, properties, events
 and fields, with resolved explicit calls, declared dispatch kind, nested-function
 markers, locks, awaits, throws, using scopes and candidate field accesses.
+Explicit constructor initializers are included. Candidate field accesses are
+restricted to each declaration's exact source span, not neighboring members
+that happen to share a line.
 Field initializers have their own regions. It pins source/reference bytes, the
 selected defines, producing tool and runtime. Output is exclusive; use a new
 path for each inventory.
@@ -1569,8 +2004,12 @@ gate's semantics, branch polarity's adequacy or a concurrent refinement.
 Nested callbacks/local functions are not inlined into the parent flow.
 Implicit exception/finally execution remains a separate review obligation.
 
-The `compiler` object records C# 14, nullable mode, unsafe/overflow options,
-defines and framework-reference selection. Defaults are `--nullable enable`
+The `compiler` object records the selected C# version, nullable mode, unsafe/overflow options,
+defines and framework-reference selection. `--language-version 8|14` selects
+the source language; the default is 14. The same choice is authored as
+`compiler.language_version` in project, preparation and regression JSON.
+The selector checks syntax and resolution; it does not select a target runtime
+or establish API compatibility with .NET Framework. Other defaults are `--nullable enable`
 and `--framework-references implicit` (the host's trusted platform assemblies
 plus additional references). To reproduce a recorded compiler reference closure,
 use `--framework-references explicit` with every observed `--reference`, the
@@ -1603,6 +2042,12 @@ region is not validated code and does not discharge correspondence gates.
 
 Use `prepare-sources` instead of maintaining annotation generators based on text
 searches, surrounding lines or newline spelling:
+
+Generated `@link` block comments occupy their own lines immediately before the
+selected code, preserving its leading indentation and line-ending convention.
+Empty top-level `bind`, `capture` and `exclude` arrays are omitted when encoding
+annotations; omitted arrays mean no entries. Nonempty declarations and capture
+options remain unchanged, and an entirely empty annotation is still invalid.
 
 ```powershell
 .\TlaLink.ps1 prepare-sources --manifest .\preparation.json --output .\Results\prepared-new --format summary
@@ -1660,7 +2105,7 @@ explicit `expected_matches` and one-based `match`; ambiguity never silently
 selects the first occurrence. Generic explicit interface members use their
 actual declared IDs rather than a handwritten symbol-name approximation.
 
-The compiler profile is the supported standalone net10.0/C#14, nullable-enable,
+The compiler profile is standalone net10.0 with C# 8 or 14, nullable-enable,
 unchecked, unsafe context, not an MSBuild workspace. References and replacement
 defines are explicit profile inputs; omitted defines use the standalone
 frontend defaults. Optional `context_sources` is an array of `{ "path": "...",
@@ -1766,8 +2211,9 @@ support: the source integration remains C#, and native checker configurations
 and claims remain backend-specific.
 
 Version 2's `model`/`state`/`step` syntax, version 3's source-side `target`
-references and old `@tla` headers are rejected. Both sides independently declare
-the same unique `scope::name` ID. Attach formal markers to authored declarations
+references and old `@tla` headers are rejected. Maintained examples attach one
+unique `scope::name` ID and its Roslyn source selector to the formal endpoint.
+Attach formal markers to authored declarations
 or PlusCal labels, never generated translation bodies. Regenerate translations
 explicitly and collect new successor evidence,
 preserving historical receipts and independent configuration/requirement pins.
@@ -1776,7 +2222,11 @@ Direct TLA+ variable endpoints use SANY's identifier span: place the marker afte
 operators remain useful for derived or entity-indexed projections.
 
 Use a native block comment containing `@link` followed by a standard JSON object.
-`bind` participates on either side; `capture` and `exclude` are C# only.
+Formal-owned `bind.source` and associated `capture` entries are the maintained
+example convention; existing nonmigrated inputs retain their explicit ownership.
+Formal-owned `exclude` entries require a `source` selector and retain their
+explicit `from` aliases and reason. They scope correspondence, not runtime
+execution, input retention or relevant effects.
 `System.Text.Json`
 deserializes strict typed records, including enum-valued capture choices;
 unknown fields, duplicate properties, malformed JSON and invalid array entries
@@ -1785,48 +2235,33 @@ fail explicitly. No XML or semicolon-language alternative is accepted.
 ```csharp
 class Lane {
     readonly object gate = new();
-    /* @link {
-  "bind": [
-    {
-      "id": "credit::available"
-    }
-  ],
-  "capture": [
-    {
-      "binding": "credit::available",
-      "guard": "gate",
-      "type": "int",
-      "units": "frames"
-    }
-  ]
-} */
     int available;
 
     void Acquire() {
         lock (gate) {
-            /* @link {
-  "bind": [
-    {
-      "id": "credit::acquire"
-    }
-  ],
-  "capture": [
-    {
-      "binding": "credit::acquire",
-      "actor": "1",
-      "operation": "1",
-      "point": "commit",
-      "classification": "transition",
-      "observe": [
-        "credit::available"
-      ]
-    }
-  ]
-} */
             available--;
         }
     }
 }
+```
+
+The formal declaration owns both source selection and capture:
+
+```tla
+(* @link {
+  "bind":[{"id":"credit::available","source":{"symbol":"F:Lane.available"}}],
+  "capture":[{"binding":"credit::available","guard":"gate","type":"int","units":"frames"}]
+} *)
+ObservedAvailable == available
+
+(* @link {
+  "bind":[{"id":"credit::acquire","source":{
+    "symbol":"M:Lane.Acquire","syntax":"ExpressionStatement","tokens":"available--;"
+  }}],
+  "capture":[{"binding":"credit::acquire","actor":"1","operation":"1",
+    "point":"commit","classification":"transition","observe":["credit::available"]}]
+} *)
+Acquire == available' = available - 1
 ```
 
 Declare formal aliases once in a schema-4 `correspondence-scope`:
@@ -1849,8 +2284,8 @@ scope document; TLA+ selects exactly one root and pins its native import closure
 TLA+ targets declare `required_bindings` so deleting one inline mapping cannot
 silently reduce the selected correspondence. Dafny/P select required IDs in
 their backend configurations instead.
-Bindings use the same unique `alias::correspondence-name` on both sides.
-Each side's attachment is resolved independently by Roslyn, SANY/PlusCal,
+Bindings retain unique `alias::correspondence-name` identities.
+Each attachment is resolved independently by Roslyn, SANY/PlusCal,
 Dafny's resolved AST or the authoritative P frontend. Declaration spelling need
 not match the correspondence name. Missing and duplicate counterparts fail.
 A class can participate in several independent correspondences; there is no
@@ -1890,6 +2325,10 @@ Action capture options:
   successful execution. A fault observation on an expression statement records
   its exception and rethrows it; declarations with introduced variables and
   source-lock fault capture are unsupported.
+  An outer await statement may pass a delegate argument: its commit/fault
+  observation surrounds the await, not the delegate body. Nested capture
+  sites inside that delegate remain unsupported for the combined rewrite;
+  this does not add method-completion or Task-handoff evidence.
   On one synchronous reference-type `using` statement/declaration, cleanup
   records successful implicit `IDisposable.Dispose`; fault records a disposer
   exception and rethrows it. Acquisition is evaluated once, failed acquisition
@@ -2035,6 +2474,23 @@ copies. Hashes establish recorded consistency, not host authenticity or a proof
 that the compiler implements C# correctly.
 
 ## Tests and evidence
+
+`--links` runs formal-owned selector/capture and native CLI edit/check controls
+using only the selected TLA+ JAR and pinned JDK. Core selector controls also run
+under `--core`; workflow, integrated and P suites cover migrated examples and
+their ordinary archive/current-applicability readers.
+
+`--symbols` runs backend-free Roslyn/CLI controls for overloads, constructors,
+generic/ref IDs, partial declarations, interfaces/operators, ambiguous positions,
+UTF-16 spans, annotation independence, scoped reference/call queries, nested
+sites, metadata targets, generic/extension identities, bundled member facts and
+missing/dynamic compiler context. The same
+controls run under `--core`, which also checks recorded compiler-context reuse.
+
+`--summaries` selects method-summary metadata, review-origin, source/summary
+drift, finite caller-state counts, result reuse, report composition and native
+misuse controls. It requires only the selected TLA+ JAR and pinned Java
+toolchain. Core summary controls also run under `--core`.
 
 `--trace` selects scalar argument, entity/guard, causal-order and whole-trace
 controls. It requires only the selected TLC JAR and pinned Java toolchain, not

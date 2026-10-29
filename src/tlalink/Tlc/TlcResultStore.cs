@@ -60,9 +60,9 @@ public static class TlcResultStore
         void Bad(string message) => issues.Add(new(ErrorCode.WorkflowProvenanceInconsistent, "Stored TLC result " + directory + ": " + message));
         try
         {
-            JsonElement document = ProjectInputs.Read<JsonElement>(Path.Combine(directory, "entry.json"));
-            Files.RequireSchema(document, "tlc-stored-result");
-            entry = document.Deserialize<TlcStoredResult>(ProjectInputs.Json);
+            entry = ProjectInputs.Read<TlcStoredResult>(Path.Combine(directory, "entry.json"));
+            if (entry.SchemaVersion != Schema.Version || entry.Kind != "tlc-stored-result")
+                throw new InputException(ErrorCode.InvalidWorkflowInput, "Expected current tlc-stored-result.");
         }
         catch (Exception error) when (error is InputException or IOException or UnauthorizedAccessException or JsonException)
         {
@@ -88,11 +88,11 @@ public static class TlcResultStore
                 Bad("missing or changed file " + file.Key);
         }
         if (issues.Count > 0) return issues;
-        JsonElement result = ProjectInputs.Read<JsonElement>(Path.Combine(directory, "result.json"));
-        if (ProjectWorkflow.Outcome("tlc", result) != entry.Outcome || RecordedFingerprint(result) != entry.Material.Fingerprint)
+        TlcResult result = ProjectInputs.Read<TlcResult>(Path.Combine(directory, "result.json"));
+        if (ProjectWorkflow.Outcome("tlc", result) != entry.Outcome || result.Fingerprint != entry.Material.Fingerprint)
             Bad("result contradicts its entry");
-        string[] arguments = ProjectInputs.Read<JsonElement>(Path.Combine(directory, "tlc.invocation.json"))
-            .GetProperty("arguments").EnumerateArray().Select(a => a.GetString()!).ToArray();
+        string[] arguments = ProjectInputs.Read<NativeProcessInvocation>(Path.Combine(directory, "tlc.invocation.json"))
+            .Arguments.ToArray();
         int index = Array.IndexOf(arguments, "-fp");
         if (index < 0 || index + 1 >= arguments.Length || arguments.Count(a => a == "-fp") != 1 ||
             arguments[index + 1] != entry.Material.Fingerprint.ToString(CultureInfo.InvariantCulture))
@@ -100,12 +100,9 @@ public static class TlcResultStore
         return issues;
     }
 
-    internal static int? RecordedFingerprint(JsonElement result) =>
-        result.TryGetProperty("fingerprint", out JsonElement value) && value.ValueKind == JsonValueKind.Number ? value.GetInt32() : null;
-
     /// <summary>Stores a completed outcome once; an existing entry for the same key is kept.</summary>
     internal static string? Store(string store, TlcResultKey key, string stage, string producer, string source,
-        JsonElement result, TlcResources? requested, TlcResources resources, int timeout, double duration)
+        TlcResult result, TlcResources? requested, TlcResources resources, int timeout, double duration)
     {
         string outcome = ProjectWorkflow.Outcome("tlc", result);
         if (outcome is not ("passed" or "rejected")) return null;
@@ -122,11 +119,9 @@ public static class TlcResultStore
                 File.Copy(Path.Combine(source, file), Path.Combine(temporary, file));
             Dictionary<string, string> files = new(StringComparer.Ordinal);
             foreach (string file in StoredFiles) files[file] = Files.Hash(Path.Combine(temporary, file));
-            TlcStatistics? statistics = result.TryGetProperty("statistics", out JsonElement recorded) && recorded.ValueKind == JsonValueKind.Object
-                ? recorded.Deserialize<TlcStatistics>(ProjectInputs.Json) : null;
             Files.WriteNew(Path.Combine(temporary, "entry.json"), new TlcStoredResult(Schema.Version, "tlc-stored-result",
                 Hash(key), Family(key), key, outcome, stage, producer, DateTimeOffset.UtcNow,
-                Files.Hash(typeof(Program).Assembly.Location), requested, resources, timeout, duration, statistics, files));
+                Files.Hash(typeof(Program).Assembly.Location), requested, resources, timeout, duration, result.Statistics, files));
             try { Directory.Move(temporary, final); }
             catch (IOException) when (Directory.Exists(final)) { return null; }
             return final;
@@ -149,19 +144,18 @@ public static class TlcResultStore
     /// Reused primary evidence is validated against its own recorded budget rather than the routine one.
     /// </summary>
     internal static List<Issue> ValidateRunStage(string path, AnalysisProject project, AnalysisStage declared,
-        WorkflowStageResult stage, string stageDirectory, JsonElement result, Dictionary<string, string> fingerprints,
+        WorkflowStageResult stage, string stageDirectory, TlcResult result, Dictionary<string, string> fingerprints,
         out AnalysisStage evidenceStage)
     {
         evidenceStage = declared;
         List<Issue> issues = [];
         void Bad(string message) => issues.Add(new(ErrorCode.WorkflowStageInconsistent, "TLC stage " + stage.Id + ": " + message));
         string outcome = ProjectWorkflow.Outcome("tlc", result);
-        int? fingerprint = RecordedFingerprint(result);
+        int fingerprint = result.Fingerprint;
         List<StoredStageResult> stored = stage.StoredResults ?? [];
         StoredStageResult? primary = stored.Count(s => s.Primary) > 1 ? null : stored.SingleOrDefault(s => s.Primary);
         if (stored.Count(s => s.Primary) > 1) Bad("more than one primary stored result");
-        if (fingerprint == null) Bad("evidence does not record its fingerprint function");
-        else if (fingerprint != (declared.Fingerprint ?? 0) && !(outcome == "rejected" && primary?.Origin == "reused"))
+        if (fingerprint != (declared.Fingerprint ?? 0) && !(outcome == "rejected" && primary?.Origin == "reused"))
             Bad("fingerprint function differs from the declaration");
         string model = ProjectInputs.Resolve(path, declared.Models![0]);
         string config = ProjectInputs.Resolve(path, declared.Config!);
@@ -196,7 +190,7 @@ public static class TlcResultStore
                     Bad("stored result input differs from the run's recorded inputs: " + input.Path);
             if (reference.Primary)
             {
-                if (Schema.Hash(ProjectInputs.Read<JsonElement>(Path.Combine(directory, "result.json"))) != Schema.Hash(result))
+                if (Schema.Hash(ProjectInputs.Read<TlcResult>(Path.Combine(directory, "result.json"))) != Schema.Hash(result))
                     Bad("stage evidence differs from its stored result");
                 if (reference.Origin == "reused")
                     evidenceStage = declared with { Resources = entry.RequestedResources, TimeoutSeconds = entry.TimeoutSeconds };
@@ -207,10 +201,10 @@ public static class TlcResultStore
         return issues;
     }
 
-    internal static HashSet<int> PassedFingerprints(WorkflowStageResult stage, JsonElement result)
+    internal static HashSet<int> PassedFingerprints(WorkflowStageResult stage, TlcResult result)
     {
         HashSet<int> passed = (stage.StoredResults ?? []).Where(s => s.Outcome == "passed").Select(s => s.Fingerprint).ToHashSet();
-        if (stage.Outcome == "passed" && RecordedFingerprint(result) is int fingerprint) passed.Add(fingerprint);
+        if (stage.Outcome == "passed") passed.Add(result.Fingerprint);
         return passed;
     }
 }

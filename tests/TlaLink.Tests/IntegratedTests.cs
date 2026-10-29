@@ -16,19 +16,26 @@ public static class IntegratedTests
             foreach (string name in new[] { "Decisions.cs", "Decisions.dfy", "Credits.tla" })
                 File.Copy(Path.Combine(example, name), Path.Combine(directory, name));
             IntegratedManifest manifest = IntegratedInputs.Load(Path.Combine(example, "bindings.json"), []);
-            manifest = IntegratedInputs.ResolveBindings(manifest, CSharpScope.Parse(manifest.Sources));
+            List<BindAnnotation> definitions = FormalCorrespondence.Comments(
+                Files.Read(Path.Combine(example, "Decisions.dfy")), nested: true)
+                .SelectMany(c => Markup.Parse(c.Content, c.Start, c.End)).Select(a => a.Declaration).OfType<BindAnnotation>().ToList();
+            manifest = manifest with { Bindings = manifest.Bindings.Select(b => b with {
+                Source = definitions.Single(d => d.Id == b.Id).Source!.Symbol
+            }).ToList() };
             return manifest with {
                 Sources = ["Decisions.cs"], Proofs = ["Decisions.dfy"], Models = models ? ["Credits.tla"] : [],
                 Correspondences = models ? manifest.Correspondences : [], Scope = "scope.json"
             };
         }
-        (int Code, JsonElement Result) Run(string directory, IntegratedManifest manifest, string command = "test-integrated", string? baseline = null)
+        (int Code, JsonElement Result) Run(string directory, IntegratedManifest manifest, string command = "test-integrated",
+            string? baseline = null, string languageVersion = "14")
         {
             string path = Path.Combine(directory, "bindings.json");
             BindingFixtures.WriteIntegrated(path, manifest, dafny);
             List<string> args = [command, "--annotation-version", "4", "--bindings", path, "--dafny", dafny, "--output", Path.Combine(directory, "result"),
                 "--jar", jar, "--timeout", "60"];
             if (baseline != null) args.AddRange(["--baseline", baseline]);
+            args.AddRange(["--language-version", languageVersion]);
             var result = TestCli.Run(args.ToArray());
             using JsonDocument document = JsonDocument.Parse(result.Json);
             JsonElement packet = document.RootElement.Clone();
@@ -37,6 +44,19 @@ public static class IntegratedTests
         }
         void Status(JsonElement packet, string field, string expected) => CoreTests.Equal(expected, packet.GetProperty(field).GetString());
         void Diagnostic(JsonElement packet, string text) => CoreTests.True(packet.GetProperty("diagnostics").ToString().Contains(text, StringComparison.Ordinal));
+
+        test("CSharp8 oracle execution and archived source bindings retain their selected language", () =>
+        {
+            string directory = NewDirectory("csharp8");
+            var (code, packet) = Run(directory, Example(directory), languageVersion: "8");
+            if (code != 0) throw new InvalidOperationException(packet.GetRawText());
+            Status(packet, "conformance_status", "conforms");
+            CoreTests.Equal("CSharp8", packet.GetProperty("execution").GetProperty("compiler_context")
+                .GetProperty("language_version").GetString());
+            CoreTests.Equal(0, IntegratedEvidence.Validate(packet).Count);
+            CoreTests.Equal(0, TestCli.Run(["read-integrated", "--result",
+                Path.Combine(directory, "result", "result.json"), "--current", "true"]).Code);
+        });
 
         test("Dafny callback-expression bindings remain review-only and retain their actual source span", () =>
         {
@@ -205,8 +225,7 @@ public static class IntegratedTests
         test("integrated invalid case preconditions are incomplete, never conformance", () =>
         {
             string directory = NewDirectory("preconditions"); var manifest = Example(directory);
-            using JsonDocument inputs = JsonDocument.Parse("[1,2,1]");
-            DafnyBinding binding = manifest.Bindings[0] with { Cases = [new("invalid", inputs.RootElement.EnumerateArray().Select(e => e.Clone()).ToList())] };
+            DafnyBinding binding = manifest.Bindings[0] with { Cases = [new("invalid", [new(1), new(2), new(1)])] };
             var (code, packet) = Run(directory, manifest with { Bindings = [binding] });
             CoreTests.Equal(2, code); Status(packet, "proof_status", "verified");
             Status(packet, "conformance_status", "incomplete"); Diagnostic(packet, "DF201");
@@ -269,8 +288,7 @@ public static class IntegratedTests
         test("integrated case type coercion and unsupported ghost execution are blocked", () =>
         {
             string directory = NewDirectory("typed-case"); var manifest = Example(directory);
-            using JsonDocument input = JsonDocument.Parse("[\"1\",0,1]");
-            var binding = manifest.Bindings[0] with { Cases = [new("wrong-type", input.RootElement.EnumerateArray().Select(e => e.Clone()).ToList())] };
+            var binding = manifest.Bindings[0] with { Cases = [new("wrong-type", [new(true), new(0), new(1)])] };
             var (code, packet) = Run(directory, manifest with { Bindings = [binding] });
             CoreTests.Equal(2, code); Diagnostic(packet, "DF200"); Status(packet, "conformance_status", "not-run");
             string ghostDirectory = NewDirectory("ghost-execution"); var ghost = Example(ghostDirectory);

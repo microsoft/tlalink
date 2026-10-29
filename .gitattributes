@@ -4,3 +4,4 @@ examples/Apalache/Credit/*.json text eol=crlf
 examples/Evidence/src/Increment/regression.json text eol=crlf
 examples/Evidence/src/Increment/verification/dafny.json text eol=crlf
 examples/Components/**/*.cfg -text
+examples/MethodSummaries/**/*.cfg text eol=crlf

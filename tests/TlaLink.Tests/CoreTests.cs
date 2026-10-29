@@ -9,14 +9,17 @@ public static class CoreTests
     {
         CorrespondenceTests.Register(test, work);
         PairedCorrespondenceTests.Register(test, work);
+        FormalOwnedLinksTests.RegisterCore(test, work);
         SourcePreparationTests.Register(test, work);
         ActionArgumentTests.Register(test, work);
         AcceptanceSummaryTests.Register(test, work);
         SourceInventoryTests.Register(test, work);
+        SourceSymbolTests.Register(test, work);
         SourceObligationTests.Register(test, work);
         ReferenceObligationTests.Register(test, work);
         CleanupInstrumentationTests.Register(test, work);
         ProjectCompositionTests.RegisterCore(test, work);
+        MethodSummaryTests.RegisterCore(test, work);
         test("suite fixtures are released after success and failure without removing shared assets", () =>
         {
             string parent = Directory.CreateDirectory(Path.Combine(work, "suite-cleanup")).FullName;
@@ -89,13 +92,13 @@ public static class CoreTests
         });
         test("summary output retains outcomes coverage diagnostics and receipt locations without provenance bulk", () =>
         {
-            var receipt = new {
-                SchemaVersion = Schema.Version, Kind = "analysis-run", Project = "pilot",
-                ExecutionStatus = "incomplete", AcceptanceStatus = "not-evaluated",
+            WorkflowRun receipt = new() {
+                Project = "pilot", ProjectDirectory = work, Scenario = "synthetic",
+                ProjectSha256 = new('0', 64), RequirementsSha256 = new('0', 64),
+                ExecutionStatus = "incomplete",
                 Fingerprints = new Dictionary<string, string> { ["large"] = new('x', 10000) },
-                Stages = new[] { new { Id = "native", Kind = "tlc", ExecutionStatus = "incomplete",
-                    Outcome = "incomplete", Diagnostics = new[] { "TLC1000" }, Evidence = @"native\result.json" } },
-                Diagnostics = new[] { new Issue(ErrorCode.WorkflowStageFailed, "precise native failure") }
+                Stages = [new("native", "tlc", "incomplete", "incomplete", @"native\result.json", "", ["TLC1000"], 0)],
+                Diagnostics = [new(ErrorCode.WorkflowStageFailed, "precise native failure")]
             };
             string full = System.Text.Json.JsonSerializer.Serialize(receipt, Files.Json);
             string summary = CommandSummary.Create(receipt, new(["run", "--format", "summary", "--output", work])).ToJsonString(Files.Json);
@@ -124,13 +127,13 @@ public static class CoreTests
         });
         test("acceptance summary preserves current review status separately from recorded disposition", () =>
         {
-            var packet = new {
-                Kind = "acceptance-result", AcceptanceStatus = "not-accepted",
-                Reviews = new[] { new { Obligation = "source-contract", Status = "stale",
-                    Decision = new { Disposition = "accepted", Reviewer = "test-only", Rationale = "old assertion",
-                        Fingerprints = new Dictionary<string, string> { ["large"] = new('x', 10000) } } } }
-            };
-            var summary = CommandSummary.Create(packet, new(["accept", "--format", "summary"]));
+            AcceptanceResult packet = AcceptanceSummaryTests.Packet(reviews: [
+                new("source-contract", "stale", new(Schema.Version, "review-decision", "source-contract",
+                    new('0', 64), "accepted", "test-only", "old assertion", DateTimeOffset.UtcNow,
+                    new Dictionary<string, string> { ["large"] = new('x', 10000) }, []))
+            ]);
+            var summary = System.Text.Json.Nodes.JsonNode.Parse(
+                CommandSummary.Create(packet, new(["accept", "--format", "summary"])).ToJsonString())!.AsObject();
             Equal("stale", summary["review_status"]![0]!["status"]!.GetValue<string>());
             Equal("accepted", summary["review_status"]![0]!["disposition"]!.GetValue<string>());
             Equal("test-only", summary["review_status"]![0]!["reviewer"]!.GetValue<string>());

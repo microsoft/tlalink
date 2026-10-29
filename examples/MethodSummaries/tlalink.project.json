@@ -1,0 +1,62 @@
+{
+  "$schema": "../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "analysis-project",
+  "annotation_version": 4,
+  "id": "method-summaries",
+  "tools": {
+    "jar": {
+      "path": "..\\..\\.tools\\tla\\v1.8.0\\tla2tools.jar",
+      "sha256": "D15655EEAFF4B3F7B3D65C46B838BC0F35D131B2EF4B1E473689B62C98D4726F"
+    }
+  },
+  "compiler": {
+    "target_framework": "net10.0",
+    "language_version": "14",
+    "nullable": "enable",
+    "checked": false,
+    "allow_unsafe": true,
+    "references": []
+  },
+  "requirements": "verification\\requirements.json",
+  "review_directory": "..\\..\\Results\\method-summaries\\reviews",
+  "result_store": "..\\..\\Results\\method-summaries\\store",
+  "obligations": [
+    {
+      "id": "permit-summary",
+      "claim": "The selected C# TryTake method supports the atomic permit relation under its declared assumptions.",
+      "assumptions": ["The method-summary assumptions hold for the selected caller scope."],
+      "inputs": ["src\\PermitGate.cs", "verification\\scope.json", "verification\\PermitSummary.tla"],
+      "origin": "agent"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "callers",
+      "stages": [
+        {
+          "id": "caller-a",
+          "kind": "tlc",
+          "timeout_seconds": 30,
+          "models": ["verification\\CallerA.tla"],
+          "config": "verification\\CallerA.cfg",
+          "resources": {"workers": 1, "max_heap_mib": 256},
+          "method_summaries": [
+            {"scope": "verification\\scope.json", "bindings": ["permits::try-take"]}
+          ]
+        },
+        {
+          "id": "caller-b",
+          "kind": "tlc",
+          "timeout_seconds": 30,
+          "models": ["verification\\CallerB.tla"],
+          "config": "verification\\CallerB.cfg",
+          "resources": {"workers": 1, "max_heap_mib": 256},
+          "method_summaries": [
+            {"scope": "verification\\scope.json", "bindings": ["permits::try-take"]}
+          ]
+        }
+      ]
+    }
+  ]
+}

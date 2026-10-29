@@ -137,7 +137,11 @@
               "type": "string"
             },
             "language_version": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "8",
+                "14"
+              ]
             },
             "nullable": {
               "type": "string"
@@ -382,6 +386,42 @@
                         "null"
                       ],
                       "default": null
+                    },
+                    "method_summaries": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": [
+                          "object",
+                          "null"
+                        ],
+                        "properties": {
+                          "scope": {
+                            "type": "string"
+                          },
+                          "bindings": {
+                            "type": "array",
+                            "items": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "minItems": 1,
+                            "maxItems": 1000,
+                            "uniqueItems": true
+                          }
+                        },
+                        "required": [
+                          "scope",
+                          "bindings"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "default": null,
+                      "maxItems": 1000
                     }
                   },
                   "required": [
@@ -508,6 +548,13 @@
                   ]
                 },
                 "default": null
+              },
+              "origin": {
+                "enum": [
+                  "human",
+                  "agent"
+                ],
+                "default": "human"
               }
             },
             "required": [
@@ -839,6 +886,42 @@
                   "null"
                 ],
                 "default": null
+              },
+              "method_summaries": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "scope": {
+                      "type": "string"
+                    },
+                    "bindings": {
+                      "type": "array",
+                      "items": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "minItems": 1,
+                      "maxItems": 1000,
+                      "uniqueItems": true
+                    }
+                  },
+                  "required": [
+                    "scope",
+                    "bindings"
+                  ],
+                  "additionalProperties": false
+                },
+                "default": null,
+                "maxItems": 1000
               }
             },
             "required": [
@@ -941,6 +1024,13 @@
                   ]
                 },
                 "default": null
+              },
+              "origin": {
+                "enum": [
+                  "human",
+                  "agent"
+                ],
+                "default": "human"
               }
             },
             "required": [
@@ -1428,6 +1518,93 @@
             ],
             "additionalProperties": false
           },
+          "maxItems": 1000
+        },
+        "method_summaries": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "binding": {
+                "type": "string"
+              },
+              "abstraction": {
+                "type": "string",
+                "enum": [
+                  "pure",
+                  "atomic"
+                ]
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "minItems": 1,
+                "maxItems": 1000,
+                "uniqueItems": true
+              },
+              "inspection": {
+                "type": "string"
+              },
+              "assumptions": {
+                "type": "array",
+                "items": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "limits": {
+                "type": "array",
+                "items": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "minItems": 1
+              },
+              "depends_on": {
+                "type": "array",
+                "items": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "uniqueItems": true
+              },
+              "precondition": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "default": null
+              }
+            },
+            "required": [
+              "binding",
+              "abstraction",
+              "sources",
+              "inspection",
+              "assumptions",
+              "limits",
+              "depends_on"
+            ],
+            "additionalProperties": false
+          },
+          "default": null,
           "maxItems": 1000
         }
       },

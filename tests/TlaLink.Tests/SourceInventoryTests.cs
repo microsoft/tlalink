@@ -13,6 +13,31 @@ public static class SourceInventoryTests
 
     public static void Register(Action<string, Action> test, string work)
     {
+        test("source language selection enforces CSharp8 and retains CSharp14 defaults", () =>
+        {
+            string directory = Directory.CreateDirectory(Path.Combine(work, "source-language")).FullName;
+            string source = Path.Combine(directory, "Dialect.cs");
+            File.WriteAllText(source, "class Dialect { object value = new object(); }");
+            SourceInventoryResult compatible = SourceInventory.Build([source], languageVersion: "8");
+            CoreTests.Equal("ready", compatible.Status);
+            CoreTests.Equal("8", compatible.Compiler.LanguageVersion);
+            using (JsonDocument context = JsonDocument.Parse(compatible.Fingerprints["tool:csharp-context"]))
+                CoreTests.Equal("8", context.RootElement.GetProperty("language_version").GetString());
+            CoreTests.Equal("8", CSharpLanguages.Archived(compatible.Fingerprints));
+            File.WriteAllText(source, "class Dialect { object value = new(); }");
+            CoreTests.Equal("incomplete", SourceInventory.Build([source], languageVersion: "8").Status);
+            CoreTests.Equal("ready", SourceInventory.Build([source]).Status);
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", source,
+                "--language-version", "8"]).Code);
+            CoreTests.Equal(0, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", source,
+                "--language-version", "14"]).Code);
+            foreach (string invalid in new[] { "7", "13", "latest", "preview", "8.0" })
+                CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source", source,
+                    "--language-version", invalid]).Code);
+            CoreTests.True(CSharpLanguages.Matches("8.0", "8"));
+            CoreTests.True(!CSharpLanguages.Matches("14", "8"));
+            CoreTests.True(!CSharpLanguages.Matches("latest", "14"));
+        });
         test("source flow records resolved branch calls ref arguments and effect-block dominance", () =>
         {
             string flowDirectory = Directory.CreateDirectory(Path.Combine(work, "source-flow")).FullName;

@@ -20,17 +20,14 @@ public static class IntegratedReview
             Program.PinTool(packet.Fingerprints);
             packet.Fingerprints["tool:integrated-schema"] = Schema.Version.ToString(System.Globalization.CultureInfo.InvariantCulture);
             CSharpScope source = CSharpScope.Parse(manifest.Sources, options.Many("reference"),
-                options.Has("define") ? options.Many("define") : null);
+                options.Has("define") ? options.Many("define") : null,
+                languageVersion: options.Get("language-version", CSharpLanguages.Default));
             source.ApplyCorrespondence(manifest.Configuration!);
-            packet.Dispositions.AddRange(source.Dispositions);
-            packet.OmissionMatches.AddRange(source.OmissionMatches);
-            packet.SourceBindings.AddRange(source.DeclaredLinks);
             foreach (var pin in source.Fingerprints) Files.Pin(packet.Fingerprints, pin.Key, pin.Value);
             packet.Diagnostics.AddRange(source.Diagnostics);
             source.RequireCompilable();
             if (source.Diagnostics.Any(d => d.Severity == "error"))
                 throw new InputException(ErrorCode.InvalidIntegratedBinding, "Invalid C# annotations; see source diagnostics.");
-            manifest = IntegratedInputs.ResolveBindings(manifest, source);
             DafnyBackend backend = new(options.Required("dafny"), output, options.Timeout, packet);
             backend.Initialize();
             DafnyIndexResult index = backend.Index(manifest.Proofs);
@@ -42,6 +39,7 @@ public static class IntegratedReview
             packet.Diagnostics.AddRange(pairing);
             if (pairing.Count != 0)
                 throw new InputException(ErrorCode.InvalidIntegratedBinding, string.Join("; ", pairing.Select(d => d.Message)));
+            manifest = IntegratedInputs.ResolveBindings(manifest, source);
             manifest = manifest with { Bindings = manifest.Bindings.Select(b => b with {
                 Dafny = source.Bindings.Single(s => s.BindingId == b.Id).NativeEndpoint
             }).ToList() };
@@ -79,6 +77,13 @@ public static class IntegratedReview
                 if (packet.Tla.LinksStatus != "passed")
                     throw new InputException(ErrorCode.IntegratedTlaLinksNotReady, "TLA+ source/model links are not ready; see the nested TLA packet.");
             }
+            packet.SourceBindings.AddRange(source.DeclaredLinks);
+            packet.Dispositions.AddRange(source.Dispositions);
+            packet.OmissionMatches.AddRange(source.OmissionMatches);
+            foreach (Issue issue in source.Diagnostics)
+                if (!packet.Diagnostics.Contains(issue)) packet.Diagnostics.Add(issue);
+            if (source.Diagnostics.Any(d => d.Severity == "error"))
+                throw new InputException(ErrorCode.InvalidIntegratedBinding, "Invalid source connection metadata.");
             foreach (Correspondence claim in manifest.Correspondences)
             {
                 if (!packet.Links.Any(l => l.Id == claim.DafnyBinding) ||
@@ -117,7 +122,8 @@ public static class IntegratedReview
             if (!packet.GeneratedFiles.ContainsKey(generated))
                 Files.Pin(packet.GeneratedFiles, generated, Files.Hash(generated));
         Archive(output, packet);
-        Files.WriteNew(Path.Combine(output, "result.json"), packet);
+        IntegratedResult result = IntegratedResult.From(packet);
+        Files.WriteNew(Path.Combine(output, "result.json"), result);
         if (options.Get("format", "json") == "text")
         {
             Console.WriteLine($"Status: {packet.Status}; links: {packet.LinksStatus}; proof: {packet.ProofStatus}; audit: {packet.AuditStatus}; conformance: {packet.ConformanceStatus}");
@@ -128,7 +134,7 @@ public static class IntegratedReview
             foreach (Issue issue in packet.Diagnostics) Console.WriteLine($"{issue.Code} {issue.Severity}: {issue.Message}");
             Console.WriteLine("Evidence: " + Path.Combine(output, "result.json"));
         }
-        else ProjectWorkflow.Render(packet, options);
+        else ProjectWorkflow.Render(result, options);
         return packet.Status switch { "passed" or "ready" => 0, "rejected" => 1, _ => 2 };
     }
 
@@ -162,15 +168,24 @@ public static class IntegratedReview
 
     private static void Baseline(string path, IntegratedPacket packet)
     {
-        using JsonDocument document = JsonDocument.Parse(Files.Read(path));
-        JsonElement root = document.RootElement;
-        if (!root.TryGetProperty("schema_version", out JsonElement schema) || schema.GetInt32() != Schema.Version ||
-            !root.TryGetProperty("kind", out JsonElement kind) || kind.GetString() != "integrated-result" ||
-            !root.TryGetProperty("fingerprints", out JsonElement previous) || previous.ValueKind != JsonValueKind.Object)
+        IntegratedResult? baseline;
+        try
+        {
+            baseline = JsonSerializer.Deserialize<IntegratedResult>(Files.Read(path), IntegratedInputs.Json);
+        }
+        catch (JsonException error)
+        {
+            throw new InputException(ErrorCode.IntegratedBaselineChanged,
+                error.Path?.StartsWith("$.fingerprints.", StringComparison.Ordinal) == true ||
+                error.Path?.StartsWith("$.fingerprints[", StringComparison.Ordinal) == true
+                    ? "Baseline fingerprints must be unique strings."
+                    : "Integrated baselines require a current integrated-result fingerprint object.");
+        }
+        if (baseline == null || baseline.SchemaVersion != Schema.Version || baseline.Kind != "integrated-result")
             throw new InputException(ErrorCode.IntegratedBaselineChanged, "Integrated baselines require a current integrated-result fingerprint object.");
         Dictionary<string, string> pins = new(FilePaths.Comparer);
-        foreach (JsonProperty pair in previous.EnumerateObject())
-            if (pair.Value.ValueKind != JsonValueKind.String || !pins.TryAdd(pair.Name, pair.Value.GetString()!))
+        foreach (var pair in baseline.Fingerprints)
+            if (pair.Value == null || !pins.TryAdd(pair.Key, pair.Value))
                 throw new InputException(ErrorCode.IntegratedBaselineChanged, "Baseline fingerprints must be unique strings.");
         foreach (string key in pins.Keys.Union(packet.Fingerprints.Keys, FilePaths.Comparer))
             if (pins.GetValueOrDefault(key) != packet.Fingerprints.GetValueOrDefault(key))

@@ -45,7 +45,8 @@ public sealed partial class CSharpScope
         new SourceLinkDeclaration(b.Declaration, b.Capture, b.Kind, b.Endpoint.Location)).ToList();
 
     public static CSharpScope Parse(List<string> paths, IEnumerable<string>? references = null, IEnumerable<string>? defines = null,
-        NullableContextOptions nullable = NullableContextOptions.Enable, bool includeFrameworkReferences = true)
+        NullableContextOptions nullable = NullableContextOptions.Enable, bool includeFrameworkReferences = true,
+        string languageVersion = CSharpLanguages.Default, bool annotations = true)
     {
         string[] symbols = (defines ?? ["DEBUG", "TRACE", "NET", "NETCOREAPP", "NET10_0", "NET10_0_OR_GREATER", "NET9_0_OR_GREATER",
             "NET8_0_OR_GREATER", "NET7_0_OR_GREATER", "NET6_0_OR_GREATER", "NET5_0_OR_GREATER",
@@ -53,7 +54,7 @@ public sealed partial class CSharpScope
             "NETCOREAPP2_1_OR_GREATER", "NETCOREAPP2_0_OR_GREATER", "NETCOREAPP1_1_OR_GREATER", "NETCOREAPP1_0_OR_GREATER"]).ToArray();
         if (symbols.Any(s => !SyntaxFacts.IsValidIdentifier(s) || s is "true" or "false"))
             throw new InputException("Invalid C# preprocessor symbol; supply individual identifier values.");
-        CSharpParseOptions parse = new(LanguageVersion.CSharp14, preprocessorSymbols: symbols);
+        CSharpParseOptions parse = new(CSharpLanguages.Parse(languageVersion), preprocessorSymbols: symbols);
         Dictionary<string, string> sourcePins = new(FilePaths.Comparer);
         Dictionary<string, string> texts = paths.ToDictionary(p => p, p => Files.ReadPinned(p, sourcePins), FilePaths.Comparer);
         List<SyntaxTree> trees = paths.Select(p => CSharpSyntaxTree.ParseText(SourceText.From(texts[p]), parse, p)).Cast<SyntaxTree>().ToList();
@@ -67,9 +68,9 @@ public sealed partial class CSharpScope
         CSharpScope result = new() { Compilation = compilation };
         foreach (string reference in referencePaths) Files.Pin(result.Fingerprints, reference, Files.Hash(reference));
         result.Fingerprints["compiler:defines"] = string.Join(",", symbols.Order());
-        result.Fingerprints["tool:csharp-context"] = System.Text.Json.JsonSerializer.Serialize(new {
-            LanguageVersion = "14", Nullable = nullable.ToString(), IncludeFrameworkReferences = includeFrameworkReferences
-        }, Files.Json);
+        result.Fingerprints["tool:csharp-references"] = System.Text.Json.JsonSerializer.Serialize(referencePaths, Files.Json);
+        result.Fingerprints["tool:csharp-context"] = System.Text.Json.JsonSerializer.Serialize(
+            new CSharpCompilerContext(languageVersion, nullable.ToString(), includeFrameworkReferences), Files.Json);
         foreach (SyntaxTree tree in trees)
         {
             string path = tree.FilePath, text = texts[path];
@@ -86,7 +87,7 @@ public sealed partial class CSharpScope
             List<SyntaxNode> targets = root.DescendantNodes().Where(n => n is MemberDeclarationSyntax or StatementSyntax or InvocationExpressionSyntax)
                 .OrderBy(n => n.SpanStart).ThenByDescending(n => n.Span.Length).ToList();
             List<(LocatedAnnotation Annotation, SyntaxNode Node)> attached = [];
-            foreach (SyntaxTrivia trivia in root.DescendantTrivia(descendIntoTrivia: false))
+            foreach (SyntaxTrivia trivia in root.DescendantTrivia(descendIntoTrivia: false).Where(_ => annotations))
             {
                 if (!trivia.IsKind(SyntaxKind.MultiLineCommentTrivia)) continue;
                 string raw = trivia.ToString(), content = raw[2..^2];
@@ -94,6 +95,8 @@ public sealed partial class CSharpScope
                 {
                     foreach (LocatedAnnotation annotation in Markup.Parse(content, trivia.SpanStart, trivia.Span.End))
                     {
+                        if (annotation.Declaration is BindAnnotation { Source: not null })
+                            throw new InputException(ErrorCode.InvalidAttachment, "Source selectors are owned by formal comments, not C# annotations.");
                         SyntaxNode? target = Attachment(targets, text, trivia.Span.End);
                         if (target is null || target is FieldDeclarationSyntax field && field.Declaration.Variables.Count != 1 ||
                             annotation.Declaration is ExcludeAnnotation && target is InvocationExpressionSyntax)

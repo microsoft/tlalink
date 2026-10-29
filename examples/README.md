@@ -26,7 +26,8 @@ and pinned in the local `.tools` cache; see the
 
 ## Demo
 
-[Demo.cs](Demo.cs) is a lock-protected counter. Its annotations link the field
+[Demo.cs](Demo.cs) is a lock-protected counter. The formal comments in
+[Demo.tla](Demo.tla) select its field
 `active` and the two locked updates to the state and steps of the PlusCal
 algorithm in [Demo.tla](Demo.tla). Review the links for one step:
 

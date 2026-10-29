@@ -13,7 +13,7 @@ Shows a C# method linked to a P state machine and checked with PChecker.
 
 PChecker explores a bounded number of schedules. A pass means no failure was
 found within those limits, not that the model was explored exhaustively.
-PChecker executes the P machine, not the C# method. The paired markers establish
+PChecker executes the P machine, not the C# method. The P comments' Roslyn selectors establish
 structural correspondence only; matching return semantics, exceptions and
 concurrent shutdown remain separate review obligations. The negative control
 intentionally keeps the same ID while changing the P implementation.

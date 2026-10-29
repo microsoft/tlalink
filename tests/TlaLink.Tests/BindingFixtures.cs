@@ -17,6 +17,12 @@ internal static class BindingFixtures
         Dictionary<string, string> renamed = manifest.Bindings.Zip(selected).ToDictionary(p => p.First.Id, p => p.Second.Id);
         manifest = manifest with { Bindings = selected, SourceObligations = manifest.SourceObligations
             .Select(o => o with { Binding = renamed[o.Binding] }).ToList() };
+        List<string> sources = manifest.Sources.Select(p => FilePaths.Full(p, directory)).ToList();
+        CSharpScope original = CSharpScope.Parse(sources);
+        var sourceSymbols = IntegratedReview.SourceSymbols(original);
+        Dictionary<string, string> sourceIds = manifest.Bindings.ToDictionary(b => b.Id,
+            b => IntegratedReview.Resolve(sourceSymbols, b.Source).Symbol.GetDocumentationCommentId()
+                ?? throw new InvalidOperationException("Fixture source has no documentation ID."));
         DafnyEvidenceState authoring = new();
         DafnyBackend backend = new(dafny, Path.Combine(directory, "authoring-" + Guid.NewGuid().ToString("N")), 60, authoring);
         Directory.CreateDirectory(backend.Output);
@@ -38,15 +44,17 @@ internal static class BindingFixtures
                 if (matching.Count == 0) continue;
                 if (matching.Count != 1) throw new InvalidOperationException("Ambiguous native fixture declaration.");
                 edits.Add(new(new TextSpan(matching[0].Start, 0), "/* @link " +
-                    Markup.Encode(new() { Bind = [new(binding.Id)] }) + " */ "));
+                    Markup.Encode(new() { Bind = [new(binding.Id, Source: new(sourceIds[binding.Id]))] }) + " */ "));
             }
             File.WriteAllText(proof.Key, Microsoft.CodeAnalysis.Text.SourceText.From(text).WithChanges(edits).ToString());
         }
-        List<string> sources = manifest.Sources.Select(p => FilePaths.Full(p, directory)).ToList();
-        CSharpScope original = CSharpScope.Parse(sources);
         HashSet<string> proofIds = manifest.Bindings.Select(b => b.Id).ToHashSet(StringComparer.Ordinal);
         List<string> modelAliases = original.Bindings.Where(b => b.Kind == SourceBindingKind.Step)
             .Select(b => b.Model).Distinct(StringComparer.Ordinal).ToList();
+        List<BindAnnotation> modelBindings = manifest.Models.Select(p => FilePaths.Full(p, directory))
+            .SelectMany(p => Links.Comments(Files.Read(p), "tla"))
+            .SelectMany(c => Markup.Parse(c.Content, c.Start, c.End)).Select(a => a.Declaration).OfType<BindAnnotation>().ToList();
+        modelAliases = modelAliases.Concat(modelBindings.Select(b => Markup.Name(b.Id).Alias)).Distinct(StringComparer.Ordinal).ToList();
         foreach (SyntaxTree tree in original.Compilation.SyntaxTrees)
         {
             List<TextChange> changes = [];
@@ -67,30 +75,12 @@ internal static class BindingFixtures
             }
             File.WriteAllText(tree.FilePath, tree.GetText().WithChanges(changes).ToString());
         }
-        CSharpScope source = CSharpScope.Parse(sources);
-        var symbols = IntegratedReview.SourceSymbols(source);
-        Dictionary<string, List<TextChange>> additions = new(FilePaths.Comparer);
-        foreach (DafnyBinding binding in manifest.Bindings)
-        {
-            var resolved = IntegratedReview.Resolve(symbols, binding.Source);
-            SyntaxNode node = resolved.Symbol.DeclaringSyntaxReferences.Single().GetSyntax();
-            if (node is VariableDeclaratorSyntax variable) node = variable.Parent!.Parent!;
-            if (!additions.TryGetValue(node.SyntaxTree.FilePath, out List<TextChange>? edits))
-                additions.Add(node.SyntaxTree.FilePath, edits = []);
-            string id = binding.Id.Contains("::", StringComparison.Ordinal) ? binding.Id : "proof::" + binding.Id;
-            AnnotationPayload payload = new() { Bind = [new(id)] };
-            edits.Add(new(new TextSpan(node.SpanStart, 0), "/* @link " + Markup.Encode(payload) + " */ "));
-        }
-        foreach (var addition in additions)
-        {
-            SyntaxTree tree = source.Compilation.SyntaxTrees.Single(t => FilePaths.Comparer.Equals(t.FilePath, addition.Key));
-            File.WriteAllText(addition.Key, tree.GetText().WithChanges(addition.Value).ToString());
-        }
         List<FormalTarget> targets = manifest.Bindings.Select(b => Markup.Name(b.Id).Alias).Distinct(StringComparer.Ordinal)
             .Select(alias => new FormalTarget(alias, "dafny", manifest.Proofs.Select(p => FilePaths.Full(p, directory)).ToList())).ToList();
         foreach (string alias in modelAliases.Where(_ => manifest.Models.Count > 0))
             targets.Add(new(alias, "tla", manifest.Models.Select(p => FilePaths.Full(p, directory)).ToList(),
-                RequiredBindings: original.Bindings.Where(b => b.Model == alias).Select(b => b.BindingId).Distinct(StringComparer.Ordinal).ToList()));
+                RequiredBindings: original.Bindings.Where(b => b.Model == alias).Select(b => b.BindingId)
+                    .Concat(modelBindings.Where(b => Markup.Name(b.Id).Alias == alias).Select(b => b.Id)).Distinct(StringComparer.Ordinal).ToList()));
         string scope = Path.Combine(directory, "scope-fixture.json");
         Files.WriteNew(scope, new CorrespondenceConfiguration(Schema.Version, "correspondence-scope", Markup.Version, targets, []));
         Files.WriteNew(path, manifest with { Scope = scope,

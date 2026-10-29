@@ -56,12 +56,9 @@ public static partial class EvidenceReport
             throw new InputException(ErrorCode.ReportSnapshotChanged, "Report manifest changed during generation.");
         using (FileStream stream = new(output, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             stream.Write(new UTF8Encoding(false).GetBytes(markdown));
-        ProjectWorkflow.Render(new {
-            SchemaVersion = Schema.Version, Kind = "report-result", Status = issues.Count == 0 ? "generated" : "stale-inputs",
-            CurrentApplicability = issues.Count == 0 ? "current" : "stale", Output = output,
-            Nodes = manifest.Nodes.Count, CodeRegions = manifest.CodeRegions.Count, InputFiles = pins.Count,
-            Diagnostics = issues, Boundary
-        }, options);
+        ProjectWorkflow.Render(new ReportResult(Schema.Version, "report-result", issues.Count == 0 ? "generated" : "stale-inputs",
+            issues.Count == 0 ? "current" : "stale", output,
+            manifest.Nodes.Count, manifest.CodeRegions.Count, pins.Count, issues, Boundary), options);
         return issues.Count == 0 ? 0 : 2;
     }
 

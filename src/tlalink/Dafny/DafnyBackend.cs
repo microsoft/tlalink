@@ -22,10 +22,8 @@ public sealed class DafnyBackend(string executable, string output, int timeout, 
             WorkingDirectory = directory ?? Output, RedirectStandardOutput = true, RedirectStandardError = true
         };
         foreach (string arg in args) start.ArgumentList.Add(arg);
-        Files.WriteNew(Path.Combine(Output, stage + ".invocation.json"), new {
-            SchemaVersion = Schema.Version, Kind = "process-invocation",
-            Executable = executable, Arguments = args, start.WorkingDirectory, TimeoutSeconds = timeout
-        });
+        Files.WriteNew(Path.Combine(Output, stage + ".invocation.json"),
+            new NativeProcessInvocation(Schema.Version, "process-invocation", executable, args, start.WorkingDirectory, timeout));
         using Process process = Process.Start(start) ?? throw new InputException(ErrorCode.IntegratedToolFailure, "Could not start " + executable);
         Task<string> stdout = process.StandardOutput.ReadToEndAsync(), stderr = process.StandardError.ReadToEndAsync();
         bool finished = process.WaitForExit(checked(timeout * 1000));
@@ -154,13 +152,10 @@ public sealed class DafnyBackend(string executable, string output, int timeout, 
         {
             try
             {
-                using JsonDocument document = JsonDocument.Parse(line);
-                JsonElement item = document.RootElement;
-                string? type = item.GetProperty("type").GetString();
-                JsonElement value = item.GetProperty("value");
-                if (type == "status")
+                DafnyNativeMessage? item = JsonSerializer.Deserialize<DafnyNativeMessage>(line, DafnyNativeJson.Options);
+                if (item is DafnyNativeStatus status)
                 {
-                    string message = value.GetString() ?? "";
+                    string message = status.Value ?? "";
                     if (!message.Contains("Dafny program verifier finished", StringComparison.Ordinal)) continue;
                     // Only a complete native summary without resource/timeout suffixes establishes an outcome.
                     Match summary = Regex.Match(message.Trim(),
@@ -169,12 +164,13 @@ public sealed class DafnyBackend(string executable, string output, int timeout, 
                     if (!summary.Success || !int.TryParse(summary.Groups[1].Value, out errors)) return "incomplete";
                     summaries++;
                 }
-                else if (type == "diagnostic")
+                else if (item is DafnyNativeDiagnostic diagnostic)
                 {
-                    if (value.GetProperty("severity").GetInt32() == 1)
+                    if (diagnostic.Value.Severity == 1)
                     {
-                        if (value.GetProperty("source").GetString() != "Verifier") return "incomplete";
-                        string message = value.GetProperty("defaultFormatMessage").GetString() ?? "";
+                        if (diagnostic.Value.Source != "Verifier" || !diagnostic.Value.HasDefaultFormatMessage)
+                            return "incomplete";
+                        string message = diagnostic.Value.DefaultFormatMessage ?? "";
                         if (Regex.IsMatch(message,
                             @"\A(?:Verification (?:timed out|out of resource|inconclusive)|(?:Prover|Solver) (?:died|exception)|Out of memory)",
                             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) return "incomplete";
@@ -183,7 +179,8 @@ public sealed class DafnyBackend(string executable, string output, int timeout, 
                 }
                 else return "incomplete";
             }
-            catch (Exception error) when (error is JsonException or InvalidOperationException or KeyNotFoundException or FormatException)
+            catch (Exception error) when (error is JsonException or InvalidOperationException or KeyNotFoundException or
+                FormatException or NotSupportedException)
             {
                 return "incomplete";
             }

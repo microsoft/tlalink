@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -12,7 +13,59 @@ public sealed record DafnyDeclaration(string Name, string Module, string Kind, s
     public int Column { get; init; } = 1;
 }
 public sealed record DafnyIndexResult(List<DafnyDeclaration> Declarations, List<string> Dependencies);
-public sealed record ConformanceCase(string Id, List<JsonElement> Inputs);
+[JsonConverter(typeof(OracleInputScalarConverter))]
+public readonly record struct OracleInputScalar
+{
+    public bool IsBoolean { get; }
+    public int? Integer => IsBoolean ? null : integer;
+    public bool? Boolean => IsBoolean ? boolean : null;
+    private readonly int integer;
+    private readonly bool boolean;
+    internal bool IsNegativeZero { get; }
+
+    public OracleInputScalar(int value) : this(value, false) { }
+    internal OracleInputScalar(int value, bool negativeZero)
+    {
+        integer = value;
+        boolean = false;
+        IsBoolean = false;
+        IsNegativeZero = negativeZero;
+    }
+
+    public OracleInputScalar(bool value)
+    {
+        boolean = value;
+        integer = 0;
+        IsBoolean = true;
+        IsNegativeZero = false;
+    }
+}
+
+public sealed class OracleInputScalarConverter : JsonConverter<OracleInputScalar>
+{
+    public override OracleInputScalar Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType is JsonTokenType.True or JsonTokenType.False)
+            return new(reader.GetBoolean());
+        if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out int number))
+        {
+            ReadOnlySpan<byte> spelling = reader.HasValueSequence ? reader.ValueSequence.ToArray() : reader.ValueSpan;
+            return new(number, spelling.SequenceEqual("-0"u8));
+        }
+        throw new InputException(ErrorCode.InvalidOracleInput,
+            "Cases require correctly typed bool or signed 32-bit int inputs; no coercions.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, OracleInputScalar value, JsonSerializerOptions options)
+    {
+        if (value.Boolean is bool boolean) writer.WriteBooleanValue(boolean);
+        // JSON admits -0 as an Int32 spelling; retain its authored bytes on round trips.
+        else if (value.IsNegativeZero) writer.WriteRawValue("-0");
+        else writer.WriteNumberValue(value.Integer!.Value);
+    }
+}
+
+public sealed record ConformanceCase(string Id, List<OracleInputScalar> Inputs);
 public sealed record DafnyBindingSelection(string Id, string? Adapter, List<ConformanceCase> Cases);
 internal sealed record IntegratedAuthoring(int SchemaVersion, string Kind, List<string> Sources,
     string Scope, List<DafnyBindingSelection> Bindings, List<Correspondence> Correspondences)
@@ -61,7 +114,7 @@ public class DafnyEvidenceState
     public Dictionary<string, StageResult> Stages { get; } = [];
 }
 
-public sealed class IntegratedPacket(string command) : DafnyEvidenceState
+public sealed class IntegratedPacket(string command) : DafnyEvidenceState, IAnalysisResult, IInputEvidence
 {
     public int SchemaVersion => Schema.Version;
     public string Kind => "integrated-result";
@@ -83,7 +136,7 @@ public sealed class IntegratedPacket(string command) : DafnyEvidenceState
     public List<SourceObligationResult> SourceObligations { get; } = [];
     public string SourceObligationsStatus => TlaLink.SourceObligations.Status(SourceObligations);
     public Packet? Tla { get; set; }
-    public object? Execution { get; set; }
+    public IntegratedExecution? Execution { get; set; }
     public List<string> Boundaries { get; } = [
         "A Dafny proof establishes contracts of the supplied Dafny program, not equivalence of linked C#.",
         "Executable conformance compares only the explicit cases against compiled Dafny oracles.",

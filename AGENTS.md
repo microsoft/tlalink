@@ -15,6 +15,30 @@ frontend helpers in `PlusCal`, symbolic safety in `Apalache`, and Dafny in
 `Dafny`. Preserve the public
 namespace and flat deployed bridge-asset names when moving implementation.
 
+When assessing the state of the art or designing modeling, abstraction,
+method-summary or agent-workflow features, consult the
+[Specula research](docs/research/specula/README.md) before introducing new
+machinery. Use its overlap analysis and pinned sources to identify reusable
+ideas; recheck upstream for current claims rather than treating the research
+snapshot as exhaustive or permanently current.
+
+## Agent CLI skills
+
+Workspace workflows live under `.github/skills`; load only the matching skill.
+They orchestrate the existing CLI, not a second tool implementation or evidence
+format. [REFERENCE.md](REFERENCE.md) remains authoritative for command contracts.
+
+| Skill | Use when |
+|---|---|
+| [tlalink-source-navigation](.github/skills/tlalink-source-navigation/SKILL.md) | Finding Roslyn IDs, inspecting C# members or following references/callers/callees with explicit compiler context |
+| [tlalink-inspect-correspondence](.github/skills/tlalink-inspect-correspondence/SKILL.md) | Reading model/C# pairs, selecting useful context/captures/calls, or filtering/paging inspection output without edits |
+| [tlalink-maintain-links](.github/skills/tlalink-maintain-links/SKILL.md) | Creating, updating, checking, removing or explicitly migrating model-owned connections |
+
+Skill examples are independently synthetic public material. Private package
+recipes and generated reports stay in their ignored package; do not copy them
+into shared skills. Missing compiler/native prerequisites remain incomplete.
+Skills do not install tools, approve correspondence or discharge human gates.
+
 ## Branch and PR workflow
 
 - While a PR is open, keep related work on its one existing feature branch and
@@ -56,12 +80,37 @@ namespace and flat deployed bridge-asset names when moving implementation.
 
 ## Model authoring and self-checks
 
-- Use annotation version 4 with standard JSON inside C# `@link` block comments:
+- Maintained public examples keep C# free of `@link` comments. Their formal
+  TLA+/PlusCal, Dafny or P comments own typed `bind.source` selectors using
+  Roslyn declaration IDs and the shared syntax-selector contract, together
+  with any capture metadata. Do not introduce a separate binding catalogue,
+  infer declaration-name pairs or replace semantic selectors with line numbers.
+  Use the documented `symbols` and `links` CLI commands to discover, inspect,
+  validate and maintain these connections. Migration starts with examples;
+  do not rewrite historical evidence or private consumer packages implicitly.
+- Use `links inspect` for inline model/C# review. Start with one binding or
+  endpoint and compact output; request block/member context for earlier guards
+  or cleanup and `--calls true` for explicit call identities. Omitted entries
+  and call details are not coverage claims. Keep positional-selector risks,
+  lexical-versus-runtime context, implicit effects and required human review
+  visible. Save generated inspection reports separately from authored models;
+  never treat them as another binding catalogue or approval receipt.
+- Reusable method summaries use paired method/TLA+ bindings and the existing
+  correspondence-scope `method_summaries` metadata, not a new annotation or
+  contract language. TLC/trace consumers declare summary dependencies explicitly.
+  Keep relations stateless and justify pure/atomic abstractions through
+  source-pinned inspection, including competing accesses, failures and relevant
+  callees. Never hide relevant interleavings or imply termination by removing
+  retries. Check caller preconditions explicitly, not merely as disabling guards.
+  Record agent inspection with `origin=agent`; it cannot discharge a human
+  obligation. See [method summaries](REFERENCE.md#reviewed-method-summaries).
+- Use annotation version 4 with standard JSON inside native `@link` comments:
   typed `bind`, `capture` and `exclude` arrays. Do not introduce XML, another
   tokenizer, raw JSON binding stores or version-2 acceptance branches. Formal
   aliases and exact logging API omissions use one schema-4
-  `correspondence-scope`. Both source and formal code declare the same unique
-  `scope::name` binding ID; each owns its appropriate native attachment. Never
+  `correspondence-scope`. Each formal endpoint owns its unique `scope::name`
+  ID and, in maintained examples, a typed Roslyn `source` selector; the compiler
+  resolves the C# attachment without changing that file. Never
   restore source-side `target` names or infer pairs from declaration spelling.
   Native manifests select IDs and retain backend-specific execution/claim semantics.
   Exclusions never remove runtime code, input pins or relevant argument/callee
@@ -97,6 +146,14 @@ namespace and flat deployed bridge-asset names when moving implementation.
   source selectors use declaration IDs while flow facts retain constructed
   call targets. `guarded-try-effect` only extends the guard check to the first
   direct call in one top-level try body; it does not model handler semantics.
+- Keep reference-helper authorization in the same source-obligation format:
+  `reference-cas-effect` checks a null-comparand CAS winner before dispatch,
+  while `callback-effect` checks the single private callback wiring through
+  selected helper storage. Require cell-write and stable-storage premises
+  separately; these checks do not automatically compose a theorem about
+  callback effects, task settlement or progress. Readonly reference storage
+  uses a direct fresh constructor initializer, not an inferred factory or
+  a parallel helper-contract format.
 - Selected synchronous reference-type `using` lifetimes may use `point=cleanup`
   after a successful implicit `IDisposable.Dispose`, and `point=fault` for a
   throwing disposer. Instrumentation lowers that narrow compiler pattern once,
@@ -140,6 +197,15 @@ namespace and flat deployed bridge-asset names when moving implementation.
   Keep serial-owner assumptions explicit for unguarded synchronous components.
 
 ## Build and validation
+
+- Source language selection uses `compiler.language_version` in JSON and
+  `--language-version` for standalone source commands, with canonical values
+  `8` or `14` and default `14`. Reuse that selection in source parsing,
+  preparation, recorded compiler-context inventories and archived readers.
+  Do not equate language compatibility with runtime/API compatibility.
+  Tool-generated instrumentation hosts remain .NET 10/C# 14 and record their
+  actual compilation context separately; regression builds must match their
+  declared source language.
 
 ```powershell
 dotnet build .\TlaLink.sln
@@ -350,6 +416,22 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   kind. Update producers/readers/examples/tests together; do not add legacy
   acceptance branches or rewrite historical evidence. `@link` is a separate
   source annotation grammar, not an older JSON schema.
+- Fixed JSON shapes use named C# contracts: records for documents, receipts,
+  native messages and presentation, with typed mutable builders only where
+  execution accumulates state. Deserialize at the boundary, then validate and
+  project typed values; do not serialize into a DOM to implement application
+  logic. Variable keys use typed dictionaries, not `JsonObject`. Keep raw JSON
+  only for generated JSON Schema transformation, genuinely variable native
+  payloads, discriminator dispatch and malformed-input diagnostics. Trace
+  scalars use the shared constrained runtime contract and preserve their
+  original wire spelling where it participates in identity keys. New command
+  results require an explicit typed summary projection; unknown results must
+  fail visibly rather than silently lose fields. Tests may inspect or corrupt
+  JSON independently of production contracts. Types do not replace semantic,
+  archive, applicability, acceptance or retention validation.
+- Oracle case inputs use the native Int32/Boolean scalar contract, not arbitrary
+  JSON or trace identities. Preserve their accepted wire spellings and reject
+  coercions, fractional/exponent encodings and unsupported kinds explicitly.
 - Keep capture side effects and scheduling hooks separate. Never run hooks
   under the recorder lock or generate them inside source locks.
 - Receiver/reference and `$call` identities are nominal correlation labels,

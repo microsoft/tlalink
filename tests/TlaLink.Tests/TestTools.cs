@@ -9,10 +9,10 @@ public static class TestTools
         yield return typeof(Microsoft.CodeAnalysis.CSharp.CSharpCompilation).Assembly.Location;
         string[] tools = selection switch
         {
-            "--core" or "--diagnostics" => [],
+            "--core" or "--diagnostics" or "--symbols" => [],
             "--apalache" => [Jar(root), Apalache(root)],
             "--p" => [PCompiler(root)],
-            "--trace" => [Jar(root)],
+            "--trace" or "--summaries" or "--links" => [Jar(root)],
             "--integrated" or "--workflow" or "--evidence" => [Jar(root), Dafny(root)],
             null => [Jar(root), Apalache(root), Dafny(root), PCompiler(root)],
             _ => throw new ArgumentException("Unknown test selection: " + selection)
@@ -25,7 +25,7 @@ public static class TestTools
                 foreach (string file in Directory.EnumerateFiles(Path.GetDirectoryName(tool)!, "*", options))
                     yield return file;
         }
-        if (selection is not ("--core" or "--diagnostics" or "--p"))
+        if (selection is not ("--core" or "--diagnostics" or "--symbols" or "--p"))
             foreach (string file in JavaToolchain.Resolve().Fingerprints.Keys) yield return file;
     }
 

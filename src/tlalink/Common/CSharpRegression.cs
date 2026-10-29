@@ -6,12 +6,14 @@ public sealed record CSharpRegressionAnalysis(int SchemaVersion, string Kind, st
     CompilerProfile Compiler, List<string> Tests, List<string> Inputs, List<string> Arguments, string Configuration = "Debug",
     List<int>? PathArguments = null);
 public sealed record RegressionCaseResult(string Id, string Status, string Message);
+public sealed record RegressionSelection(int SchemaVersion, string Kind, List<string> Tests);
 public sealed record RegressionObservations(int SchemaVersion, string Kind, bool Complete, string Binary,
     string BinarySha256, List<string> Selection, List<RegressionCaseResult> Results);
 public sealed record CSharpRegressionResult(int SchemaVersion, string Kind, string Status, string Claim,
     string Config, string ConfigSha256, string Directory, int TimeoutSeconds, ObservedBuild Build,
     ObservedProcess Process, string RuntimeBinary, string Observations, List<RegressionCaseResult> Tests,
-    Dictionary<string, string> Fingerprints, Dictionary<string, string> Artifacts, List<Issue> Diagnostics, string Boundary);
+    Dictionary<string, string> Fingerprints, Dictionary<string, string> Artifacts, List<Issue> Diagnostics, string Boundary)
+    : IAnalysisResult, IArtifactEvidence;
 
 public static class CSharpRegression
 {
@@ -56,15 +58,15 @@ public static class CSharpRegression
             throw new InputException(ErrorCode.InvalidWorkflowInput, "Regression path_arguments require distinct zero-based argument indices.");
         CompilerProfile compiler = analysis.Compiler;
         if (compiler.TargetFramework is not ("net10.0" or "net10.0-windows") ||
-            compiler.LanguageVersion != "14" || compiler.Nullable is not ("enable" or "disable") ||
+            !CSharpLanguages.Supported(compiler.LanguageVersion) || compiler.Nullable is not ("enable" or "disable") ||
             compiler.Defines == null || compiler.Defines.Any(string.IsNullOrWhiteSpace) ||
             compiler.Defines.Distinct(StringComparer.Ordinal).Count() != compiler.Defines.Count)
-            throw new InputException(ErrorCode.InvalidWorkflowInput, "Regression compiler context requires .NET 10, C# 14, explicit nullable/checked/unsafe settings and exact defines (including SDK symbols).");
+            throw new InputException(ErrorCode.InvalidWorkflowInput, "Regression compiler context requires .NET 10, C# 8 or 14, explicit nullable/checked/unsafe settings and exact defines (including SDK symbols).");
     }
 
     public static int Run(CliOptions options)
     {
-        if (options.Command == "read-regression") return StageEvidence.Read(options, "csharp-regression-result", Validate);
+        if (options.Command == "read-regression") return StageEvidence.Read<CSharpRegressionResult>(options, "csharp-regression-result", Validate);
         string config = FilePaths.Full(options.Required("config")), output = FilePaths.Full(options.Required("output"));
         if (File.Exists(output) || System.IO.Directory.Exists(output))
             throw new InputException(ErrorCode.InvalidWorkflowInput, "Regression output must be a new directory.");
@@ -95,7 +97,7 @@ public static class CSharpRegression
         }
         string binary = Path.Combine(runtime, Path.GetFileName(build.Binary));
         string selection = Path.Combine(output, "selection.json"), observations = Path.Combine(output, "observations.json");
-        Files.WriteNew(selection, new { SchemaVersion = Schema.Version, Kind = "regression-selection", Tests = analysis.Tests });
+        Files.WriteNew(selection, new RegressionSelection(Schema.Version, "regression-selection", analysis.Tests));
         ObservedProcess process = ObservedExecution.Invoke([binary, observations, selection, .. analysis.Arguments],
             output, options.Timeout, "run");
         ObservedExecution.Check(build);
@@ -135,7 +137,7 @@ public static class CSharpRegression
         string Defines(IEnumerable<string> values) => string.Join(",", values.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
         if (!FilePaths.Comparer.Equals(analysis.Project, build.Project) || context.GetValueOrDefault("Configuration") != analysis.Configuration ||
             context.GetValueOrDefault("TargetFramework") != profile.TargetFramework ||
-            context.GetValueOrDefault("LangVersion") is not ("14" or "14.0") ||
+            !CSharpLanguages.Matches(context.GetValueOrDefault("LangVersion"), profile.LanguageVersion) ||
             context.GetValueOrDefault("Nullable") != profile.Nullable ||
             !bool.TryParse(context.GetValueOrDefault("AllowUnsafeBlocks"), out bool unsafeEnabled) || unsafeEnabled != profile.AllowUnsafe ||
             !bool.TryParse(context.GetValueOrDefault("CheckForOverflowUnderflow"), out bool checkedEnabled) || checkedEnabled != profile.Checked ||
@@ -175,6 +177,13 @@ public static class CSharpRegression
     {
         Files.RequireSchema(document, "csharp-regression-result");
         CSharpRegressionResult result = document.Deserialize<CSharpRegressionResult>(ProjectInputs.Json)!;
+        return Validate(result, directory, current);
+    }
+
+    public static List<Issue> Validate(CSharpRegressionResult result, string directory, bool current = false)
+    {
+        if (result.SchemaVersion != Schema.Version || result.Kind != "csharp-regression-result")
+            throw new InputException(ErrorCode.WorkflowStageInconsistent, "Expected current csharp-regression-result.");
         result = result with { Fingerprints = StageEvidence.PathPins(result.Fingerprints) };
         List<Issue> issues = [];
         void Error(string text) => issues.Add(new(ErrorCode.WorkflowStageInconsistent, text));
@@ -215,10 +224,10 @@ public static class CSharpRegression
             !Same(result.Build.References, ObservedExecution.ReadHashes(FileFor(Path.Combine("build", "references.txt")))) ||
             !Same(result.Build.CompilerContext, ObservedExecution.ReadContext(FileFor(Path.Combine("build", "context.txt")))))
             Error("Regression build inputs differ from compiler-time observations.");
-        JsonElement buildInvocation = ProjectInputs.Read<JsonElement>(FileFor(Path.Combine("build", "build.invocation.json")));
+        NativeProcessInvocation buildInvocation = ProjectInputs.Read<NativeProcessInvocation>(FileFor(Path.Combine("build", "build.invocation.json")));
         List<string> buildArguments = ObservedExecution.BuildArguments(analysis.Project, Path.Combine(result.Directory, "build"), analysis.Configuration);
         Dictionary<string, string> buildInputs = ObservedExecution.ReadHashes(FileFor(Path.Combine("build", "build-inputs.txt")));
-        string host = buildInvocation.GetProperty("executable").GetString()!;
+        string host = buildInvocation.Executable;
         if (!result.Fingerprints.TryGetValue(host, out string? hostHash)) Error("Missing observed .NET host.");
         else Files.Pin(buildInputs, host, hostHash);
         Dictionary<string, string> binaryObservation = ObservedExecution.ReadHashes(FileFor(Path.Combine("build", "binary.txt")));
@@ -229,9 +238,9 @@ public static class CSharpRegression
             !missing.SequenceEqual(result.Build.MissingBuildInputs, FilePaths.Comparer) ||
             result.Build.Sdk != Files.Read(FileFor(Path.Combine("build", "sdk.log"))).Trim() ||
             !result.Build.BuildArguments.SequenceEqual(buildArguments) ||
-            !buildInvocation.GetProperty("arguments").EnumerateArray().Select(a => a.GetString()).SequenceEqual(buildArguments) ||
-            buildInvocation.GetProperty("timeout_seconds").GetInt32() != result.TimeoutSeconds ||
-            buildInvocation.GetProperty("working_directory").GetString() != Path.Combine(result.Directory, "build") ||
+            !buildInvocation.Arguments.SequenceEqual(buildArguments) ||
+            buildInvocation.TimeoutSeconds != result.TimeoutSeconds ||
+            buildInvocation.WorkingDirectory != Path.Combine(result.Directory, "build") ||
             result.Process.Executable != host)
             Error("Regression observed build contradicts the captured build invocation/context.");
         string originalRuntime = Path.GetDirectoryName(result.Build.Binary)! + Path.DirectorySeparatorChar;
@@ -241,16 +250,16 @@ public static class CSharpRegression
             if (!result.Artifacts.TryGetValue(copy, out string? copied) || copied != pin.Value)
                 Error("Regression runtime snapshot differs from the captured output: " + copy);
         }
-        JsonElement invocation = ProjectInputs.Read<JsonElement>(FileFor("run.invocation.json"));
+        NativeProcessInvocation invocation = ProjectInputs.Read<NativeProcessInvocation>(FileFor("run.invocation.json"));
         string binary = FilePaths.Full(result.RuntimeBinary, result.Directory);
         string[] expected = [binary, FilePaths.Full(result.Observations, result.Directory),
             Path.Combine(result.Directory, "selection.json"), .. analysis.Arguments];
         if (result.Process.TimeoutSeconds != result.TimeoutSeconds || result.Process.WorkingDirectory != result.Directory ||
             !result.Process.Arguments.SequenceEqual(expected) ||
-            invocation.GetProperty("timeout_seconds").GetInt32() != result.TimeoutSeconds ||
-            invocation.GetProperty("executable").GetString() != result.Process.Executable ||
-            invocation.GetProperty("working_directory").GetString() != result.Directory ||
-            !invocation.GetProperty("arguments").EnumerateArray().Select(a => a.GetString()).SequenceEqual(expected))
+            invocation.TimeoutSeconds != result.TimeoutSeconds ||
+            invocation.Executable != result.Process.Executable ||
+            invocation.WorkingDirectory != result.Directory ||
+            !invocation.Arguments.SequenceEqual(expected))
             Error("Regression execution invocation differs from its declaration.");
         if (Files.Hash(FileFor(result.RuntimeBinary)) != result.Build.BinarySHA256)
             Error("Executed runtime snapshot differs from the observed build.");

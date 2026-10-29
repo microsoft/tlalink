@@ -19,8 +19,8 @@ confidence.
 TlaLink is a local .NET 10 command-line tool that keeps that link explicit and
 checkable:
 
-- **Both sides declare their links.** The agent marks a C# location and its
-  formal counterpart with the same unique name. TlaLink independently resolves
+- **Links live beside the model.** Formal comments identify C# declarations
+  using Roslyn IDs and explicit syntax selectors. TlaLink independently resolves
   both endpoints and rejects missing or duplicate counterparts.
   Selected source premises can also be checked, such as whether only the
   authorized gate outcome reaches an effect. These checks do not prove that
@@ -47,7 +47,7 @@ your code. It is designed for the **C#/.NET toolchain**.
    cancellation leak a credit?", and point the agent at the relevant code.
 2. **The agent models it and maps it to your code.** It writes a small model
    of just that behavior and annotates both the C# and formal declarations
-   with shared names for the selected relationships.
+   with model-owned selectors for the selected relationships.
 3. **TlaLink checks the links and runs the checkers.** It confirms that the
    annotations resolve to real C# symbols and model declarations, then runs
    the selected checker. Where supported, it also runs instrumented copies of
@@ -60,17 +60,16 @@ your code. It is designed for the **C#/.NET toolchain**.
    simplified or assumed, and what is still open. You decide whether that is
    good enough.
 
-### Paired `@link` annotations
+### Model-owned `@link` annotations
 
 Declare `"annotation_version": 4` once in the root project, not in each comment.
-Both C# and formal declarations use a native block comment containing `@link`
-and standard JSON. Each `bind` owns the same unique `scope::name`; neither side
-names the other's native declaration. For example:
+The maintained examples keep C# free of binding comments. Formal declarations
+use a native block comment containing `@link` and standard JSON. Each `bind`
+owns a unique `scope::name` and a compiler-resolved source selector. For example:
 
 ```csharp
 lock (this.gate)
 {
-    /* @link {"bind":[{"id":"lifecycle::admit"}]} */
     this.active++;
 }
 ```
@@ -79,12 +78,15 @@ The formal declaration owns the same common name, independently of its native
 operator name:
 
 ```tla
-(* @link {"bind":[{"id":"lifecycle::admit"}]} *)
+(* @link {"bind":[{"id":"lifecycle::admit","source":{
+  "symbol":"M:Lifecycle.Admit","syntax":"ExpressionStatement",
+  "tokens":"this.active++;"
+}}]} *)
 Admit == active' = active + 1
 ```
 
-The shared ID is `lifecycle::admit`, even though the TLA+ operator is named
-`Admit`. The same paired `bind` syntax works with authored PlusCal labels,
+The stable ID is `lifecycle::admit`; the source is selected by its Roslyn ID,
+not inferred from the TLA+ operator name. The same `bind.source` syntax works with authored PlusCal labels,
 Dafny declarations and P declarations. An explicit correspondence scope selects
 the formal inputs; a resolved pair is not proof of equivalent behavior.
 
@@ -93,7 +95,10 @@ add an optional `capture` array to the same JSON object:
 
 ```json
 {
-  "bind": [{"id": "lifecycle::admit"}],
+  "bind": [{"id": "lifecycle::admit", "source": {
+    "symbol": "M:Lifecycle.Admit", "syntax": "ExpressionStatement",
+    "tokens": "this.active++;"
+  }}],
   "capture": [{
     "binding": "lifecycle::admit",
     "actor": "1",
@@ -105,21 +110,27 @@ add an optional `capture` array to the same JSON object:
 }
 ```
 
-The observed field and formal state endpoint also need a paired
-`lifecycle::active` binding, with the C# capture declaring its guard and type.
+The observed field and formal state endpoint also need a
+`lifecycle::active` binding with its field ID, guard and capture type.
 This excerpt is not a complete capture setup; see the
 [Demo source](examples/Demo.cs), [model](examples/Demo.tla) and
 [scope](examples/demo-scope.json).
-`capture` and reasoned `exclude` entries are C#-only; formal comments contain
-`bind` entries only. Exclusions scope correspondence, not runtime execution,
+Capture metadata lives with the formal binding. Exclusions scope correspondence, not runtime execution,
 input pinning or relevant argument/callee effects. See the
 [annotation reference](REFERENCE.md#one-maintained-markup-link) for the full format.
+Use [links inspect](REFERENCE.md#inspecting-correspondence) to read a model
+declaration alongside its selected C# code, surrounding control/lock context
+and observation metadata, without changing either source. Filter by source
+member, attachment status or capture point, and request only the sections
+needed for the review.
+Agents can load the focused [workspace CLI skills](AGENTS.md#agent-cli-skills)
+for source navigation, correspondence inspection and deliberate link maintenance.
 
 ## What you do, and what the agent does
 
 | You | The agent |
 |---|---|
-| Choose the behavior worth checking. | Writes the models, properties and code annotations. |
+| Choose the behavior worth checking. | Writes the models, properties and source selectors. |
 | Explain intended behavior and interface guarantees. | Picks a suitable checker and runs it. |
 | Decide whether the stated assumptions and gaps are acceptable. | Checks its model against the code and investigates failures. |
 | Record a review decision when a project requires one. | Explains results and limits in plain English. |
@@ -141,6 +152,9 @@ TlaLink does not model a whole program at once. For a larger system:
   rather than relying on implementation details.
 - **Keep checks beside their code.** [Component manifests](examples/Components/README.md)
   let each part of the codebase own its checks, combined into one project.
+- **Reuse reviewed method summaries.** [Small TLA+ relations](examples/MethodSummaries/README.md)
+  let caller models omit helper internals. Source-pinned agent inspection
+  supports the abstraction; caller results remain conditional on it.
 - **Only re-check what changed.** With a declared result store, completed
   TLC searches are reused while their models and configurations are unchanged,
   like an incremental build. Expensive searches can run once, separately,
@@ -171,6 +185,10 @@ dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --core
 These need no formal-methods tools. The checkers themselves are set up
 separately, only when you need them; see the
 [setup instructions](REFERENCE.md#requirements-and-build).
+
+Use [symbol lookup](REFERENCE.md#finding-c-symbols) to discover exact C#
+declaration IDs, resolve source positions, find references/call sites or inspect
+one member without adding annotations or reading a whole inventory.
 
 ### First steps
 

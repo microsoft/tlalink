@@ -38,23 +38,28 @@ public sealed record Link(string Key, string Identity, string Kind, string Model
     public string Atomicity => "not-established";
 }
 
-public sealed class Packet(string command)
+public sealed record Packet
 {
-    public int SchemaVersion => Schema.Version;
-    public string Kind => "source-review";
-    public string Command { get; } = command;
+    [JsonConstructor]
+    public Packet(string command) => Command = command;
+
+    [JsonRequired]
+    public int SchemaVersion { get; init; } = Schema.Version;
+    [JsonRequired]
+    public string Kind { get; init; } = "source-review";
+    public string Command { get; init; }
     public string LinksStatus { get; set; } = "incomplete";
     public string CoverageStatus => "requires-agent-review";
     public string ConformanceStatus { get; set; } = "not-run";
-    public List<Issue> Diagnostics { get; } = [];
+    public List<Issue> Diagnostics { get; init; } = [];
     public List<Link> Links { get; set; } = [];
-    public List<Endpoint> Inventory { get; } = [];
-    public List<SourceDisposition> Dispositions { get; } = [];
-    public List<OmissionRuleMatch> OmissionMatches { get; } = [];
-    public List<SourceLinkDeclaration> SourceBindings { get; } = [];
-    public List<string> SelectedTargets { get; } = [];
-    public Dictionary<string, string> Fingerprints { get; } = new(FilePaths.Comparer);
-    public List<string> Uncertainties { get; } = [
+    public List<Endpoint> Inventory { get; init; } = [];
+    public List<SourceDisposition> Dispositions { get; init; } = [];
+    public List<OmissionRuleMatch> OmissionMatches { get; init; } = [];
+    public List<SourceLinkDeclaration> SourceBindings { get; init; } = [];
+    public List<string> SelectedTargets { get; init; } = [];
+    public Dictionary<string, string> Fingerprints { get; init; } = new(FilePaths.Comparer);
+    public List<string> Uncertainties { get; init; } = [
         "Roslyn resolves only the supplied sources, references and preprocessor symbols.",
         "A symbol binding, lock or annotation does not prove atomicity or refinement.",
         "Observed trace inclusion does not prove all C# executions or temporal progress.",

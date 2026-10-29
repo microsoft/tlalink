@@ -16,13 +16,24 @@ public static class FormalCorrespondence
         {
             List<LocatedAnnotation> parsed = Markup.Parse(comment.Content, comment.Start, comment.End);
             if (parsed.Count == 0) continue;
-            if (parsed.Any(a => a.Declaration is not BindAnnotation))
-                throw new InputException(ErrorCode.InvalidAttachment, "Formal endpoints declare bind only; capture/exclude belong to C#.");
+            List<ExcludeAnnotation> exclusions = parsed.Select(a => a.Declaration).OfType<ExcludeAnnotation>().ToList();
+            if (exclusions.Any(e => e.Source == null))
+                throw new InputException(ErrorCode.InvalidAttachment, "Formal exclusions require an explicit source selector.");
             NativeDeclarationSpan endpoint = native.FirstOrDefault(d => d.Start >= comment.End &&
                 Markup.OnlyTrivia(text, comment.End, d.Start, comments))
                 ?? throw new InputException(ErrorCode.InvalidAttachment, "Formal bind must immediately precede an authoritative native declaration: " + path);
             foreach (BindAnnotation binding in parsed.Select(a => a.Declaration).OfType<BindAnnotation>())
-                result.Add(new(binding, endpoint.Endpoint, endpoint.Arity));
+            {
+                List<CaptureAnnotation> captures = parsed.Select(a => a.Declaration).OfType<CaptureAnnotation>()
+                    .Where(c => c.Binding == binding.Id).ToList();
+                if (captures.Count > 0 && binding.Source == null)
+                    throw new InputException(ErrorCode.InvalidAttachment, "Formal capture metadata requires a source selector.");
+                result.Add(new(binding, endpoint.Endpoint, endpoint.Arity, captures.Count == 0 ? null : captures,
+                    exclusions.Count == 0 ? null : exclusions));
+            }
+            if (parsed.Select(a => a.Declaration).OfType<CaptureAnnotation>()
+                .Any(c => !parsed.Any(a => a.Declaration is BindAnnotation b && b.Id == c.Binding)))
+                throw new InputException(ErrorCode.InvalidAttachment, "Capture metadata needs a binding in the same formal comment.");
         }
         foreach (var duplicate in result.GroupBy(b => b.Binding.Id, StringComparer.Ordinal).Where(g => g.Count() != 1))
             throw new InputException(ErrorCode.DuplicateBinding, "Duplicate formal correspondence ID: " + duplicate.Key);
@@ -33,8 +44,12 @@ public static class FormalCorrespondence
         string alias, IEnumerable<string>? selected, List<Issue> diagnostics)
     {
         List<FormalLinkDeclaration> formal = declarations.Where(d => Markup.Name(d.Binding.Id).Alias == alias).ToList();
+        HashSet<string>? selection = selected?.ToHashSet(StringComparer.Ordinal);
+        foreach (FormalLinkDeclaration declaration in formal.Where(d => d.Binding.Source != null &&
+            (selection == null || selection.Contains(d.Binding.Id))))
+            source.AttachFormal(declaration);
         List<SourceBinding> implementation = source.Bindings.Where(b => b.Model == alias).ToList();
-        HashSet<string> ids = selected?.ToHashSet(StringComparer.Ordinal) ??
+        HashSet<string> ids = selection ??
             formal.Select(d => d.Binding.Id).Concat(implementation.Select(b => b.BindingId)).ToHashSet(StringComparer.Ordinal);
         List<ResolvedCorrespondence> result = [];
         foreach (string id in ids)
@@ -123,6 +138,8 @@ public static class FormalCorrespondence
                 new(d.Path, d.Line, d.EndLine, d.Column), text, d.Start, d.End)),
                 Comments(text, nested: true)));
         }
+        if (result.Any(d => d.Captures is { Count: > 0 }))
+            throw new InputException(ErrorCode.InvalidAttachment, "Dafny bindings have no capture adapter.");
         return result;
     }
 
@@ -137,6 +154,8 @@ public static class FormalCorrespondence
                 new(d.Path, d.Line, d.EndLine, d.Column), text, d.Start, d.End)),
                 Comments(text, nested: false)));
         }
+        if (result.Any(d => d.Captures is { Count: > 0 }))
+            throw new InputException(ErrorCode.InvalidAttachment, "P bindings have no capture adapter.");
         return result;
     }
 

@@ -5,7 +5,7 @@ machine Credit {
             assert ReturnCredit(1) == 2, "credit-return-at-limit";
         }
     }
-    /* @link {"bind":[{"id":"credit-p::credit-return"}]} */
+    /* @link {"bind":[{"id":"credit-p::credit-return","source":{"symbol":"M:PExample.Credit.ReturnCredit(System.Int32)"}}]} */
     fun ReturnCredit(available: int): int {
         assert available >= 0 && available < 2, "credit-range";
         return available + 2;

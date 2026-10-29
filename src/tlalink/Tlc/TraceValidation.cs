@@ -3,12 +3,13 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using TlaLink.Runtime;
 
 namespace TlaLink;
 
 public static class TraceValidation
 {
-    public static object Validate(string manifestPath, string tracePath, string configPath, string modelPath,
+    public static TraceValidationResult Validate(string manifestPath, string tracePath, string configPath, string modelPath,
         string module, List<string> variables, List<ModelBinding> models, Dictionary<string, string> modelPins,
         string jar, string output, int timeout, string init, string next, string execution, TlcResources? requestedResources = null)
     {
@@ -26,17 +27,14 @@ public static class TraceValidation
             Files.Pin(pins, FilePaths.Full(path), Files.Hash(path));
         Execution.Validate(execution, manifestPath, tracePath, pins);
         CheckPins(pins);
-        using JsonDocument trace = JsonDocument.Parse(File.ReadAllText(tracePath));
-        JsonElement root = trace.RootElement;
-        Files.RequireSchema(root, "trace");
-        if (!root.GetProperty("complete").GetBoolean() ||
-            root.GetProperty("binding_id").GetString() != manifest.BindingId)
+        TraceEnvelope trace = TraceDocuments.Read(tracePath);
+        if (!trace.Complete || trace.BindingId != manifest.BindingId)
             throw new InputException(ErrorCode.InvalidTrace, "Trace is incomplete or belongs to a different binding manifest.");
-        JsonElement[] events = root.GetProperty("events").EnumerateArray().ToArray();
-        if (events.Length == 0 || events.Length > 1000 || root.GetProperty("event_count").GetInt32() != events.Length)
+        TraceEvent[] events = trace.Events;
+        if (events.Length == 0 || events.Length > 1000 || trace.EventCount != events.Length)
             throw new InputException(ErrorCode.InvalidTrace, "Trace count invalid or exceeds the explicit 1000-event pilot limit.");
-        foreach (JsonProperty binary in root.GetProperty("binaries").EnumerateObject())
-            Files.Pin(pins, binary.Name, binary.Value.GetString() ?? throw new InputException(ErrorCode.InvalidTrace, "Invalid binary hash."));
+        foreach (var binary in trace.Binaries)
+            Files.Pin(pins, binary.Key, binary.Value);
         CheckPins(pins);
         List<string> matches = [];
         List<string> prerequisites = [];
@@ -46,59 +44,55 @@ public static class TraceValidation
         string Tuple() => "<<" + string.Join(",", variables) + ">>";
         for (int index = 0; index < events.Length; index++)
         {
-            JsonElement entry = events[index];
-            long sequence = entry.GetProperty("sequence").GetInt64();
+            TraceEvent entry = events[index];
+            long sequence = entry.Sequence;
             if (sequence != index + 1) throw new InputException(ErrorCode.InvalidTrace, "Events require unique contiguous sequence identities.");
-            string model = entry.GetProperty("model").GetString()!;
-            string step = entry.GetProperty("step").GetString()!;
+            string model = entry.Model;
+            string step = entry.Step;
             EventBinding binding = manifest.Events.SingleOrDefault(e => e.Model == model && e.Step == step)
                 ?? throw new InputException(ErrorCode.InvalidTrace, "Unknown event; events are never silently ignored.");
-            if (entry.GetProperty("point").GetString() != binding.Point ||
-                entry.GetProperty("classification").GetString() != binding.Classification)
+            if (entry.Point != binding.Point || entry.Classification != binding.Classification)
                 throw new InputException(ErrorCode.InvalidTrace, "Trace event metadata disagrees with binding.");
             if (binding.Classification is not ("transition" or "stutter")) throw new InputException(ErrorCode.InvalidTrace, "Unresolved event.");
-            bool hasEntity = entry.TryGetProperty("entity", out JsonElement entity);
-            if (hasEntity != binding.Entity || hasEntity && entity.ValueKind is not (JsonValueKind.Number or JsonValueKind.String))
+            TraceScalar? entity = entry.Entity;
+            bool hasEntity = entity is not null;
+            if (hasEntity != binding.Entity || hasEntity && !entity!.IsIdentity)
                 throw new InputException(ErrorCode.InvalidTrace, "Event entity capture disagrees with binding.");
-            string? entityValue = hasEntity ? TlaValue(entity) : null;
-            bool hasArguments = entry.TryGetProperty("arguments", out JsonElement capturedArguments);
+            string? entityValue = hasEntity ? TlaValue(entity!) : null;
+            TraceScalar[]? capturedArguments = entry.Arguments;
+            bool hasArguments = capturedArguments is not null;
             List<string> argumentTypes = binding.ArgumentTypes ?? [];
             if (hasArguments != (argumentTypes.Count > 0) ||
-                hasArguments && (capturedArguments.ValueKind != JsonValueKind.Array || capturedArguments.GetArrayLength() != argumentTypes.Count))
+                hasArguments && capturedArguments!.Length != argumentTypes.Count)
                 throw new InputException(ErrorCode.InvalidTrace, "Event action arguments disagree with the typed binding.");
             List<string> argumentValues = [];
             for (int i = 0; i < argumentTypes.Count; i++)
             {
-                JsonElement value = capturedArguments[i];
-                bool typed = argumentTypes[i] switch {
-                    "int" => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out _),
-                    "bool" => value.ValueKind is JsonValueKind.True or JsonValueKind.False,
-                    "string" => value.ValueKind == JsonValueKind.String,
-                    _ => false
-                };
+                TraceScalar value = capturedArguments![i];
+                bool typed = HasType(value, argumentTypes[i]);
                 if (!typed) throw new InputException(ErrorCode.InvalidTrace, "Action argument type disagrees with the binding.");
                 argumentValues.Add(TlaValue(value));
             }
             if (binding.Classification == "transition" && !models.Any(m => m.Model == model && m.Tag.Kind == "step" &&
                 m.Tag.Identity == step && m.Endpoint.Name == binding.Operator && m.Arity == binding.Arity))
                 throw new InputException(ErrorCode.InvalidTrace, "Model action mapping disagrees with manifest.");
-            long[] predecessors = entry.GetProperty("predecessors").EnumerateArray().Select(e => e.GetInt64()).ToArray();
+            long[] predecessors = entry.Predecessors;
             if (predecessors.Distinct().Count() != predecessors.Length || predecessors.Any(p => p <= 0 || p >= sequence))
                 throw new InputException(ErrorCode.InvalidTrace, "Invalid causal predecessor.");
             string operationKey = "operation:" + JsonSerializer.Serialize(new object?[] {
-                entry.GetProperty("connection"), entry.GetProperty("actor"), entry.GetProperty("operation"), hasEntity ? entity : null });
-            long? guard = entry.GetProperty("guard").ValueKind == JsonValueKind.Null ? null : entry.GetProperty("guard").GetInt64();
+                entry.Connection, entry.Actor, entry.Operation, entity });
+            long? guard = entry.Guard;
             if (guard <= 0 || guard is null && binding.Observations.Count != 0)
                 throw new InputException(ErrorCode.InvalidTrace, "Invalid or missing source guard identity.");
             string? guardKey = guard is null ? null : "guard:" + guard.Value.ToString(CultureInfo.InvariantCulture);
-            int thread = entry.GetProperty("thread").GetInt32();
+            int thread = entry.Thread;
             if (thread <= 0) throw new InputException(ErrorCode.InvalidTrace, "Invalid managed thread identity.");
             string threadKey = "thread:" + thread.ToString(CultureInfo.InvariantCulture);
             HashSet<long> expected = [];
             if (causalLast.TryGetValue(operationKey, out long lastOperation)) expected.Add(lastOperation);
             if (guardKey is not null && causalLast.TryGetValue(guardKey, out long lastGuard)) expected.Add(lastGuard);
             if (causalLast.TryGetValue(threadKey, out long lastThread)) expected.Add(lastThread);
-            long[] causes = entry.GetProperty("causes").EnumerateArray().Select(c => c.GetInt64()).ToArray();
+            long[] causes = entry.Causes;
             if (causes.Distinct().Count() != causes.Length || causes.Any(c => c <= 0 || c >= sequence))
                 throw new InputException(ErrorCode.InvalidTrace, "Invalid explicit causal dependency.");
             expected.UnionWith(causes);
@@ -107,10 +101,9 @@ public static class TraceValidation
             if (guardKey is not null) causalLast[guardKey] = sequence;
             causalLast[threadKey] = sequence;
             prerequisites.Add("{" + string.Join(",", predecessors) + "}");
-            string actor = TlaValue(entry.GetProperty("actor")), operation = TlaValue(entry.GetProperty("operation"));
-            _ = TlaValue(entry.GetProperty("connection"));
-            if (new[] { "actor", "operation", "connection" }.Any(name =>
-                entry.GetProperty(name).ValueKind is not (JsonValueKind.Number or JsonValueKind.String)))
+            string actor = TlaValue(entry.Actor), operation = TlaValue(entry.Operation);
+            _ = TlaValue(entry.Connection);
+            if (!entry.Actor.IsIdentity || !entry.Operation.IsIdentity || !entry.Connection.IsIdentity)
                 throw new InputException(ErrorCode.InvalidTrace, "Trace identities require integers or strings.");
             List<string> parameters = (binding.Arity - argumentValues.Count) switch {
                 0 => [], 1 => [actor], 2 => [actor, operation], 3 when binding.Entity => [actor, operation, entityValue!],
@@ -120,8 +113,8 @@ public static class TraceValidation
             string action = binding.Classification == "stutter" ? $"UNCHANGED {Tuple()}" :
                 binding.Operator + (parameters.Count == 0 ? "" : "(" + string.Join(",", parameters) + ")");
             if (binding.Classification == "transition") actionNames.Add(binding.Operator);
-            JsonElement observations = entry.GetProperty("observations");
-            if (observations.EnumerateObject().Count() != binding.Observations.Count)
+            Dictionary<string, TraceScalar> observations = entry.Observations;
+            if (observations.Count != binding.Observations.Count)
                 throw new InputException(ErrorCode.InvalidTrace, "Missing or extra typed observations.");
             List<string> predicates = [action];
             if (binding.Classification == "transition") predicates.Add(next);
@@ -129,7 +122,7 @@ public static class TraceValidation
             {
                 if (observation.Arity is < 0 or > 1 || observation.Arity == 1 && !binding.Entity)
                     throw new InputException(ErrorCode.InvalidTrace, "Unsupported observation arity or missing entity identity.");
-                string guardedState = JsonSerializer.Serialize(new { model, Connection = entry.GetProperty("connection"), observation.Id,
+                string guardedState = JsonSerializer.Serialize(new { model, Connection = entry.Connection, observation.Id,
                     Entity = observation.Arity == 1 ? entityValue : null });
                 if (observationGuards.TryGetValue(guardedState, out long previousGuard) && previousGuard != guard)
                     throw new InputException(ErrorCode.InvalidTrace, "One model state/connection/entity was observed through different source guards.");
@@ -137,27 +130,20 @@ public static class TraceValidation
                 if (!models.Any(m => m.Model == model && m.Tag.Kind == "state" && m.Tag.Identity == observation.Id &&
                     m.Endpoint.Name == observation.Operator && m.Arity == observation.Arity))
                     throw new InputException(ErrorCode.InvalidTrace, "Model observation mapping disagrees with manifest.");
-                JsonElement value = observations.GetProperty(observation.Id);
-                bool valid = observation.Type switch
-                {
-                    "int" => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out _),
-                    "bool" => value.ValueKind is JsonValueKind.True or JsonValueKind.False,
-                    "string" => value.ValueKind == JsonValueKind.String,
-                    _ => false
-                };
-                if (!valid) throw new InputException(ErrorCode.InvalidTrace, "Observed value has incorrect type.");
+                if (!observations.TryGetValue(observation.Id, out TraceScalar? value) || !HasType(value, observation.Type))
+                    throw new InputException(ErrorCode.InvalidTrace, "Observed value has incorrect type.");
                 string expression = observation.Operator + (observation.Arity == 1 ? $"({entityValue})" : "");
                 string observed = binding.Point == "invoke" ? expression : $"({expression})'";
                 predicates.Add($"{observed} = {TlaValue(value)}");
             }
             matches.Add("(" + string.Join(" /\\ ", predicates.Select(p => "(" + p + ")")) + ")");
         }
-        HashSet<string> connections = events.Select(e => TlaValue(e.GetProperty("connection"))).ToHashSet();
+        HashSet<string> connections = events.Select(e => TlaValue(e.Connection)).ToHashSet();
         if (connections.Count != 1) throw new InputException(ErrorCode.InvalidTrace, "Pilot validates one model connection per trace.");
-        string actors = "{" + string.Join(",", events.Select(e => TlaValue(e.GetProperty("actor"))).Distinct()) + "}";
-        string operations = "{" + string.Join(",", events.Select(e => TlaValue(e.GetProperty("operation"))).Distinct()) + "}";
-        string entities = "{" + string.Join(",", events.Where(e => e.TryGetProperty("entity", out _))
-            .Select(e => TlaValue(e.GetProperty("entity"))).Distinct()) + "}";
+        string actors = "{" + string.Join(",", events.Select(e => TlaValue(e.Actor)).Distinct()) + "}";
+        string operations = "{" + string.Join(",", events.Select(e => TlaValue(e.Operation)).Distinct()) + "}";
+        string entities = "{" + string.Join(",", events.Where(e => e.Entity is not null)
+            .Select(e => TlaValue(e.Entity!)).Distinct()) + "}";
         List<string> hidden = [];
         foreach (ModelBinding binding in models.Where(m => m.Tag.Kind == "step" && m.Tag.Options.GetValueOrDefault("visibility") == "hidden"))
         {
@@ -240,21 +226,19 @@ public static class TraceValidation
         bool rejected = !timedOut && process.ExitCode == 0 &&
             log.Contains("Model checking completed. No error has been found.", StringComparison.Ordinal) &&
             Regex.IsMatch(log, @"(?m)^\d+ states generated, \d+ distinct states found, 0 states left on queue\.");
-        object result = new
-        {
-            SchemaVersion = Schema.Version, Kind = "trace-validation", Command = "validate-trace", Status = witness ? "conforms" : rejected ? "rejected" : "incomplete",
-            EventCount = events.Length, BindingId = manifest.BindingId, ExitCode = process.ExitCode, TimedOut = timedOut,
-            RequestedResources = requestedResources, Resources = resources, TimeoutSeconds = timeout,
-            Invocation = new { Executable = java.Java, Arguments = arguments, WorkingDirectory = output },
-            Mapping = new { Init = init, Next = next, Hidden = hidden },
-            Diagnostics = rejected
-                ? new[] { new Issue(ErrorCode.TraceRejected, "The complete recorded execution has no witness in the selected model and hidden-step assumptions.") }
-                : Array.Empty<Issue>(),
-            WrapperSHA256 = Files.Hash(Path.Combine(output, "TlaLinkTraceCheck.tla")),
-            ConfigSHA256 = Files.Hash(Path.Combine(output, "trace.cfg")),
-            Fingerprints = pins, LogSHA256 = Files.Hash(Path.Combine(output, "TLC.log")),
-            Scope = "Existence of one causal-order-compatible finite trace in configured Init/Next bounds. Explicit hidden steps only; no liveness, general refinement, collision-free enumeration or authenticated execution claim."
-        };
+        TraceValidationResult result = new(
+            Schema.Version, "trace-validation", "validate-trace", witness ? "conforms" : rejected ? "rejected" : "incomplete",
+            events.Length, manifest.BindingId, process.ExitCode, timedOut,
+            requestedResources, resources, timeout,
+            new(java.Java, arguments, output),
+            new(init, next, hidden),
+            rejected
+                ? [new Issue(ErrorCode.TraceRejected, "The complete recorded execution has no witness in the selected model and hidden-step assumptions.")]
+                : [],
+            Files.Hash(Path.Combine(output, "TlaLinkTraceCheck.tla")),
+            Files.Hash(Path.Combine(output, "trace.cfg")),
+            pins, Files.Hash(Path.Combine(output, "TLC.log")),
+            "Existence of one causal-order-compatible finite trace in configured Init/Next bounds. Explicit hidden steps only; no liveness, general refinement, collision-free enumeration or authenticated execution claim.");
         Files.WriteNew(Path.Combine(output, "result.json"), result);
         return result;
     }
@@ -266,12 +250,20 @@ public static class TraceValidation
                 throw new InputException(ErrorCode.InvalidTrace, $"Current input mismatch: {pin.Key}");
     }
 
-    private static string TlaValue(JsonElement value) => value.ValueKind switch
+    private static bool HasType(TraceScalar value, string type) => type switch
     {
-        JsonValueKind.Number when value.TryGetInt64(out long number) => number.ToString(CultureInfo.InvariantCulture),
+        "int" => value.Kind == JsonValueKind.Number,
+        "bool" => value.Kind is JsonValueKind.True or JsonValueKind.False,
+        "string" => value.Kind == JsonValueKind.String,
+        _ => false
+    };
+
+    private static string TlaValue(TraceScalar value) => value.Kind switch
+    {
+        JsonValueKind.Number => value.Integer.ToString(CultureInfo.InvariantCulture),
         JsonValueKind.True => "TRUE",
         JsonValueKind.False => "FALSE",
-        JsonValueKind.String => Quote(value.GetString()!),
+        JsonValueKind.String => Quote(value.Text!),
         _ => throw new InputException(ErrorCode.InvalidTrace, "Only signed-64-bit-compatible integers, booleans and strings are trace values.")
     };
 

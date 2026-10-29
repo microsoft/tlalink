@@ -30,9 +30,9 @@ public sealed record TlaDocument(
     string Path, string Text, string Hash,
     IReadOnlyList<TlaEndpoint> Endpoints,
     IReadOnlyList<TlaBackendDiagnostic> Diagnostics,
-    IReadOnlyDictionary<string, string> DependencyFingerprints,
-    string? RawAdapterJson)
+    IReadOnlyDictionary<string, string> DependencyFingerprints)
 {
+    internal IReadOnlyList<TlaNativeRow>? NativeIndex { get; init; }
     public bool ParserSucceeded => Diagnostics.All(d => d.Code != ErrorCode.ToolFailure.Id());
     public string Module { get; init; } = "";
     public IReadOnlyList<string> StateVariables { get; init; } = Array.Empty<string>();
@@ -50,7 +50,8 @@ public static partial class TlaBackend
         var dependencies = new Dictionary<string, string>(FilePaths.Comparer);
         IReadOnlyList<string> stateVariables = Array.Empty<string>();
         string module = "";
-        string? raw = null, work = null;
+        IReadOnlyList<TlaNativeRow>? index = null;
+        string? work = null;
         try
         {
             if (timeoutSeconds < 1)
@@ -70,8 +71,8 @@ public static partial class TlaBackend
             File.WriteAllText(metadata, MetadataSource, new UTF8Encoding(false));
             Run("javac", ["-J-Djava.io.tmpdir=" + work, "-encoding", "UTF-8",
                 "-cp", jar, "-d", work, adapter, metadata], work, timeoutSeconds);
-            raw = Index(path, text, jar, work, timeoutSeconds);
-            AddIndex(raw, path, text, true, endpoints, diagnostics, dependencies);
+            index = Index(path, text, jar, work, timeoutSeconds);
+            AddIndex(index, path, text, true, endpoints, diagnostics, dependencies);
             (module, stateVariables) = AddMetadata(path, jar, work, timeoutSeconds, endpoints);
             CheckImports(path, jar, work, timeoutSeconds, endpoints, diagnostics, dependencies);
             foreach (var pin in java.Fingerprints) Files.Pin(dependencies, pin.Key, pin.Value);
@@ -99,8 +100,8 @@ public static partial class TlaBackend
             }
         }
         return new(path, text, hash, endpoints.AsReadOnly(), diagnostics.AsReadOnly(),
-            new System.Collections.ObjectModel.ReadOnlyDictionary<string, string>(dependencies), raw)
-            { Module = module, StateVariables = stateVariables };
+            new System.Collections.ObjectModel.ReadOnlyDictionary<string, string>(dependencies))
+            { Module = module, StateVariables = stateVariables, NativeIndex = index };
     }
 
     private static (string Module, IReadOnlyList<string> Variables) AddMetadata(string path, string jar, string work,
@@ -109,15 +110,15 @@ public static partial class TlaBackend
         string json = Run("java", ["-Dfile.encoding=UTF-8", "-Djava.io.tmpdir=" + work,
             "-cp", work + System.IO.Path.PathSeparator + jar, "pcal.TlaMetadata", path],
             System.IO.Path.GetDirectoryName(path)!, timeout);
-        using JsonDocument document = JsonDocument.Parse(json);
-        JsonElement arities = document.RootElement.GetProperty("arities");
+        TlaNativeMetadata metadata = JsonSerializer.Deserialize<TlaNativeMetadata>(json, TlaNativeJson.Options)
+            ?? throw new BackendFailure("Invalid TLA parser metadata.");
         for (int i = 0; i < endpoints.Count; i++)
             if (endpoints[i].Kind == "operator")
                 endpoints[i] = endpoints[i] with
-                    { Arity = arities.GetProperty(endpoints[i].Name).GetInt32() };
-        return (String(document.RootElement, "module"),
-            Array.AsReadOnly(document.RootElement.GetProperty("variables").EnumerateArray()
-                .Select(v => v.GetString() ?? throw new BackendFailure("Invalid state variable.")).ToArray()));
+                    { Arity = metadata.Arities.TryGetValue(endpoints[i].Name, out int arity) ? arity :
+                        throw new BackendFailure("Missing parser operator arity: " + endpoints[i].Name) };
+        return (metadata.Module, Array.AsReadOnly(metadata.Variables
+            .Select(v => v ?? throw new BackendFailure("Invalid state variable.")).ToArray()));
     }
 
     private static void CheckImports(string root, string jar, string work, int timeout,
@@ -150,12 +151,13 @@ public static partial class TlaBackend
                 throw new BackendFailure($"Dependency changed while parsing: {path}");
     }
 
-    private static string Index(string path, string text, string jar, string work, int timeout)
+    private static IReadOnlyList<TlaNativeRow> Index(string path, string text, string jar, string work, int timeout)
     {
         string[] arguments = ["-Dfile.encoding=UTF-8", "-Djava.io.tmpdir=" + work,
             "-cp", work + System.IO.Path.PathSeparator + jar, "pcal.TlaIndex", path,
             .. AlgorithmArguments(text)];
-        return Run("java", arguments, System.IO.Path.GetDirectoryName(path)!, timeout);
+        string json = Run("java", arguments, System.IO.Path.GetDirectoryName(path)!, timeout);
+        return TlaNativeJson.ReadIndex(json).AsReadOnly();
     }
 
     private static string Run(string executable, string[] arguments, string directory, int timeout)
@@ -206,28 +208,25 @@ public static partial class TlaBackend
         return stdout.Result;
     }
 
-    private static void AddIndex(string json, string path, string text, bool includeEndpoints,
+    private static void AddIndex(IReadOnlyList<TlaNativeRow> index, string path, string text, bool includeEndpoints,
         List<TlaEndpoint> endpoints, List<TlaBackendDiagnostic> diagnostics,
         Dictionary<string, string> dependencies)
     {
-        using JsonDocument document = JsonDocument.Parse(json);
-        if (document.RootElement.ValueKind != JsonValueKind.Array)
-            throw new BackendFailure("Invalid TLA parser response: expected an array.");
-        foreach (JsonElement row in document.RootElement.EnumerateArray())
+        foreach (TlaNativeRow row in index)
         {
-            switch (String(row, "kind"))
+            switch (row)
             {
-                case "assumptions" or "operator-level":
+                case TlaNativeAssumptions or TlaNativeOperatorLevel:
                     break;
-                case "dependency":
-                    AddDependency(dependencies, String(row, "path"), String(row, "sha256"));
+                case TlaNativeDependency dependency:
+                    AddDependency(dependencies, dependency.Path, dependency.Sha256);
                     break;
-                case "translation":
-                    AddTranslation(row, path, diagnostics);
+                case TlaNativeTranslation translation:
+                    AddTranslation(translation, path, diagnostics);
                     break;
-                case "operator" or "label" or "variable":
+                case TlaNativeEndpoint endpoint:
                     if (includeEndpoints)
-                        endpoints.Add(Endpoint(row, text));
+                        endpoints.Add(Endpoint(endpoint, text));
                     break;
                 default:
                     throw new BackendFailure("Invalid TLA parser entry kind.");
@@ -244,15 +243,15 @@ public static partial class TlaBackend
         dependencies[path] = hash;
     }
 
-    private static TlaEndpoint Endpoint(JsonElement row, string text)
+    private static TlaEndpoint Endpoint(TlaNativeEndpoint row, string text)
     {
-        int line = Number(row, "line"), column = Number(row, "column");
-        int endLine = Number(row, "endLine"), endColumn = Number(row, "endColumn");
+        int line = row.Line, column = row.Column;
+        int endLine = row.EndLine, endColumn = row.EndColumn;
         int start = Offset(text, line, column);
         int end = Offset(text, endLine, Math.Max(1, endColumn)) + 1;
         if (end < start || end > text.Length)
             throw new BackendFailure("Invalid parser source extent.");
-        return new(String(row, "name"), String(row, "kind"), String(row, "scope"),
+        return new(row.Name, row.Kind, row.Scope,
             start, end, line, column, endLine, endColumn);
     }
 
@@ -317,22 +316,6 @@ public static partial class TlaBackend
             }
         }
         throw new BackendFailure("TLA Java parser adapter TlaIndex.java not found.");
-    }
-
-    private static string String(JsonElement row, string key)
-    {
-        if (row.ValueKind == JsonValueKind.Object && row.TryGetProperty(key, out var value)
-            && value.ValueKind == JsonValueKind.String)
-            return value.GetString()!;
-        throw new BackendFailure($"Invalid parser field: {key}");
-    }
-
-    private static int Number(JsonElement row, string key)
-    {
-        if (row.ValueKind == JsonValueKind.Object && row.TryGetProperty(key, out var value)
-            && value.TryGetInt32(out int number))
-            return number;
-        throw new BackendFailure($"Invalid parser position: {key}");
     }
 
     private sealed class BackendFailure(string message) : Exception(message);

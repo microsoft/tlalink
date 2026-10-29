@@ -12,6 +12,9 @@ public sealed record PDeclaration(string Name, string Kind, string Path, int Lin
     public int Column { get; init; } = 1;
 }
 
+internal sealed record PFrontendIndex(int SchemaVersion, string Kind, string CompilerVersion, string Profile,
+    List<PDeclaration> Declarations);
+
 /// <summary>Source inventory only; native code generation and model checking are separate stages.</summary>
 public static class PFrontend
 {
@@ -47,10 +50,11 @@ public static class PFrontend
                 "P inventory " + (result.TimedOut ? "timed out" : "failed") + "; retained logs: " + result.Stdout + ", " + result.Stderr);
         CheckPins(pins);
         string indexPath = Path.Combine(directory, "p-index.json");
-        using JsonDocument document = JsonDocument.Parse(Files.Read(indexPath));
-        Files.RequireSchema(document.RootElement, "p-source-index");
-        List<PDeclaration> declarations = document.RootElement.GetProperty("declarations").Deserialize<List<PDeclaration>>(Files.Json)
-            ?? throw new InputException(ErrorCode.ToolFailure, "P inventory did not return declarations.");
+        PFrontendIndex index = JsonSerializer.Deserialize<PFrontendIndex>(Files.Read(indexPath), Files.Json)
+            ?? throw new InputException(ErrorCode.ToolFailure, "P inventory did not return an index.");
+        if (index.SchemaVersion != Schema.Version || index.Kind != "p-source-index")
+            throw new InputException($"Unsupported document version or kind; expected schema {Schema.Version} p-source-index.");
+        List<PDeclaration> declarations = index.Declarations;
         if (declarations.Any(item => !FilePaths.IsAbsolute(item.Path) ||
             !roots.Contains(item.Path, FilePaths.Comparer) || item.Line < 1 || item.EndLine < item.Line ||
             string.IsNullOrWhiteSpace(item.Name)))

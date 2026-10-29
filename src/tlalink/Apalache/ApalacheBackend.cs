@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace TlaLink;
@@ -36,8 +35,8 @@ public static class ApalacheBackend
             TlaDocument model = TlaBackend.Parse(config.Model, sany, options.Timeout);
             foreach (var pin in model.DependencyFingerprints) Files.Pin(pins, pin.Key, pin.Value);
             RequireSupportedModel(model, config);
-            using JsonDocument index = JsonDocument.Parse(model.RawAdapterJson!);
-            Files.WriteNew(Path.Combine(output, "model-index.json"), index.RootElement);
+            Files.WriteNew(Path.Combine(output, "model-index.json"),
+                JsonSerializer.SerializeToElement(model.NativeIndex!, TlaNativeJson.Options));
             string sourceDirectory = Path.Combine(output, "model");
             Directory.CreateDirectory(sourceDirectory);
             foreach (string file in model.DependencyFingerprints.Keys.Append(config.Model)
@@ -96,11 +95,10 @@ public static class ApalacheBackend
     internal static void RequireSupportedModel(TlaDocument model, ApalacheAnalysis config)
     {
         if (model.Diagnostics.Any(d => d.Severity == "error" || d.Is(ErrorCode.StaleTranslation, ErrorCode.ToolFailure)) ||
-            model.RawAdapterJson == null)
+            model.NativeIndex == null)
             throw new InputException(ErrorCode.InvalidApalacheInput, "Apalache requires a successfully parsed, fresh model: " +
                 string.Join("; ", model.Diagnostics.Select(d => d.Message)));
-        using JsonDocument index = JsonDocument.Parse(model.RawAdapterJson);
-        RequireSupportedIndex(index.RootElement, config);
+        RequireSupportedIndex(model.NativeIndex, config);
         IEnumerable<string> names = config.Mode == "typecheck" ? [] :
             new[] { config.Init, config.Next }.Concat(config.Properties)
                 .Concat(config.Invariant == null ? [] : new[] { config.Invariant })
@@ -114,22 +112,18 @@ public static class ApalacheBackend
             throw new InputException(ErrorCode.InvalidApalacheInput, "Ambiguous module basename in model closure: " + config.Model);
     }
 
-    internal static void RequireSupportedIndex(JsonElement index, ApalacheAnalysis config)
+    internal static void RequireSupportedIndex(IReadOnlyList<TlaNativeRow> entries, ApalacheAnalysis config)
     {
-        if (index.ValueKind != JsonValueKind.Array)
-            throw new InputException(ErrorCode.InvalidApalacheInput, "Expected an authoritative SANY model index.");
-        string[] assumptions = index.EnumerateArray().Where(row => row.GetProperty("kind").GetString() == "assumptions")
-            .Select(row => row.GetProperty("module").GetString()!).ToArray();
+        string[] assumptions = entries.OfType<TlaNativeAssumptions>().Select(row => row.Module).ToArray();
         if (assumptions.Length > 0)
             throw new InputException(ErrorCode.InvalidApalacheInput, "ASSUME declarations in modules " +
                 string.Join(", ", assumptions) + " are outside the supported Apalache profile; encode constraints in Init/Next/ConstInit.");
         if (config.Mode == "typecheck") return;
         void Level(string name, int maximum)
         {
-            JsonElement[] rows = index.EnumerateArray().Where(row => row.GetProperty("kind").GetString() == "operator-level" &&
-                row.GetProperty("name").GetString() == name).ToArray();
-            if (rows.Length != 1 || rows[0].GetProperty("level").GetInt32() < 0 ||
-                rows[0].GetProperty("level").GetInt32() > maximum)
+            TlaNativeOperatorLevel[] rows = entries.OfType<TlaNativeOperatorLevel>()
+                .Where(row => row.Name == name).ToArray();
+            if (rows.Length != 1 || rows[0].Level < 0 || rows[0].Level > maximum)
                 throw new InputException(ErrorCode.InvalidApalacheInput, "Unsupported predicate level for " + name + "; expected at most " + maximum + ".");
         }
         Level(config.Init, 1);
@@ -197,28 +191,11 @@ public static class ApalacheBackend
     internal static string Text(string output, string id) =>
         Files.Read(Path.Combine(output, id + ".stdout.log")) + "\n" + Files.Read(Path.Combine(output, id + ".stderr.log"));
 
-    internal static JsonObject NativeConfig(ApalachePacket packet, ApalacheAnalysis config, ApalacheQuery query)
-    {
-        JsonObject result = new() {
-            ["out-dir"] = Path.Combine(packet.Directory, query.Id),
-            ["run-dir"] = Path.Combine(packet.Directory, query.Id),
-            ["write-intermediate"] = false,
-            ["typechecker"] = new JsonObject { ["infer-poly"] = true }
-        };
-        if (query.Mode != "typecheck")
-        {
-            JsonObject checker = new() {
-                ["init"] = query.Init, ["next"] = config.Next,
-                ["inv"] = new JsonArray(query.Properties.Select(p => JsonValue.Create(p)).ToArray()),
-                ["length"] = query.Length, ["algo"] = "incremental", ["smt-solver"] = "z3",
-                ["smt-encoding"] = "oopsla19", ["discard-disabled"] = false, ["no-deadlock"] = true,
-                ["timeout-smt"] = packet.TimeoutSeconds, ["max-error"] = 1
-            };
-            if (config.ConstInit != null) checker["cinit"] = config.ConstInit;
-            result["checker"] = checker;
-        }
-        return result;
-    }
+    internal static ApalacheNativeConfig NativeConfig(ApalachePacket packet, ApalacheAnalysis config, ApalacheQuery query) =>
+        new(Path.Combine(packet.Directory, query.Id), Path.Combine(packet.Directory, query.Id), false,
+            new(true), query.Mode == "typecheck" ? null :
+                new(query.Init, config.Next, query.Properties, query.Length, "incremental", "z3", "oopsla19",
+                    false, true, packet.TimeoutSeconds, 1, config.ConstInit));
 
     private static List<string> JavaArguments(ApalachePacket packet) => [
         "-Xmx1g", "-Duser.home=" + Path.Combine(packet.Directory, "home"),
@@ -252,10 +229,9 @@ public static class ApalacheBackend
         File.WriteAllText(Path.Combine(packet.Directory, id + ".stdout.log"), stdout.GetAwaiter().GetResult());
         File.WriteAllText(Path.Combine(packet.Directory, id + ".stderr.log"), stderr.GetAwaiter().GetResult());
         ApalacheProcessResult result = new(id, arguments, finished ? process.ExitCode : null, !finished, clock.Elapsed.TotalSeconds);
-        Files.WriteNew(Path.Combine(packet.Directory, id + ".invocation.json"), new {
-            SchemaVersion = Schema.Version, Kind = "apalache-invocation", Executable = packet.Java,
-            WorkingDirectory = packet.Directory, packet.TimeoutSeconds, Environment = "isolated", Result = result
-        });
+        Files.WriteNew(Path.Combine(packet.Directory, id + ".invocation.json"),
+            new ApalacheNativeInvocation(Schema.Version, "apalache-invocation", packet.Java,
+                packet.Directory, packet.TimeoutSeconds, "isolated", result));
         return result;
     }
 }

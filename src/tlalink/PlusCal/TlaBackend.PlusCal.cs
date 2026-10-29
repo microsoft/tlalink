@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace TlaLink;
@@ -7,17 +6,17 @@ public static partial class TlaBackend
 {
     internal static bool HasAlgorithm(string text) => AlgorithmArguments(text).Length != 0;
 
-    private static void AddTranslation(JsonElement row, string path,
+    private static void AddTranslation(TlaNativeTranslation row, string path,
         List<TlaBackendDiagnostic> diagnostics)
     {
-        string state = String(row, "state");
-        int line = Number(row, "line");
+        string state = row.State;
+        int line = row.Line;
         if (state is not ("current" or "missing" or "stale") || line < 1)
             throw new BackendFailure("Invalid translation status or source position.");
         if (state != "current")
             diagnostics.Add(new(ErrorCode.StaleTranslation, $"PlusCal translation is {state}. Regenerate with the selected JAR; "
                 + "record nondefault translator flags in PlusCal options in the module."
-                + String(row, "detail"), path, line));
+                + row.Detail, path, line));
     }
 
     private static string[] AlgorithmArguments(string text)

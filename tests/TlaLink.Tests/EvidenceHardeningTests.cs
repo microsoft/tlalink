@@ -79,9 +79,13 @@ public static class EvidenceHardeningTests
             JsonObject packet = Packet();
             packet["status"] = "passed"; packet["links_status"] = "passed"; packet["proof_status"] = "verified";
             packet["audit_status"] = "passed"; packet["conformance_status"] = "conforms"; packet["provenance_status"] = "consistent";
-            packet["links"] = JsonNode.Parse("""[{"id":"tested"},{"id":"untested"}]""");
             JsonObject generated = packet["generated_files"]!.AsObject(), stages = packet["stages"]!.AsObject();
             string P(string name) => Path.Combine(work, "semantic", name);
+            DafnyLink Link(string id) => new(id,
+                new(id, "Synthetic", "Method", new(P("Source.cs"), 1, 1), ""),
+                new(id, "Synthetic", "method", P("Cases.dfy"), 1, 1, true, false, true,
+                    [new("value", "bool", false)], [new("result", "bool", false)]), null);
+            packet["links"] = JsonSerializer.SerializeToNode(new[] { Link("tested"), Link("untested") }, Files.Json);
             string hash = new('a', 64);
             foreach (string name in new[] { "dafny-version", "dafny-bridge", "dafny-discover", "dafny-resolve", "dafny-verify",
                 "dafny-audit", "case-preconditions", "oracle-translate", "oracle-compare" })
@@ -104,7 +108,8 @@ public static class EvidenceHardeningTests
                     ["nullable"] = "Enable", ["compiler"] = P("Framework.dll"), ["defines"] = new JsonArray() },
                 ["tested_bindings"] = new JsonArray("tested"),
                 ["untested_bindings"] = new JsonArray("untested"),
-                ["cases"] = JsonNode.Parse("""[{"binding":"tested","id":"one","expected":["true"],"actual":["true"],"matches":true}]""")
+                ["cases"] = JsonNode.Parse("""[{"binding":"tested","id":"one","expected":["true"],"actual":["true"],"matches":true}]"""),
+                ["boundary"] = "Synthetic output-only execution receipt for semantic validation tests."
             };
             return packet;
         }
@@ -123,7 +128,9 @@ public static class EvidenceHardeningTests
                 p => p["stages"]!["dafny-verify"]!["exit_code"] = 4,
                 p => p["generated_files"]!.AsObject().Clear(),
                 p => p["correspondence_status"] = "proved",
-                p => p["correspondences"] = JsonNode.Parse("""[{"status":"passed","composition_status":"proved","claim":{"id":"claim","dafny_binding":"tested"}}]"""),
+                p => p["correspondences"] = JsonSerializer.SerializeToNode(new[] {
+                    new CorrespondenceResult(new("claim", "Step", "tested", "Synthetic relation", [], []), "passed", "proved")
+                }, Files.Json),
                 p => p["schema_version"] = 3,
                 p => p["kind"] = "trace-validation"
             ];

@@ -49,11 +49,14 @@ public static class TlcResultStoreTests
                 File.WriteAllText(Path.Combine(directory, "tlc.log"), "Model checking completed. No error has been found.");
                 List<string> arguments = recordFingerprint ? ["-tool", "-fp", fingerprint.ToString(), "M.tla"] : ["-tool", "M.tla"];
                 File.WriteAllText(Path.Combine(directory, "tlc.invocation.json"),
-                    JsonSerializer.Serialize(new { SchemaVersion = Schema.Version, Kind = "process-invocation", Arguments = arguments }, Files.Json));
+                    JsonSerializer.Serialize(new NativeProcessInvocation(Schema.Version, "process-invocation",
+                        "java", arguments, directory, 60), Files.Json));
                 return directory;
             }
-            JsonElement Result(string status, int fingerprint) => JsonSerializer.SerializeToElement(new {
-                SchemaVersion = Schema.Version, Kind = "tlc-result", Status = status, Fingerprint = fingerprint }, Files.Json);
+            TlcResult Result(string status, int fingerprint) => new(Schema.Version, "tlc-result", status, [],
+                "M.tla", "M.cfg", status == "passed" ? 0 : 1, fingerprint, null, new(1, 512),
+                new(Schema.Version, "process-invocation", "java", ["-tool", "-fp", fingerprint.ToString(), "M.tla"], root, 60),
+                new(null, null, null, null, null), []);
             string? Save(int fingerprint, string status = "passed", bool recordFingerprint = true) =>
                 TlcResultStore.Store(store, Key(fingerprint), "stage", "test", Stage(fingerprint, recordFingerprint),
                     Result(status, fingerprint), null, new(1, 512), 60, 1.5);

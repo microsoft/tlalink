@@ -81,11 +81,11 @@ public static class PBackend
         if (config.Sources.Count > 0)
         {
             CSharpScope source = CSharpScope.Parse(config.Sources, options.Many("reference"),
-                options.Has("define") ? options.Many("define") : null);
+                options.Has("define") ? options.Many("define") : null,
+                languageVersion: options.Get("language-version", CSharpLanguages.Default));
             if (config.Configuration != null) source.ApplyCorrespondence(config.Configuration);
             packet.Dispositions.AddRange(source.Dispositions);
             packet.OmissionMatches.AddRange(source.OmissionMatches);
-            packet.SourceBindings.AddRange(source.DeclaredLinks);
             source.RequireCompilable();
             packet.Diagnostics.AddRange(source.Diagnostics);
             foreach (var pin in source.Fingerprints) Files.Pin(packet.Fingerprints, pin.Key, pin.Value);
@@ -97,6 +97,7 @@ public static class PBackend
             packet.Diagnostics.AddRange(pairing);
             if (pairing.Count != 0)
                 throw new InputException(ErrorCode.InvalidPBinding, string.Join("; ", pairing.Select(d => d.Message)));
+            packet.SourceBindings.AddRange(source.DeclaredLinks);
             foreach (PBinding binding in config.Bindings)
             {
                 List<SourceBinding> matches = source.Bindings.Where(b => b.BindingId == binding.Id).ToList();

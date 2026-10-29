@@ -6,6 +6,16 @@ namespace TlaLink.Tests;
 
 public static class AcceptanceSummaryTests
 {
+    internal static AcceptanceResult Packet(List<Issue>? diagnostics = null,
+        List<RequirementResult>? requirements = null, List<ReviewResult>? reviews = null,
+        List<CheckCoverage>? coverage = null, string acceptance = "not-accepted") =>
+        new(Schema.Version, "acceptance-result", "summary-control", "complete", "", new('0', 64),
+            "incomplete", "consistent", "current", acceptance, requirements ?? [], diagnostics ?? [],
+            coverage ?? [], [], reviews ?? [], diagnostics?.Select(d => d.Message).ToList() ?? [], "Synthetic acceptance fixture.");
+
+    private static JsonObject Summary(AcceptanceResult result, CliOptions options, AcceptanceWorklist worklist) =>
+        JsonNode.Parse(CommandSummary.Create(result, options, worklist).ToJsonString())!.AsObject();
+
     public static void Register(Action<string, Action> test, string work)
     {
         (WorkflowRun Run, AnalysisScenario Scenario, List<AnalysisRequirement> Policy) Fixture(int count, int incomplete)
@@ -32,19 +42,15 @@ public static class AcceptanceSummaryTests
             AcceptanceWorklist worklist = new(f.Run, f.Scenario, f.Policy, diagnostics, grouped);
             foreach (AnalysisRequirement requirement in f.Policy)
                 for (int i = 0; i < 8; i++) worklist.Review("review-" + i, "pending", requirement);
-            var packet = new {
-                Kind = "acceptance-result", AcceptanceStatus = "not-accepted", ExecutionStatus = "incomplete",
-                ArchiveStatus = "consistent", CurrentApplicability = "current", Diagnostics = diagnostics,
-                Requirements = f.Policy.Select(r => new { r.Id, Status = "unsatisfied",
-                    Missing = Enumerable.Range(0, 8).Select(i => "current accepted review review-" + i).ToList() }),
-                Reviews = Enumerable.Range(0, 8).Select(i => new { Obligation = "review-" + i, Status = "pending" }),
-                CheckCoverage = Enumerable.Range(0, 15).Select(i => new {
-                    Id = "check-" + i, Status = "mapped", Requirements = f.Policy.Select(r => r.Id).ToList(), Gaps = new string[0] }),
-                NextActions = diagnostics.Select(i => i.Message)
-            };
+            AcceptanceResult packet = Packet(diagnostics,
+                f.Policy.Select(r => new RequirementResult(r.Id, "unsatisfied",
+                    Enumerable.Range(0, 8).Select(i => "current accepted review review-" + i).ToList())).ToList(),
+                Enumerable.Range(0, 8).Select(i => new ReviewResult("review-" + i, "pending", null)).ToList(),
+                Enumerable.Range(0, 15).Select(i => new CheckCoverage("check-" + i, "safety", "complete",
+                    "mapped", f.Policy.Select(r => r.Id).ToList(), [])).ToList());
             CliOptions options = new(["accept", "--format", "summary"]);
             string before = JsonSerializer.Serialize(packet, Files.Json);
-            JsonObject summary = CommandSummary.Create(packet, options, worklist);
+            JsonObject summary = Summary(packet, options, worklist);
             CoreTests.Equal(11, summary["worklist"]!["item_count"]!.GetValue<int>());
             JsonArray groups = summary["worklist"]!["groups"]!.AsArray();
             CoreTests.Equal(2, groups.Count);
@@ -72,11 +78,10 @@ public static class AcceptanceSummaryTests
                 worklist.Review("review-" + i, "pending", f.Policy[i]);
                 worklist.Requirement(f.Policy[i], ["unmet claim", "unmet diagnostic", "unmet case", "unmet test"]);
             }
-            JsonObject summary = CommandSummary.Create(new {
-                Kind = "acceptance-result", Diagnostics = diagnostics,
-                Reviews = new[] { new { Obligation = "review-0", Status = "stale", Decision = new {
-                    Disposition = "accepted", Reviewer = "test-only", Rationale = "old decision" } } }
-            }, new(["explain", "--format", "summary"]), worklist);
+            JsonObject summary = Summary(Packet(diagnostics, reviews: [
+                new("review-0", "stale", new(Schema.Version, "review-decision", "review-0", new('0', 64),
+                    "accepted", "test-only", "old decision", DateTimeOffset.UtcNow, [], []))
+            ]), new(["explain", "--format", "summary"]), worklist);
             foreach (JsonNode? group in summary["worklist"]!["groups"]!.AsArray())
             {
                 CoreTests.Equal(14, group!["count"]!.GetValue<int>());
@@ -95,10 +100,8 @@ public static class AcceptanceSummaryTests
         {
             var f = Fixture(1, 0);
             AcceptanceWorklist worklist = new(f.Run, f.Scenario, f.Policy, [], new(ReferenceEqualityComparer.Instance));
-            JsonObject summary = CommandSummary.Create(new {
-                Kind = "acceptance-result", AcceptanceStatus = "accepted", Diagnostics = new Issue[0],
-                Requirements = new[] { new { Id = "control", Status = "satisfied", Missing = new string[0] } }
-            }, new(["accept", "--format", "summary"]), worklist);
+            JsonObject summary = Summary(Packet(requirements: [new("control", "satisfied", [])], acceptance: "accepted"),
+                new(["accept", "--format", "summary"]), worklist);
             CoreTests.Equal(0, summary["worklist"]!["item_count"]!.GetValue<int>());
             CoreTests.Equal(0, summary["next_actions"]!.AsArray().Count);
             CoreTests.Equal("accepted", summary["acceptance_status"]!.GetValue<string>());
@@ -108,9 +111,8 @@ public static class AcceptanceSummaryTests
             var f = Fixture(1, 0);
             List<Issue> diagnostics = [new("CONTROL", "warning", "Inspect this warning.")];
             AcceptanceWorklist worklist = new(f.Run, f.Scenario, f.Policy, diagnostics, new(ReferenceEqualityComparer.Instance));
-            JsonObject summary = CommandSummary.Create(new {
-                Kind = "acceptance-result", AcceptanceStatus = "accepted", Diagnostics = diagnostics
-            }, new(["accept", "--format", "summary"]), worklist);
+            JsonObject summary = Summary(Packet(diagnostics, acceptance: "accepted"),
+                new(["accept", "--format", "summary"]), worklist);
             CoreTests.Equal("accepted", summary["acceptance_status"]!.GetValue<string>());
             CoreTests.Equal(1, summary["diagnostic_counts"]!["warning"]!.GetValue<int>());
             CoreTests.Equal("warning", summary["worklist"]!["groups"]![0]!["items"]![0]!["severity"]!.GetValue<string>());

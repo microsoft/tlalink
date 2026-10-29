@@ -74,9 +74,7 @@ public static partial class EvidenceGarbageCollection
         NoLinks(store);
         NoLinks(retention);
         var state = new Scan(store);
-        JsonElement policyJson = state.Read(retention);
-        Files.RequireSchema(policyJson, "evidence-retention");
-        EvidenceRetention policy = policyJson.Deserialize<EvidenceRetention>(ProjectInputs.Json)!;
+        EvidenceRetention policy = state.Read<EvidenceRetention>(retention, "evidence-retention");
         if (policy.Pins.Any(p => p is null || string.IsNullOrWhiteSpace(p.Path) || string.IsNullOrWhiteSpace(p.Reason)) ||
             policy.ReviewProjects.Any(string.IsNullOrWhiteSpace) ||
             (policy.ResultProjects ?? []).Any(string.IsNullOrWhiteSpace))
@@ -88,9 +86,7 @@ public static partial class EvidenceGarbageCollection
             state.Try(catalogPath, () => {
                 if (Inside(store, catalogPath))
                     throw new InputException(ErrorCode.InvalidRetention, "Protected-consumer catalogs must be outside their store.");
-                JsonElement document = state.Read(catalogPath);
-                Files.RequireSchema(document, "protected-consumer-catalog");
-                ProtectedConsumerCatalog exported = document.Deserialize<ProtectedConsumerCatalog>(ProjectInputs.Json)!;
+                ProtectedConsumerCatalog exported = state.Read<ProtectedConsumerCatalog>(catalogPath, "protected-consumer-catalog");
                 if (!FilePaths.Comparer.Equals(FilePaths.Full(exported.Store, Path.GetDirectoryName(catalogPath)!), store) ||
                     exported.ProducerFingerprints.Count == 0)
                     throw new InputException(ErrorCode.InvalidRetention, "Catalog store/producer identity is invalid.");
@@ -182,11 +178,10 @@ public static partial class EvidenceGarbageCollection
             uses.Add(new(consumer.Path, hash));
             Reference(path, consumer);
         }
-        void Review(JsonElement json, string projectDirectory, Consumer consumer)
+        void Review(ReviewDecision review, string projectDirectory, Consumer consumer)
         {
-            Files.RequireSchema(json, "review-decision");
-            ReviewDecision review = json.Deserialize<ReviewDecision>(ProjectInputs.Json)!;
-            if (review.Disposition is not ("accepted" or "rejected" or "pending") || review.Fingerprints.Count == 0 ||
+            if (review.SchemaVersion != Schema.Version || review.Kind != "review-decision" ||
+                review.Disposition is not ("accepted" or "rejected" or "pending") || review.Fingerprints.Count == 0 ||
                 review.Evidence.Count == 0 || review.Evidence.Any(string.IsNullOrWhiteSpace) ||
                 review.Evidence.Any(p => !review.Fingerprints.ContainsKey(p)))
                 throw new InputException(ErrorCode.InvalidRetention, "Malformed review evidence/fingerprints.");
@@ -254,9 +249,7 @@ public static partial class EvidenceGarbageCollection
                 string record = Path.Combine(unit.Path, "run.json");
                 if (!files.Contains(record, FilePaths.Comparer))
                     throw new InputException(ErrorCode.InvalidRetention, "No completed workflow receipt; unknown or potentially active archive.");
-                JsonElement json = state.Read(record);
-                Files.RequireSchema(json, "analysis-run");
-                WorkflowRun run = json.Deserialize<WorkflowRun>(ProjectInputs.Json)!;
+                WorkflowRun run = state.Read<WorkflowRun>(record, "analysis-run");
                 if (run.ExecutionStatus != "completed" || run.Stages.Count == 0 || run.Fingerprints.Count == 0 ||
                     run.Artifacts.Count == 0 || !FilePaths.IsNativeAbsolute(run.ProjectDirectory) ||
                     run.Stages.Any(s => s is null || s.ExecutionStatus != "completed" || s.Outcome is not ("passed" or "rejected")))
@@ -300,29 +293,27 @@ public static partial class EvidenceGarbageCollection
                     if (kind.GetString() is "csharp-regression-result" or "execution-receipt")
                     {
                         Files.RequireSchema(document, kind.GetString()!);
-                        JsonElement build = kind.GetString() == "csharp-regression-result" ? document.GetProperty("build") : document;
-                        foreach (JsonElement absent in build.GetProperty("missing_build_inputs").EnumerateArray())
+                        List<string> missing = kind.GetString() == "csharp-regression-result"
+                            ? AnalysisDocuments.Deserialize<CSharpRegressionResult>(document).Build.MissingBuildInputs
+                            : AnalysisDocuments.Deserialize<ExecutionReceipt>(document).MissingBuildInputs;
+                        foreach (string absent in missing)
                         {
-                            string path = FilePaths.Full(absent.GetString()!);
+                            string path = FilePaths.Full(absent);
                             if (!inputs.TryGetValue(path, out List<GcInputUse>? uses)) inputs.Add(path, uses = []);
                             uses.Add(new(consumer.Path, null));
                             Reference(path, consumer);
                         }
                     }
-                    else if (kind.GetString() == "review-decision") Review(document, run.ProjectDirectory, consumer);
+                    else if (kind.GetString() == "review-decision")
+                        Review(AnalysisDocuments.Deserialize<ReviewDecision>(document), run.ProjectDirectory, consumer);
                     else if (kind.GetString() == "acceptance-result")
                     {
                         Files.RequireSchema(document, "acceptance-result");
-                        if (!document.TryGetProperty("project", out JsonElement project) || project.ValueKind != JsonValueKind.String ||
-                            project.GetString() != run.Project ||
-                            !document.TryGetProperty("reviews", out JsonElement reviews) || reviews.ValueKind != JsonValueKind.Array)
+                        AcceptanceResult acceptance = AnalysisDocuments.Deserialize<AcceptanceResult>(document);
+                        if (acceptance.Project != run.Project)
                             throw new InputException(ErrorCode.InvalidRetention, "Acceptance review context is missing: " + file);
-                        foreach (JsonElement item in reviews.EnumerateArray())
-                        {
-                            if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty("decision", out JsonElement decision))
-                                throw new InputException(ErrorCode.InvalidRetention, "Acceptance review decision is missing: " + file);
-                            if (decision.ValueKind != JsonValueKind.Null) Review(decision, run.ProjectDirectory, consumer);
-                        }
+                        foreach (ReviewResult item in acceptance.Reviews)
+                            if (item.Decision != null) Review(item.Decision, run.ProjectDirectory, consumer);
                     }
                 }
                 unit.Recognized = true;
@@ -375,6 +366,18 @@ public static partial class EvidenceGarbageCollection
                     foreach (string input in obligation.Inputs)
                         Reference(FilePaths.Full(input, directory), null, "review project input: " + path);
                 }
+                foreach (SelectedMethodSummary summary in MethodSummaries.Select(path, project, project.Scenarios.SelectMany(s => s.Stages)))
+                {
+                    _ = state.Read(summary.Scope);
+                    if (state.DocumentHashes[summary.Scope] != summary.ScopeSha256)
+                        throw new InputException(ErrorCode.InvalidRetention, "Method-summary scope changed during retention discovery.");
+                    Reference(summary.Scope, null, "method summary scope: " + path);
+                    foreach (string input in summary.Summary.Sources)
+                        Reference(ProjectInputs.Resolve(summary.Scope, input), null, "method summary source: " + path);
+                    foreach (string input in CorrespondenceInputs.Target(summary.Configuration,
+                        Markup.Name(summary.Summary.Binding).Alias, "tla").Inputs)
+                        Reference(input, null, "method summary model: " + path);
+                }
                 string reviews = FilePaths.Full(project.ReviewDirectory, directory);
                 NoLinks(reviews);
                 if (!Directory.Exists(reviews)) return;
@@ -382,7 +385,7 @@ public static partial class EvidenceGarbageCollection
                 {
                     Reference(file, null, "review record: " + path);
                     Consumer consumer = ConsumerFor(file, "review");
-                    Review(state.Read(file), directory, consumer);
+                    Review(state.Read<ReviewDecision>(file, "review-decision"), directory, consumer);
                     foreach (string dependency in consumer.Dependencies)
                         if (unitPaths.TryGetValue(dependency, out Unit? referenced))
                             referenced.Reasons.Add("review evidence: " + file);
@@ -530,6 +533,13 @@ public static partial class EvidenceGarbageCollection
             catch (Exception error) when (error is InputException or IOException or UnauthorizedAccessException or JsonException or ArgumentException)
             { Block(path, error.Message); return false; }
         }
+        public T Read<T>(string path, string kind)
+        {
+            JsonElement document = Read(path);
+            Files.RequireSchema(document, kind);
+            return AnalysisDocuments.Deserialize<T>(document);
+        }
+
         public JsonElement Read(string path)
         {
             NoLinks(path);

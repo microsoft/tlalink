@@ -9,7 +9,7 @@ public sealed record TlcStatistics(long? StatesGenerated, long? DistinctStates, 
 
 public static partial class ProjectWorkflow
 {
-    internal sealed record TlcStageRun(JsonElement Result, List<StoredStageResult> Stored, TlcResources? Requested, TlcResources Effective);
+    internal sealed record TlcStageRun(TlcResult Result, List<StoredStageResult> Stored, TlcResources? Requested, TlcResources Effective);
 
     private static (string Model, string Config, string Jar, TlaDocument Document) PrepareTlc(string path, AnalysisProject project,
         AnalysisStage stage, Dictionary<string, string> pins, IReadOnlyDictionary<string, TlaDocument>? parsed)
@@ -48,14 +48,14 @@ public static partial class ProjectWorkflow
         var primary = entries.Where(e => e.Entry.Outcome == "rejected")
             .OrderBy(e => e.Entry.Material.Fingerprint != fingerprint).ThenBy(e => e.Entry.Material.Fingerprint).FirstOrDefault();
         if (primary.Entry == null) primary = entries.FirstOrDefault(e => e.Entry.Material.Fingerprint == fingerprint);
-        JsonElement result;
+        TlcResult result;
         TlcResources? requested;
         TlcResources effective;
         if (primary.Entry != null)
         {
             foreach (string file in new[] { "tlc.log", "tlc.invocation.json" })
                 File.Copy(Path.Combine(primary.Directory, file), Path.Combine(output, file));
-            result = ProjectInputs.Read<JsonElement>(Path.Combine(primary.Directory, "result.json"));
+            result = ProjectInputs.Read<TlcResult>(Path.Combine(primary.Directory, "result.json"));
             requested = primary.Entry.RequestedResources;
             effective = primary.Entry.Resources;
             Attach(primary.Entry, primary.Directory, "reused", true);
@@ -72,12 +72,12 @@ public static partial class ProjectWorkflow
         }
         if (Outcome("tlc", result) == "passed")
             foreach (var other in entries.Where(e => e.Entry.Outcome == "passed" &&
-                e.Entry.Material.Fingerprint != TlcResultStore.RecordedFingerprint(result)))
+                e.Entry.Material.Fingerprint != result.Fingerprint))
                 Attach(other.Entry, other.Directory, "reused", false);
         return new(result, stored, requested, effective);
     }
 
-    private static JsonElement ExecuteTlc(string model, string config, string jar, AnalysisStage stage, string output, int fingerprint)
+    private static TlcResult ExecuteTlc(string model, string config, string jar, AnalysisStage stage, string output, int fingerprint)
     {
         TlcResources resources = TlcResources.Effective(stage.Kind, stage.Resources);
         var result = Invoke(Executable("java"), [resources.HeapArgument, "-cp", jar, "tlc2.TLC", .. TlcResultStore.Options,
@@ -87,19 +87,15 @@ public static partial class ProjectWorkflow
         List<Issue> diagnostics = TlcDiagnostics(result.Text);
         List<string> codes = diagnostics.Select(d => d.Code).ToList();
         bool rejected = result.ExitCode != 0 && codes.Any(c => c is "TLC2110" or "TLC2111" or "TLC2114" or "TLC2116" or "TLC2120");
-        return JsonSerializer.SerializeToElement(new {
-            SchemaVersion = Schema.Version, Kind = "tlc-result",
-            Status = result.ExitCode == 0 ? "passed" : rejected ? "rejected" : "incomplete",
-            Diagnostics = diagnostics,
-            Model = model, Config = config, ExitCode = result.ExitCode, Fingerprint = fingerprint,
-            RequestedResources = stage.Resources, Resources = resources,
-            Invocation = ProjectInputs.Read<JsonElement>(Path.Combine(output, "tlc.invocation.json")),
-            Statistics = ReadTlcStatistics(result.Text),
-            Boundaries = new[] { "Only the configured finite model; source correspondence and fingerprint collision risk require review." }
-        }, Files.Json);
+        return new(Schema.Version, "tlc-result",
+            result.ExitCode == 0 ? "passed" : rejected ? "rejected" : "incomplete", diagnostics,
+            model, config, result.ExitCode, fingerprint, stage.Resources, resources,
+            ProjectInputs.Read<NativeProcessInvocation>(Path.Combine(output, "tlc.invocation.json")),
+            ReadTlcStatistics(result.Text),
+            ["Only the configured finite model; source correspondence and fingerprint collision risk require review."]);
     }
 
-    private static object? StoredOutcomes(string path, AnalysisProject project, AnalysisStage stage, IReadOnlyDictionary<string, TlaDocument> parsed)
+    private static List<StoredOutcome>? StoredOutcomes(string path, AnalysisProject project, AnalysisStage stage, IReadOnlyDictionary<string, TlaDocument> parsed)
     {
         if (project.ResultStore == null) return null;
         string model = ProjectInputs.Resolve(path, stage.Models![0]);
@@ -107,7 +103,7 @@ public static partial class ProjectWorkflow
         TlcResultKey key = TlcResultStore.Key(model, ProjectInputs.Resolve(path, stage.Config!),
             ProjectInputs.Resolve(path, project.Tools.Jar!.Path), document.DependencyFingerprints, stage.Fingerprint ?? 0);
         return TlcResultStore.Find(ProjectInputs.Resolve(path, project.ResultStore), key)
-            .Select(e => new { e.Entry.Material.Fingerprint, e.Entry.Outcome, e.Entry.DurationSeconds, e.Entry.StoredAt }).ToList();
+            .Select(e => new StoredOutcome(e.Entry.Material.Fingerprint, e.Entry.Outcome, e.Entry.DurationSeconds, e.Entry.StoredAt)).ToList();
     }
 
     /// <summary>Runs one TLC stage with an explicit budget directly into the declared result store.</summary>
@@ -148,16 +144,12 @@ public static partial class ProjectWorkflow
         var (model, config, jar, document) = PrepareTlc(path, project, stage, pins, parsed);
         TlcResultKey key = TlcResultStore.Key(model, config, jar, document.DependencyFingerprints, fingerprint);
         string store = ProjectInputs.Resolve(path, project.ResultStore);
-        object Report(string status, string outcome, string? entry, double duration, JsonElement? result) => new {
-            SchemaVersion = Schema.Version, Kind = "stage-check", Project = project.Id, Scenario = scenario.Id, Stage = id,
-            Status = status, Outcome = outcome, Fingerprint = fingerprint, Key = TlcResultStore.Hash(key),
-            Family = TlcResultStore.Family(key), Entry = entry, DurationSeconds = duration,
-            RequestedResources = stage.Resources, Resources = TlcResources.Effective("tlc", stage.Resources),
-            TimeoutSeconds = stage.TimeoutSeconds,
-            Statistics = result is JsonElement r && r.TryGetProperty("statistics", out JsonElement s) ? s : (JsonElement?)null,
-            Diagnostics = result is JsonElement d && d.TryGetProperty("diagnostics", out JsonElement list) ? list : (JsonElement?)null,
-            Boundary = "Stores one completed native TLC outcome for identical inputs; it does not accept requirements or reviews."
-        };
+        StageCheckResult Report(string status, string outcome, string? entry, double duration, TlcResult? result) =>
+            new(Schema.Version, "stage-check", project.Id, scenario.Id, id, status, outcome, fingerprint,
+                TlcResultStore.Hash(key), TlcResultStore.Family(key), entry, duration,
+                stage.Resources, TlcResources.Effective("tlc", stage.Resources), stage.TimeoutSeconds,
+                result?.Statistics, result?.Diagnostics,
+                "Stores one completed native TLC outcome for identical inputs; it does not accept requirements or reviews.");
         var existing = TlcResultStore.Find(store, key).FirstOrDefault(e => e.Entry.Material.Fingerprint == fingerprint);
         if (existing.Entry != null)
         {
@@ -169,7 +161,7 @@ public static partial class ProjectWorkflow
         try
         {
             Stopwatch clock = Stopwatch.StartNew();
-            JsonElement result = ExecuteTlc(model, config, jar, stage, work, fingerprint);
+            TlcResult result = ExecuteTlc(model, config, jar, stage, work, fingerprint);
             string outcome = Outcome("tlc", result);
             string? created = TlcResultStore.Store(store, key, id, "check-stage", work, result, stage.Resources,
                 TlcResources.Effective("tlc", stage.Resources), stage.TimeoutSeconds, clock.Elapsed.TotalSeconds);

@@ -14,9 +14,9 @@ public sealed record StageAuthoring(string Id, string Kind, List<string>? Depend
     int? TimeoutSeconds = null, string? Bindings = null, List<string>? Sources = null,
     List<string>? Models = null, string? Config = null, List<string>? Arguments = null,
     TlcResources? Resources = null, string? Profile = null, int? Fingerprint = null,
-    string? Scope = null, string? Target = null);
+    string? Scope = null, string? Target = null, List<MethodSummaryUse>? MethodSummaries = null);
 public sealed record ReviewAuthoring(string Id, string Claim, List<string> Assumptions,
-    List<string>? Inputs = null, List<string>? InputSets = null);
+    List<string>? Inputs = null, List<string>? InputSets = null, ReviewOrigin Origin = ReviewOrigin.Human);
 public sealed record ProjectComponent(int SchemaVersion, string Kind, string Id, List<StageAuthoring> Stages,
     List<ReviewAuthoring>? Obligations = null, List<CheckObligation>? CheckObligations = null,
     List<string>? Components = null, [property: JsonPropertyName("$schema")] string? EditorSchema = null);
@@ -288,7 +288,8 @@ public static class ProjectComposition
                 source.Sources?.Select(p => Rebase(file, p)).ToList(),
                 source.Models?.Select(p => Rebase(file, p)).ToList(),
                 source.Config == null ? null : Rebase(file, source.Config), source.Arguments, resources, source.Fingerprint,
-                source.Scope == null ? null : Rebase(file, source.Scope), source.Target);
+                source.Scope == null ? null : Rebase(file, source.Scope), source.Target,
+                source.MethodSummaries?.Select(s => s with { Scope = Rebase(file, s.Scope) }).ToList());
         }
 
         private ReviewObligation Review(string file, ReviewAuthoring source)
@@ -305,7 +306,7 @@ public static class ProjectComposition
                 HashSet<string> identities = new(FilePaths.Comparer);
                 inputs = inputs.Where(p => identities.Add(ProjectInputs.Resolve(root, p))).ToList();
             }
-            return new(source.Id, source.Claim, source.Assumptions, inputs);
+            return new(source.Id, source.Claim, source.Assumptions, inputs, source.Origin);
         }
 
         private string Rebase(string file, string value)

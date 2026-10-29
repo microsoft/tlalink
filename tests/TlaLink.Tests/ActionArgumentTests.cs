@@ -21,13 +21,13 @@ public static class ActionArgumentTests
                 }
             }
             """;
-        InstrumentManifest Generate(string arguments, string output, int arity = 5)
+        InstrumentManifest Generate(string arguments, string output, int arity = 5, string languageVersion = "14")
         {
             string source = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".cs");
             string[] expressions = Microsoft.CodeAnalysis.CSharp.SyntaxFactory.ParseArgumentList("(" + arguments + ")")
                 .Arguments.Select(a => a.ToString()).ToArray();
             File.WriteAllText(source, template.Replace("[\"ARGUMENTS\"]", JsonSerializer.Serialize(expressions), StringComparison.Ordinal));
-            CSharpScope scope = CSharpScope.Parse([source]);
+            CSharpScope scope = CSharpScope.Parse([source], languageVersion: languageVersion);
             List<ModelBinding> models = scope.Bindings.Select(b => new ModelBinding(b.Model, b.Tag,
                 new(b.Tag.Identity, "", b.Tag.Kind, new("Arguments.tla", 1, 1), ""), arity)).ToList();
             Packet packet = Review.Build("instrument", scope, models, [], []);
@@ -46,6 +46,15 @@ public static class ActionArgumentTests
             InstrumentManifest literal = Generate("-1,true,\"x,y\"", literals);
             CoreTests.Equal(3, literal.Events.Single().ArgumentTypes!.Count);
         });
+        test("CSharp8 source instrumentation retains its dialect while compiling the tool-owned runtime", () =>
+        {
+            string output = Path.Combine(directory, "csharp8");
+            InstrumentManifest manifest = Generate("delta,enabled,label", output, languageVersion: "8");
+            CoreTests.Equal("8", CSharpLanguages.Archived(manifest.Fingerprints));
+            CoreTests.Equal(1, manifest.Events.Count);
+            CoreTests.True(File.Exists(Path.Combine(output, "TlaLink.TraceRuntime.cs")));
+            CoreTests.Equal(manifest.BindingId, Instrumentation.ReadManifest(Path.Combine(output, "bindings.json")).BindingId);
+        });
         test("action arguments reject fields getters references calls malformed lists and arity mismatches", () =>
         {
             foreach (string value in new[] { "field,enabled,label", "Property,enabled,label", "this,enabled,label",
@@ -53,6 +62,47 @@ public static class ActionArgumentTests
                 CoreTests.ThrowsAny<InputException>(() => Generate(value, Path.Combine(directory, Guid.NewGuid().ToString("N"))));
             CoreTests.ThrowsAny<InputException>(() => Generate("delta,enabled,label",
                 Path.Combine(directory, "wrong-arity"), 7));
+        });
+        test("outer await captures completion and fault without instrumenting its delegate argument", () =>
+        {
+            string source = Path.Combine(directory, "AwaitDelegate.cs");
+            File.WriteAllText(source, """
+                using System;
+                using System.Threading.Tasks;
+                class AwaitDelegate {
+                    public async Task Run(bool fail) {
+                        /* @link {"bind":[{"id":"AwaitModel::Done"},{"id":"AwaitModel::Failed"}],"capture":[{"binding":"AwaitModel::Done","point":"commit","classification":"transition","actor":"this","operation":"$call"},{"binding":"AwaitModel::Failed","point":"fault","classification":"transition","actor":"this","operation":"$call"}]} */
+                        await Task.Run(() => fail ? throw new ApplicationException("failure") : Task.CompletedTask);
+                    }
+                }
+                """);
+            CSharpScope scope = CSharpScope.Parse([source], languageVersion: "8");
+            List<ModelBinding> models = scope.Bindings.Select(b => new ModelBinding(b.Model, b.Tag,
+                new(b.Tag.Identity, "", b.Tag.Kind, new("AwaitModel.tla", 1, 1), ""), 2)).ToList();
+            InstrumentManifest manifest = Instrumentation.Generate(scope, models,
+                Review.Build("instrument", scope, models, [], []), Path.Combine(directory, "await-delegate"));
+            CoreTests.Equal(2, manifest.Events.Count);
+            CoreTests.True(manifest.Events.Any(e => e.Point == "commit") && manifest.Events.Any(e => e.Point == "fault"));
+            string nested = Path.Combine(directory, "NestedAwaitDelegate.cs");
+            File.WriteAllText(nested, """
+                using System;
+                using System.Threading.Tasks;
+                class NestedAwaitDelegate {
+                    public async Task Run() {
+                        /* @link {"bind":[{"id":"AwaitModel::Outer"}],"capture":[{"binding":"AwaitModel::Outer","point":"commit","classification":"transition","actor":"this","operation":"$call"}]} */
+                        await Task.Run(async () => {
+                            /* @link {"bind":[{"id":"AwaitModel::Inner"}],"capture":[{"binding":"AwaitModel::Inner","point":"invoke","classification":"transition","actor":"this","operation":"$call"}]} */
+                            GC.KeepAlive(1);
+                            await Task.Yield();
+                        });
+                    }
+                }
+                """);
+            CSharpScope unsupported = CSharpScope.Parse([nested]);
+            List<ModelBinding> nestedModels = unsupported.Bindings.Select(b => new ModelBinding(b.Model, b.Tag,
+                new(b.Tag.Identity, "", b.Tag.Kind, new("AwaitModel.tla", 1, 1), ""), 2)).ToList();
+            CoreTests.ThrowsAny<InputException>(() => Instrumentation.Generate(unsupported, nestedModels,
+                Review.Build("instrument", unsupported, nestedModels, [], []), Path.Combine(directory, "nested-await-delegate")));
         });
     }
 

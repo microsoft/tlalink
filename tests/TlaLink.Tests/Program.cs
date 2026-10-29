@@ -19,13 +19,13 @@ public static class Program
         }
         string root = FilePaths.Full(args.FirstOrDefault() ?? Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\.."));
         string[] testArguments = args.Skip(1).ToArray();
-        string[] selections = ["--core", "--trace", "--apalache", "--p", "--diagnostics", "--integrated", "--workflow", "--evidence"];
+        string[] selections = ["--core", "--trace", "--apalache", "--p", "--diagnostics", "--integrated", "--workflow", "--evidence", "--summaries", "--symbols", "--links"];
         if (testArguments.Length > 2 ||
             testArguments.Count(a => a.StartsWith("--", StringComparison.Ordinal)) > 1 ||
             testArguments.Count(a => !a.StartsWith("--", StringComparison.Ordinal)) > 1 ||
             testArguments.Any(a => a.StartsWith("--", StringComparison.Ordinal) && !selections.Contains(a)))
         {
-            Console.Error.WriteLine("Usage: TlaLink.Tests [root [report.json] [--core|--trace|--apalache|--p|--diagnostics|--integrated|--workflow|--evidence]]");
+            Console.Error.WriteLine("Usage: TlaLink.Tests [root [report.json] [--core|--trace|--apalache|--p|--diagnostics|--integrated|--workflow|--evidence|--summaries|--symbols|--links]]");
             return 2;
         }
         string? selection = testArguments.SingleOrDefault(a => a.StartsWith("--", StringComparison.Ordinal));
@@ -64,6 +64,30 @@ public static class Program
             ToolHashTests.Register(Test, work);
             if (selection is null or "--core" or "--apalache") ApalacheTests.RegisterExample(Test, root);
             DiagnosticTests.Register(Test);
+            if (selection is null or "--core")
+            {
+                Suite("native-contracts", directory => NativeContractTests.Register(Test, directory));
+                Suite("trace-contracts", directory => TraceContractTests.Register(Test, directory));
+                Suite("typed-results", directory => TypedResultTests.Register(Test, directory));
+                OracleContractTests.Register(Test);
+            }
+            if (selection == "--links")
+            {
+                Suite("links-core", directory => FormalOwnedLinksTests.RegisterCore(Test, directory));
+                Suite("links-native", directory => FormalOwnedLinksTests.RegisterNative(Test, root, directory));
+                return Finish();
+            }
+            if (selection == "--symbols")
+            {
+                Suite("symbols", directory => SourceSymbolTests.Register(Test, directory));
+                return Finish();
+            }
+            if (selection == "--summaries")
+            {
+                Suite("summaries-core", directory => MethodSummaryTests.RegisterCore(Test, directory));
+                Suite("summaries-native", directory => MethodSummaryTests.RegisterNative(Test, root, directory));
+                return Finish();
+            }
             if (selection == "--evidence")
             {
                 Suite("evidence-core", directory => StageEvidenceTests.RegisterCore(Test, root, directory));
@@ -104,6 +128,8 @@ public static class Program
             if (selection == "--trace")
             {
                 Suite("paired-native", directory => PairedCorrespondenceTests.RegisterNative(Test, root, directory));
+                Suite("links-native", directory => FormalOwnedLinksTests.RegisterNative(Test, root, directory));
+                Suite("summaries-native", directory => MethodSummaryTests.RegisterNative(Test, root, directory));
                 Suite("arguments-core", directory => ActionArgumentTests.Register(Test, directory));
                 Suite("entities", directory => EntityTraceTests.Register(Test, root, directory));
                 Suite("arguments-native", directory => ActionArgumentTests.RegisterNative(Test, root, directory));

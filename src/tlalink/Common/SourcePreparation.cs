@@ -60,8 +60,8 @@ public static class SourcePreparation
                 "Unexpected file in prepared output.");
             IntegratedInputs.CheckPins(saved.Fingerprints);
             IntegratedInputs.CheckPins(reading);
-            ProjectWorkflow.Render(new { SchemaVersion = Schema.Version, Kind = "prepared-sources-inspection",
-                Status = "current", saved.FileCount, saved.MutatedFileCount, Boundary }, options);
+            ProjectWorkflow.Render(new PreparedSourcesInspection(Schema.Version, "prepared-sources-inspection",
+                "current", saved.FileCount, saved.MutatedFileCount, Boundary), options);
             return 0;
         }
         PreparedSources result = Prepare(FilePaths.Full(options.Required("manifest")),
@@ -81,9 +81,9 @@ public static class SourcePreparation
             "Expected schema 4 source-preparation.");
         Markup.RequireVersion(manifest.AnnotationVersion);
         CompilerProfile compiler = manifest.Compiler;
-        Require(compiler.TargetFramework == "net10.0" && compiler.LanguageVersion == "14" &&
+        Require(compiler.TargetFramework == "net10.0" && CSharpLanguages.Supported(compiler.LanguageVersion) &&
             compiler.Nullable == "enable" && !compiler.Checked && compiler.AllowUnsafe,
-            "Preparation uses the supported standalone net10.0/C#14, nullable-enable, unchecked, unsafe compiler context.");
+            "Preparation requires net10.0, C# 8 or 14, nullable-enable, unchecked, unsafe compiler context.");
         Require(manifest.Files.Count is > 0 and <= 1000, "Declare 1..1000 explicit files.");
         Require(!File.Exists(output) && !Directory.Exists(output), "Output must be a new directory.");
         string declaring = Path.GetDirectoryName(manifestPath)!;
@@ -114,7 +114,8 @@ public static class SourcePreparation
         CollectContext(manifest, declaring);
         string[] csharp = files.Select(f => f.Source).Where(IsCSharp).Concat(contexts).Distinct(FilePaths.Comparer).ToArray();
         CSharpScope? scope = csharp.Length == 0 ? null : CSharpScope.Parse(csharp.ToList(),
-            compiler.References.Select(r => FilePaths.Full(r, declaring)), compiler.Defines);
+            compiler.References.Select(r => FilePaths.Full(r, declaring)), compiler.Defines,
+            languageVersion: compiler.LanguageVersion);
         if (scope != null)
         {
             CompilationReady(scope.Compilation);
@@ -150,7 +151,7 @@ public static class SourcePreparation
                     Require(annotation != null, "Null annotation.");
                     string json = Markup.Encode(annotation.Payload);
                     int start = Resolve(annotation.Target).Start;
-                    edits.Add(new(new(start, 0), "/* @link " + json + " */ ", true));
+                    edits.Add(new(new(start, 0), "/* @link " + json + " */", true));
                 }
                 foreach (PreparationMutation mutation in mutations)
                 {
@@ -171,9 +172,25 @@ public static class SourcePreparation
                 foreach (var group in edits.GroupBy(e => e.Span.Start).OrderByDescending(g => g.Key))
                 {
                     Edit? replacement = group.SingleOrDefault(e => !e.Annotation);
-                    string comments = string.Concat(group.Where(e => e.Annotation).Select(e => e.Text));
-                    transformed = transformed.Remove(group.Key, replacement?.Span.Length ?? 0)
-                        .Insert(group.Key, comments + (replacement?.Text ?? ""));
+                    List<string> annotationsAtTarget = group.Where(e => e.Annotation).Select(e => e.Text).ToList();
+                    string comments = "";
+                    int insertionStart = group.Key;
+                    if (annotationsAtTarget.Count != 0)
+                    {
+                        int lineStart = text.AsSpan(0, group.Key).LastIndexOf('\n') + 1;
+                        int indentEnd = lineStart;
+                        while (indentEnd < group.Key && text[indentEnd] is ' ' or '\t') indentEnd++;
+                        string indent = text[lineStart..indentEnd];
+                        int lineEnd = text.IndexOf('\n', group.Key);
+                        if (lineEnd < 0) lineEnd = text.IndexOf('\n');
+                        string newline = lineEnd > 0 && text[lineEnd - 1] == '\r' ? "\r\n" : "\n";
+                        comments = (indentEnd == group.Key ? "" : newline + indent) +
+                            string.Join(newline + indent, annotationsAtTarget) + newline + indent;
+                        if (indentEnd != group.Key)
+                            while (insertionStart > lineStart && text[insertionStart - 1] is ' ' or '\t') insertionStart--;
+                    }
+                    transformed = transformed.Remove(insertionStart, group.Key - insertionStart + (replacement?.Span.Length ?? 0))
+                        .Insert(insertionStart, comments + (replacement?.Text ?? ""));
                 }
                 if (cs)
                 {
@@ -229,7 +246,7 @@ public static class SourcePreparation
                 SourcePreparationManifest shared = ProjectInputs.Read<SourcePreparationManifest>(path);
                 Require(shared.SchemaVersion == Schema.Version && shared.Kind == "source-preparation" &&
                     shared.AnnotationVersion == manifest.AnnotationVersion && shared.Files.Count == 0 && shared.Jar == null &&
-                    shared.Compiler.TargetFramework == "net10.0" && shared.Compiler.LanguageVersion == "14" &&
+                    shared.Compiler.TargetFramework == "net10.0" && shared.Compiler.LanguageVersion == compiler.LanguageVersion &&
                     shared.Compiler.Nullable == "enable" && !shared.Compiler.Checked && shared.Compiler.AllowUnsafe &&
                     shared.Compiler.Defines == null && shared.Compiler.References.Count == 0,
                     "Context imports must be context-only source-preparation manifests without compiler overrides.");
@@ -260,17 +277,21 @@ public static class SourcePreparation
         }
     }
 
-    private static SyntaxNode CSharpTarget(CSharpCompilation compilation, SyntaxTree tree, PreparationTarget target)
+    internal static SyntaxNode CSharpTarget(CSharpCompilation compilation, SyntaxTree? tree, PreparationTarget target)
     {
         Require(!string.IsNullOrWhiteSpace(target.Symbol), "C# targets need a Roslyn declaration documentation ID.");
-        SemanticModel semantics = compilation.GetSemanticModel(tree);
-        List<SyntaxNode> declarations = tree.GetRoot().DescendantNodes().Where(n =>
-            n is BaseMethodDeclarationSyntax or BaseTypeDeclarationSyntax or DelegateDeclarationSyntax or
-                PropertyDeclarationSyntax or IndexerDeclarationSyntax or EventDeclarationSyntax or VariableDeclaratorSyntax)
-            .Where(n => semantics.GetDeclaredSymbol(n)?.GetDocumentationCommentId() == target.Symbol).ToList();
+        List<SyntaxNode> declarations = compilation.SyntaxTrees.Where(t => tree == null || t == tree)
+            .SelectMany(t => t.GetRoot().DescendantNodes().Where(n =>
+                n is BaseMethodDeclarationSyntax or BaseTypeDeclarationSyntax or DelegateDeclarationSyntax or
+                    PropertyDeclarationSyntax or IndexerDeclarationSyntax or EventDeclarationSyntax or VariableDeclaratorSyntax)
+                .Where(n => compilation.GetSemanticModel(t).GetDeclaredSymbol(n)?.GetDocumentationCommentId() == target.Symbol)).ToList();
         Require(declarations.Count == 1, "Expected one source declaration for " + target.Symbol);
         SyntaxNode declaration = declarations[0];
-        if (declaration is VariableDeclaratorSyntax { Parent.Parent: FieldDeclarationSyntax field }) declaration = field;
+        if (declaration is VariableDeclaratorSyntax { Parent.Parent: FieldDeclarationSyntax field })
+        {
+            Require(field.Declaration.Variables.Count == 1, "Field selectors require a single declarator.");
+            declaration = field;
+        }
         if (target.Syntax == null)
         {
             Require(target.Tokens == null && target.Match == 1 && target.ExpectedMatches == 1,

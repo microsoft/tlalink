@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using TlaLink.Runtime;
 
 namespace TlaLink;
 
@@ -40,13 +41,10 @@ public static class Execution
         ObservedExecution.RequireSuccess(ObservedExecution.Invoke(run, output, timeout, "run"));
         ObservedExecution.Check(observed); Check(manifest.GeneratedFiles);
         if (!File.Exists(trace)) throw new InputException(ErrorCode.InvalidExecution, "Execution did not complete its trace.");
-        using JsonDocument captured = JsonDocument.Parse(Files.Read(trace));
-        Files.RequireSchema(captured.RootElement, "trace");
-        if (!captured.RootElement.GetProperty("complete").GetBoolean() ||
-            captured.RootElement.GetProperty("binding_id").GetString() != manifest.BindingId)
+        TraceEnvelope captured = TraceDocuments.Read(trace);
+        if (!captured.Complete || captured.BindingId != manifest.BindingId)
             throw new InputException(ErrorCode.InvalidExecution, "Trace is incomplete or belongs to another manifest.");
-        if (!captured.RootElement.GetProperty("binaries").TryGetProperty(binary, out JsonElement loaded) ||
-            loaded.GetString() != observed.BinarySHA256)
+        if (!captured.Binaries.TryGetValue(binary, out string? loaded) || loaded != observed.BinarySHA256)
             throw new InputException(ErrorCode.InvalidExecution, "Trace did not execute the captured build binary.");
         ExecutionReceipt receipt = new(Schema.Version, Files.Hash(manifestPath), trace, Files.Hash(trace), inputs, references, binary,
             observed.BinarySHA256, observed.Sdk, context, observed.BuildArguments, run,
@@ -76,10 +74,8 @@ public static class Execution
         foreach (var pair in receipt.CompileInputs.Concat(receipt.References).Concat(receipt.BuildInputs)) Files.Pin(pins, pair.Key, pair.Value);
         Files.Pin(pins, receipt.Binary, receipt.BinarySHA256);
         Files.Pin(pins, FilePaths.Full(path), Files.Hash(path));
-        using JsonDocument captured = JsonDocument.Parse(Files.Read(trace));
-        Files.RequireSchema(captured.RootElement, "trace");
-        if (!captured.RootElement.GetProperty("binaries").TryGetProperty(receipt.Binary, out JsonElement loaded) ||
-            loaded.GetString() != receipt.BinarySHA256)
+        TraceEnvelope captured = TraceDocuments.Read(trace);
+        if (!captured.Binaries.TryGetValue(receipt.Binary, out string? loaded) || loaded != receipt.BinarySHA256)
             throw new InputException(ErrorCode.InvalidExecution, "Trace entry binary and receipt disagree.");
     }
 
