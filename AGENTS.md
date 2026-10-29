@@ -15,6 +15,17 @@ frontend helpers in `PlusCal`, symbolic safety in `Apalache`, and Dafny in
 `Dafny`. Preserve the public
 namespace and flat deployed bridge-asset names when moving implementation.
 
+## Pre-alpha development
+
+TlaLink is pre-alpha. Prefer a coherent current design over backward
+compatibility for CLI commands, APIs, schemas and evidence formats. Update
+producers, consumers, examples, tests and documentation together; remove
+superseded paths rather than adding compatibility layers or migration machinery
+solely to preserve earlier prototypes. Collect fresh evidence with the current
+tool instead of treating old runs or tool pins as a compatibility requirement.
+Breaking changes do not authorize weakening claims, requirements or checks,
+rewriting historical outcomes, or carrying forward review approval.
+
 When assessing the state of the art or designing modeling, abstraction,
 method-summary or agent-workflow features, consult the
 [Specula research](docs/research/specula/README.md) before introducing new
@@ -154,6 +165,13 @@ Skills do not install tools, approve correspondence or discharge human gates.
   callback effects, task settlement or progress. Readonly reference storage
   uses a direct fresh constructor initializer, not an inferred factory or
   a parallel helper-contract format.
+- `balanced-async-gate` checks one normal acquisition immediately enclosing a
+  top-level try/finally with one matching release attempt, optionally after a
+  Monitor-lock prefix. It trusts structured C# finally/lock semantics, not raw
+  CFG dominance as an exception proof. Keep gate semantics, successful release,
+  eventual completion, transitive detached work and drain-before-destroy
+  obligations separate. Unsupported aliases, delegates, loops and task
+  transfers are incomplete, not approximated successes.
 - Selected synchronous reference-type `using` lifetimes may use `point=cleanup`
   after a successful implicit `IDisposable.Dispose`, and `point=fault` for a
   throwing disposer. Instrumentation lowers that narrow compiler pattern once,
@@ -197,6 +215,14 @@ Skills do not install tools, approve correspondence or discharge human gates.
   Keep serial-owner assumptions explicit for unguarded synchronous components.
 
 ## Build and validation
+
+Prefer maintained sample source and contract files under
+`tests/TlaLink.Tests/Fixtures` over embedded code strings in new tests. Share
+canonical inputs between core and native suites where appropriate; keep
+deliberate source mutants as named files rather than replacement strings.
+Compile only explicitly selected fixture files, copy them to fresh test work
+directories before use, and never mutate maintained samples. Fixture C# must
+be content, not part of compiling the test runner.
 
 - Source language selection uses `compiler.language_version` in JSON and
   `--language-version` for standalone source commands, with canonical values

@@ -250,6 +250,19 @@ initializer. The latter preserves reference identity, not helper purity:
 constructor replacement, factories, copies, aliases and unapproved calls or
 getters do not become accepted storage summaries.
 
+Async gate lifetime checks use one conservative structured C# rule: a normal
+direct acquisition is immediately followed by a top-level try whose finally
+contains only the matching release call on the same readonly fresh helper.
+The acquisition may be the last statement under an immediately preceding
+Monitor lock; normal lock exit is an explicit trusted premise. Compiler
+reachability rejects dead sites, while C# try/finally semantics cover implicit
+exceptions and faulted/canceled awaits without inventing exceptional CFG edges.
+The receipt identifies both calls, the protected region and explicit awaits.
+Unsupported alias/control-flow/task-transfer shapes remain incomplete.
+The result concerns release attempts on completing invocations, not the
+helper's implementation semantics, transitive callee effects, successful
+release, eventual drain or permission to destroy protected resources.
+
 Reference-CAS effect authorization recognizes a synchronous method's direct CAS
 result local (including a predeclared uninitialized local), its immediate
 built-in nonnull old-value return guard, and the following direct effect call.

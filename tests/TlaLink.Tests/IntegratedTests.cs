@@ -107,6 +107,38 @@ public static class IntegratedTests
                 "--output", Path.Combine(directory, "missing-result")]).Code != 0);
         });
 
+        test("async gate lifetime premises survive native verification archive reading and tamper checks", () =>
+        {
+            string directory = NewDirectory("async-gate-lifetime");
+            AsyncGateFixture fixture = AsyncGateFixtures.Copy(directory, "balanced");
+            string output = Path.Combine(directory, "result");
+            var response = TestCli.Run(["verify-integrated", "--annotation-version", "4", "--bindings", fixture.ManifestPath,
+                "--dafny", dafny, "--output", output, "--language-version", "8"]);
+            if (response.Code != 0) throw new InvalidOperationException(response.Json);
+            JsonElement packet = ProjectInputs.Read<JsonElement>(Path.Combine(output, "result.json"));
+            Status(packet, "source_obligations_status", "passed");
+            Status(packet, "proof_status", "verified");
+            CoreTests.True(packet.GetProperty("source_obligations")[0].GetProperty("async_gate")
+                .GetProperty("boundary").GetString()!.Contains("release attempt", StringComparison.Ordinal));
+            CoreTests.Equal(0, IntegratedEvidence.Validate(packet, Path.Combine(output, "inputs")).Count);
+            CoreTests.Equal(0, TestCli.Run(["read-integrated", "--result",
+                Path.Combine(output, "result.json"), "--current", "true"]).Code);
+            var forged = System.Text.Json.Nodes.JsonNode.Parse(packet.GetRawText())!.AsObject();
+            forged["source_obligations"]![0]!.AsObject().Remove("async_gate");
+            using (JsonDocument changed = JsonDocument.Parse(forged.ToJsonString()))
+                CoreTests.True(IntegratedEvidence.Validate(changed.RootElement).Count > 0);
+            AsyncGateFixture missing = AsyncGateFixtures.Copy(Path.Combine(directory, "missing-release"), "missing-release");
+            string rejectedOutput = Path.Combine(missing.Directory, "result");
+            var rejected = TestCli.Run(["verify-integrated", "--annotation-version", "4", "--bindings", missing.ManifestPath,
+                "--dafny", dafny, "--output", rejectedOutput, "--language-version", "8"]);
+            CoreTests.Equal(1, rejected.Code);
+            using JsonDocument rejection = JsonDocument.Parse(rejected.Json);
+            Status(rejection.RootElement, "source_obligations_status", "rejected");
+            Status(rejection.RootElement, "proof_status", "not-run");
+            CoreTests.Equal(0, IntegratedEvidence.Validate(rejection.RootElement,
+                Path.Combine(rejectedOutput, "inputs")).Count);
+        });
+
         test("Dafny callback-expression bindings remain review-only and retain their actual source span", () =>
         {
             string directory = NewDirectory("callback-binding");

@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FlowAnalysis;
 using Microsoft.CodeAnalysis.Operations;
+using System.Text.Json.Serialization;
 
 namespace TlaLink;
 
@@ -10,7 +11,13 @@ public sealed record SourceObligation(string Id, string Binding, string Kind, st
     string? Effect = null, string? Storage = null, bool? When = null, List<string>? AllowedCalls = null,
     string? Parameter = null, List<string>? AllowedProperties = null);
 public sealed record SourceObligationResult(SourceObligation Obligation, string Status, string Reason,
-    List<Place> Evidence, SourceControlFlow? Flow = null);
+    List<Place> Evidence, SourceControlFlow? Flow = null)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AsyncGateLifetime? AsyncGate { get; init; }
+}
+public sealed record AsyncGateLifetime(Place Acquisition, Place Release, Place ProtectedRegion,
+    List<Place> Awaits, string Boundary);
 
 public static partial class SourceObligations
 {
@@ -46,6 +53,8 @@ public static partial class SourceObligations
                         o.AllowedCalls != null || o.AllowedProperties != null || o.Parameter != null,
                     "callback-effect" => !Method(o.Gate) || !Method(o.Effect) || o.When != null ||
                         o.AllowedCalls != null || o.AllowedProperties != null || o.Parameter != null,
+                    "balanced-async-gate" => !Method(o.Gate) || !Method(o.Effect) || o.Gate == o.Effect ||
+                        o.When != null || o.AllowedCalls != null || o.AllowedProperties != null || o.Parameter != null,
                     "stable-storage" => o.Gate != null || o.Effect != null || o.When != null ||
                         o.Parameter != null || !Properties() ||
                         o.AllowedCalls is not { Count: > 0 and <= 100 } ||
@@ -67,6 +76,7 @@ public static partial class SourceObligations
         {
             List<Place> evidence = [];
             SourceControlFlow? flow = null;
+            AsyncGateLifetime? asyncGate = null;
             try
             {
                 var endpoint = IntegratedReview.Resolve(symbols, manifest.Bindings.Single(b => b.Id == o.Binding).Source);
@@ -91,7 +101,11 @@ public static partial class SourceObligations
                 Support(!field.GetAttributes().Any(a =>
                     a.AttributeClass?.ToDisplayString() == "System.Runtime.InteropServices.FieldOffsetAttribute"),
                     "Explicit field offsets require a storage-alias argument.");
-                if (o.Kind is "stable-storage" or "monotonic-int32" or "reference-cell")
+                if (o.Kind == "balanced-async-gate")
+                {
+                    asyncGate = CheckAsyncGate(scope, o, endpoint.Symbol, field, evidence, out flow);
+                }
+                else if (o.Kind is "stable-storage" or "monotonic-int32" or "reference-cell")
                     CheckStorage(scope, o, field, evidence, symbols);
                 else if (o.Kind == "reference-read")
                 {
@@ -140,7 +154,7 @@ public static partial class SourceObligations
                 }
                 return new SourceObligationResult(o, "passed",
                     "Selected structural premise holds in the explicit compiler/source scope; language/runtime semantics and source/model correspondence remain review obligations.",
-                    evidence, flow);
+                    evidence, flow) { AsyncGate = asyncGate };
             }
             catch (CheckFailure error) { return new(o, error.Status, error.Message, evidence, flow); }
             catch (InputException error) { return new(o, "incomplete", error.Message, evidence, flow); }
