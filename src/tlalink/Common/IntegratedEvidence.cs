@@ -267,7 +267,8 @@ public static class IntegratedEvidence
                     List<FormalLinkDeclaration> formal = FormalCorrespondence.Dafny(
                         result.Inventory.ToList(), recordedPins, Recorded);
                     Dictionary<string, ArchivedSourceBinding> inline = CorrespondenceEvidence.Bindings(
-                        policy.Sources.Select(p => ProjectInputs.Resolve(manifestPath, p)), recordedPins, Recorded, formal,
+                        policy.Sources.Select(p => ProjectInputs.Resolve(manifestPath, p)), policy.Bindings.Select(b => b.Id),
+                        recordedPins, Recorded, formal,
                         hash => Path.Combine(archiveDirectory, hash));
                     bool hasTla = result.Tla != null;
                     if (hasTla != (policy.TlaTargets.Count > 0) || hasTla &&

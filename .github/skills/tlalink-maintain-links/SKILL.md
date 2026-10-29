@@ -30,6 +30,12 @@ Maintain one convention: formal TLA+/PlusCal, Dafny or P comments own typed
 stable unique `scope::name` IDs and the shared source-preparation selector
 contract, not line numbers, external JSON binding stores or another parser.
 
+Check the package's selected wrapper/distribution supports the requested action.
+A usage error for a documented command is a capability/setup problem, not
+attachment drift: do not edit links to work around it. Pause for authorized
+documented distribution selection, then repeat preflight and inspection.
+Changed tool pins do not authorize refreshing requirements or review decisions.
+
 ## Make the smallest authorized edit
 
 | Operation | Procedure |

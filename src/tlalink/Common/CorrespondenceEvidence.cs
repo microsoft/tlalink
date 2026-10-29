@@ -8,7 +8,7 @@ internal sealed record ArchivedSourceBinding(BindAnnotation Declaration, Place L
 
 internal static class CorrespondenceEvidence
 {
-    public static Dictionary<string, ArchivedSourceBinding> Bindings(IEnumerable<string> sources,
+    public static Dictionary<string, ArchivedSourceBinding> Bindings(IEnumerable<string> sources, IEnumerable<string> selectedBindings,
         Dictionary<string, string> pins, Func<string, string> read, IEnumerable<FormalLinkDeclaration>? formal = null,
         Func<string, string>? archivedFile = null)
     {
@@ -37,7 +37,9 @@ internal static class CorrespondenceEvidence
                 }
             }
         }
-        List<FormalLinkDeclaration> selected = (formal ?? []).Where(d => d.Binding.Source != null).ToList();
+        HashSet<string> selection = selectedBindings.ToHashSet(StringComparer.Ordinal);
+        List<FormalLinkDeclaration> selected = (formal ?? [])
+            .Where(d => d.Binding.Source != null && selection.Contains(d.Binding.Id)).ToList();
         if (selected.Count > 0)
         {
             if (!pins.TryGetValue("tool:csharp-references", out string? encoded))

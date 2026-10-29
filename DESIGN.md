@@ -134,6 +134,10 @@ validating or editing metadata. One ID cannot have competing C#/formal owners.
 The staged example migration does not rewrite consumer inputs or historical
 receipts. Archived formal-owned bindings reconstruct their source selectors
 using archived source and the explicitly recorded compiler reference bytes.
+Reconstruction resolves only the binding IDs selected by the declaring native
+manifest, matching live pairing. Imported declarations remain pinned native
+dependencies, but their unselected source attachments do not enlarge the
+selected C# compilation. A missing selected attachment still fails.
 
 `links inspect` is a read-only authoring view over the same native index and
 Roslyn selector/matching implementation. Native declaration spans delimit the
