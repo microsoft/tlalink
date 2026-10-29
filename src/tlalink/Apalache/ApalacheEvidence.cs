@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Nodes;
 
 namespace TlaLink;
 
@@ -39,25 +38,35 @@ public static class ApalacheEvidence
         bool consistent = issues.All(i => i.Severity != "error");
         bool stale = issues.Any(i => i.Is(ErrorCode.ApalacheEvidenceStale));
         string? analysisStatus = document.RootElement.TryGetProperty("status", out JsonElement status) ? status.GetString() : null;
-        ProjectWorkflow.Render(new {
-            SchemaVersion = Schema.Version, Kind = "apalache-evidence",
-            ArchiveStatus = consistent ? "consistent" : "inconsistent",
-            CurrentApplicability = !current ? "not-checked" : stale ? "stale" : "current",
-            AnalysisStatus = analysisStatus, Diagnostics = issues,
-            Boundary = "Archive consistency is not property acceptance; use project accept for independent requirements."
-        }, options);
+        ProjectWorkflow.Render(new ApalacheEvidenceResult(Schema.Version, "apalache-evidence",
+            consistent ? "consistent" : "inconsistent",
+            !current ? "not-checked" : stale ? "stale" : "current", analysisStatus, issues,
+            "Archive consistency is not property acceptance; use project accept for independent requirements."), options);
         return !consistent ? 1 : stale || analysisStatus == "incomplete" ? 2 : 0;
     }
 
     public static List<Issue> Validate(JsonElement root, string output, bool current = false)
     {
-        List<Issue> issues = [];
-        void Error(string message) => issues.Add(new(ErrorCode.InvalidApalacheEvidence, message));
         try
         {
             Files.RequireSchema(root, "apalache-result");
             ApalachePacket packet = JsonSerializer.Deserialize<ApalachePacket>(root, ProjectInputs.Json)
                 ?? throw new InputException(ErrorCode.InvalidApalacheEvidence, "Missing Apalache packet.");
+            return Validate(packet, output, current);
+        }
+        catch (Exception error) when (error is InputException or JsonException or IOException or UnauthorizedAccessException or
+            InvalidOperationException or KeyNotFoundException or FormatException or ArgumentException)
+        {
+            return [new(ErrorCode.InvalidApalacheEvidence, "Invalid Apalache evidence: " + error.Message)];
+        }
+    }
+
+    public static List<Issue> Validate(ApalachePacket packet, string output, bool current = false)
+    {
+        List<Issue> issues = [];
+        void Error(string message) => issues.Add(new(ErrorCode.InvalidApalacheEvidence, message));
+        try
+        {
             if (packet.Fingerprints.Count == 0 || packet.Artifacts.Count == 0 && packet.Status != "incomplete" ||
                 packet.TimeoutSeconds is < 1 or > 7200 || !FilePaths.IsAbsolute(packet.Directory))
                 Error("Missing provenance or invalid native deadline.");
@@ -97,12 +106,12 @@ public static class ApalacheEvidence
             if (packet.Status is not ("ready" or "passed" or "rejected") ||
                 !packet.ModelFiles.ContainsKey(packet.Model) || !packet.Artifacts.ContainsKey("model-index.json"))
                 throw new InputException(ErrorCode.InvalidApalacheEvidence, "Invalid completed outcome or missing model closure.");
-            using JsonDocument index = JsonDocument.Parse(Files.Read(Safe(output, "model-index.json")));
-            ApalacheBackend.RequireSupportedIndex(index.RootElement, config);
-            foreach (JsonElement dependency in index.RootElement.EnumerateArray().Where(r => r.GetProperty("kind").GetString() == "dependency"))
+            List<TlaNativeRow> index = TlaNativeJson.ReadIndex(Files.Read(Safe(output, "model-index.json")));
+            ApalacheBackend.RequireSupportedIndex(index, config);
+            foreach (TlaNativeDependency dependency in index.OfType<TlaNativeDependency>())
             {
-                string path = dependency.GetProperty("path").GetString()!;
-                string hash = dependency.GetProperty("sha256").GetString()!;
+                string path = dependency.Path;
+                string hash = dependency.Sha256;
                 if (!packet.Fingerprints.TryGetValue(path, out string? pin) || pin != hash ||
                     FilePaths.IsAbsolute(path) && Path.GetExtension(path).Equals(".tla", StringComparison.OrdinalIgnoreCase) &&
                     !packet.ModelFiles.ContainsKey(path))
@@ -118,13 +127,14 @@ public static class ApalacheEvidence
                 foreach (string suffix in new[] { ".stdout.log", ".stderr.log", ".invocation.json" })
                     if (!packet.Artifacts.ContainsKey(process.Id + suffix)) Error("Missing native receipt/log artifact.");
                 using JsonDocument receipt = JsonDocument.Parse(Files.Read(Safe(output, process.Id + ".invocation.json")));
-                JsonElement invocation = receipt.RootElement;
-                Files.RequireSchema(invocation, "apalache-invocation");
-                if (invocation.GetProperty("executable").GetString() != packet.Java ||
-                    invocation.GetProperty("working_directory").GetString() != packet.Directory ||
-                    invocation.GetProperty("timeout_seconds").GetInt32() != packet.TimeoutSeconds ||
-                    invocation.GetProperty("environment").GetString() != "isolated" ||
-                    !JsonNode.DeepEquals(JsonNode.Parse(invocation.GetProperty("result").GetRawText()), JsonSerializer.SerializeToNode(process, Files.Json)))
+                Files.RequireSchema(receipt.RootElement, "apalache-invocation");
+                ApalacheNativeInvocation invocation = receipt.RootElement.Deserialize<ApalacheNativeInvocation>(Files.Json)
+                    ?? throw new InputException(ErrorCode.InvalidApalacheEvidence, "Missing native invocation receipt.");
+                if (invocation.Executable != packet.Java ||
+                    invocation.WorkingDirectory != packet.Directory ||
+                    invocation.TimeoutSeconds != packet.TimeoutSeconds ||
+                    invocation.Environment != "isolated" ||
+                    !JsonElement.DeepEquals(receipt.RootElement.GetProperty("result"), JsonSerializer.SerializeToElement(process, Files.Json)))
                     Error("Native receipt disagrees with the declared invocation.");
             }
             ApalacheProcessResult version = packet.Processes[0];
@@ -138,7 +148,8 @@ public static class ApalacheEvidence
                 ApalacheQuery query = queries[i - 1];
                 if (process.Id != query.Id || !process.Arguments.SequenceEqual(ApalacheBackend.Arguments(packet, query)) ||
                     !packet.Artifacts.ContainsKey(query.Id + ".json") ||
-                    !JsonNode.DeepEquals(JsonNode.Parse(Files.Read(Safe(output, query.Id + ".json"))), ApalacheBackend.NativeConfig(packet, config, query)))
+                    !NativeConfigMatches(Files.Read(Safe(output, query.Id + ".json")),
+                        ApalacheBackend.NativeConfig(packet, config, query)))
                     Error("Native obligation/configuration differs from approved analysis: " + query.Id);
                 outcome = ApalacheBackend.Assess(process, query, ApalacheBackend.Text(output, process.Id),
                     ApalacheBackend.HasTrace(output, process.Id, "violation", null, packet.Artifacts.Keys),
@@ -163,6 +174,12 @@ public static class ApalacheEvidence
             Error("Invalid Apalache evidence: " + error.Message);
         }
         return issues;
+    }
+
+    internal static bool NativeConfigMatches(string json, ApalacheNativeConfig expected)
+    {
+        using JsonDocument actual = JsonDocument.Parse(json, new JsonDocumentOptions { AllowDuplicateProperties = false });
+        return JsonElement.DeepEquals(actual.RootElement, JsonSerializer.SerializeToElement(expected, Files.Json));
     }
 
     private static bool Hash(string? value) => value is { Length: 64 } && value.All(char.IsAsciiHexDigit);

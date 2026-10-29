@@ -1,0 +1,34 @@
+{
+  "schema_version": 4,
+  "kind": "correspondence-scope",
+  "annotation_version": 4,
+  "targets": [
+    {
+      "id": "permits",
+      "language": "tla",
+      "inputs": ["PermitSummary.tla"],
+      "required_bindings": ["permits::try-take"]
+    }
+  ],
+  "omissions": [],
+  "method_summaries": [
+    {
+      "binding": "permits::try-take",
+      "abstraction": "atomic",
+      "sources": ["..\\src\\PermitGate.cs"],
+      "inspection": "permit-summary",
+      "precondition": "Requires",
+      "assumptions": [
+        "Each modeled counter denotes one PermitGate instance initialized with a nonnegative Int32.",
+        "All accesses to remaining are the constructor and the selected TryTake method.",
+        "The selected .NET Volatile.Read and Interlocked.CompareExchange contracts apply."
+      ],
+      "limits": [
+        "The summary models logical effects, not invocation duration or caller completion.",
+        "No termination, fairness or starvation guarantee is made.",
+        "LLM inspection is not machine-checked implementation refinement."
+      ],
+      "depends_on": []
+    }
+  ]
+}

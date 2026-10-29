@@ -20,7 +20,7 @@ public abstract record SourceAnnotation
     public abstract string Identity { get; }
 }
 
-public sealed record BindAnnotation(string Id, string? Reason = null) : SourceAnnotation
+public sealed record BindAnnotation(string Id, string? Reason = null, PreparationTarget? Source = null) : SourceAnnotation
 {
     [JsonIgnore]
     public override string Identity => Id;
@@ -58,7 +58,7 @@ public sealed record CaptureAnnotation(string Binding, CapturePoint? Point = nul
     }
 }
 
-public sealed record ExcludeAnnotation(string Id, List<string> From, string Reason) : SourceAnnotation
+public sealed record ExcludeAnnotation(string Id, List<string> From, string Reason, PreparationTarget? Source = null) : SourceAnnotation
 {
     [JsonIgnore]
     public override string Identity => Id;
@@ -74,4 +74,5 @@ public sealed record AnnotationPayload
 public sealed record LocatedAnnotation(SourceAnnotation Declaration, int Start, int End);
 public sealed record SourceLinkDeclaration(BindAnnotation Binding, CaptureAnnotation? Capture,
     SourceBindingKind SourceKind, Place Location);
-public sealed record FormalLinkDeclaration(BindAnnotation Binding, Endpoint Endpoint, int Arity);
+public sealed record FormalLinkDeclaration(BindAnnotation Binding, Endpoint Endpoint, int Arity,
+    List<CaptureAnnotation>? Captures = null, List<ExcludeAnnotation>? Exclusions = null);

@@ -44,6 +44,10 @@ public static class Markup
             {
                 Name(binding.Id);
                 if (binding.Reason != null && string.IsNullOrWhiteSpace(binding.Reason)) throw new JsonException("Empty binding reason.");
+                if (binding.Source is { } source && (string.IsNullOrWhiteSpace(source.Symbol) ||
+                    source.Match < 1 || source.ExpectedMatches < source.Match ||
+                    source.Syntax == null && (source.Tokens != null || source.Match != 1 || source.ExpectedMatches != 1)))
+                    throw new JsonException("Source selectors require a declaration ID and an explicit, consistent syntax match.");
                 result.Add(new(binding, start, end));
             }
             foreach (CaptureAnnotation capture in document.Capture)
@@ -89,9 +93,18 @@ public static class Markup
     {
         JsonSerializerOptions options = new(AnnotationJson) {
             WriteIndented = false,
-            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver {
+                Modifiers = { info =>
+                {
+                    if (info.Type == typeof(AnnotationPayload))
+                        foreach (var property in info.Properties)
+                            property.ShouldSerialize = (_, value) => value is not System.Collections.ICollection { Count: 0 };
+                } }
+            }
         };
-        string json = JsonSerializer.Serialize(payload, options).Replace("*/", "*\\/", StringComparison.Ordinal);
+        string json = JsonSerializer.Serialize(payload, options).Replace("*/", "*\\/", StringComparison.Ordinal)
+            .Replace("*)", "*\\u0029", StringComparison.Ordinal);
         Parse("@link " + json, 0, 0);
         return json;
     }

@@ -188,7 +188,7 @@ public static class PTests
             string originalSource = Files.Read(source);
             try
             {
-                File.WriteAllText(source, originalSource.Replace("credit-p::credit-return", "credit-p::missing", StringComparison.Ordinal));
+                File.WriteAllText(source, originalSource.Replace("ReturnCredit", "MissingReturnCredit", StringComparison.Ordinal));
                 Run(original, 2);
             }
             finally { File.WriteAllText(source, originalSource); }

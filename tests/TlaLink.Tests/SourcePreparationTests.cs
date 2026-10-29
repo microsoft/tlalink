@@ -28,6 +28,18 @@ public static class SourcePreparationTests
             return (result.Code, result.Json, output, path);
         }
         PreparationTarget repeated = new("M:Gadget.Apply", "ExpressionStatement", "total = 1 ;", 2, 2);
+        test("source preparation pins and rereads the selected CSharp8 context", () =>
+        {
+            var result = Run(Manifest([new(repeated, Payload("CSharp8"))]) with {
+                Compiler = Compiler with { LanguageVersion = "8" }
+            });
+            if (result.Code != 0) throw new InvalidOperationException(result.Json);
+            PreparedSources ledger = ProjectInputs.Read<PreparedSources>(Path.Combine(result.Output, "prepared-sources.json"));
+            CoreTests.Equal("8", ledger.Compiler.LanguageVersion);
+            CoreTests.Equal("8", CSharpLanguages.Archived(ledger.Fingerprints));
+            CoreTests.Equal(0, TestCli.Run(["check-prepared-sources", "--result",
+                Path.Combine(result.Output, "prepared-sources.json")]).Code);
+        });
         test("source preparation uses symbols and syntax tokens rather than layout or surrounding text", () =>
         {
             var result = Run(Manifest([
@@ -38,7 +50,7 @@ public static class SourcePreparationTests
             if (result.Code != 0) throw new InvalidOperationException(result.Json);
             string copy = Path.Combine(result.Output, "scope", "Gadget.cs");
             CoreTests.Equal(program, Files.Read(source));
-            CoreTests.True(Files.Read(copy).Contains("total = 1; /* @link " + Markup.Encode(Payload("Update")) + " */ total = 1;", StringComparison.Ordinal));
+            CoreTests.True(Files.Read(copy).Contains("total = 1;\n/* @link " + Markup.Encode(Payload("Update")) + " */\ntotal = 1;", StringComparison.Ordinal));
             CSharpScope parsed = CSharpScope.Parse([copy]);
             CoreTests.Equal(3, parsed.Bindings.Count);
             CoreTests.True(parsed.Diagnostics.All(d => d.Severity != "error"));
@@ -67,9 +79,47 @@ public static class SourcePreparationTests
                     [new(path, Files.Hash(path), "Encoded.cs", [new(new("T:Encoded"), Payload("Encoded"))])]));
                 if (result.Code != 0) throw new InvalidOperationException(result.Json);
                 byte[] actual = File.ReadAllBytes(Path.Combine(result.Output, "Encoded.cs"));
-                byte[] expected = [.. encoding.GetPreamble(), .. encoding.GetBytes("/* @link " + Markup.Encode(Payload("Encoded")) + " */ " + text)];
+                byte[] expected = [.. encoding.GetPreamble(), .. encoding.GetBytes("/* @link " + Markup.Encode(Payload("Encoded")) + " */" + newline + text)];
                 CoreTests.True(expected.SequenceEqual(actual));
                 CoreTests.True(original.SequenceEqual(File.ReadAllBytes(path)));
+            }
+        });
+        test("annotation encoding omits empty arrays without changing parsed declarations", () =>
+        {
+            string json = Markup.Encode(Payload("Compact"));
+            CoreTests.Equal("{\"bind\":[{\"id\":\"sample::Compact\"}]}", json);
+            CoreTests.Equal(1, Markup.Parse("@link " + json, 0, 0).Count);
+            AnnotationPayload capture = new() {
+                Bind = [new("sample::Captured")],
+                Capture = [new("sample::Captured", Point: CapturePoint.Commit,
+                    Classification: CaptureClassification.Transition, Actor: "this", Operation: "$call")]
+            };
+            string encoded = Markup.Encode(capture);
+            CoreTests.True(encoded.Contains("\"capture\":", StringComparison.Ordinal));
+            CoreTests.True(!encoded.Contains("\"exclude\":", StringComparison.Ordinal));
+            CoreTests.Equal(2, Markup.Parse("@link " + encoded, 0, 0).Count);
+            CoreTests.ThrowsAny<InputException>(() => Markup.Encode(new()));
+            CoreTests.ThrowsAny<InputException>(() => Markup.Encode(capture with {
+                Capture = [capture.Capture[0] with { Observe = [] }]
+            }));
+        });
+        test("prepared annotations occupy preceding lines with original tabs and newlines", () =>
+        {
+            foreach (string newline in new[] { "\n", "\r\n" })
+            {
+                string path = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".cs");
+                string text = "class Indented" + newline + "{" + newline + "\tint value;" + newline + "}" + newline;
+                File.WriteAllText(path, text);
+                var result = Run(new(Schema.Version, "source-preparation", Markup.Version, Compiler,
+                    [new(path, Files.Hash(path), "Indented.cs", [
+                        new(new("F:Indented.value"), Payload("First")),
+                        new(new("F:Indented.value"), Payload("Second"))
+                    ])]));
+                if (result.Code != 0) throw new InvalidOperationException(result.Json);
+                string copy = Files.Read(Path.Combine(result.Output, "Indented.cs"));
+                CoreTests.True(copy.Contains("\t/* @link " + Markup.Encode(Payload("First")) + " */" + newline +
+                    "\t/* @link " + Markup.Encode(Payload("Second")) + " */" + newline + "\tint value;", StringComparison.Ordinal));
+                CoreTests.Equal(2, CSharpScope.Parse([Path.Combine(result.Output, "Indented.cs")]).Bindings.Count);
             }
         });
         test("control mutations are explicit compilable and separate from comment-only output", () =>
@@ -81,7 +131,7 @@ public static class SourcePreparationTests
             CoreTests.True(!ledger.Files.Single().CommentOnly);
             CoreTests.Equal(1, ledger.Files.Single().Mutations.Count);
             CoreTests.True(Files.Read(Path.Combine(result.Output, "scope", "Gadget.cs"))
-                .Contains("/* @link " + Markup.Encode(Payload("DeliberateControl")) + " */ total = 7;", StringComparison.Ordinal));
+                .Contains("/* @link " + Markup.Encode(Payload("DeliberateControl")) + " */\ntotal = 7;", StringComparison.Ordinal));
             CoreTests.Equal(program, Files.Read(source));
         });
         test("unedited preparation assets are byte copies without a text-decoding requirement", () =>

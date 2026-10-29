@@ -12,7 +12,7 @@ public sealed record SourceObligation(string Id, string Binding, string Kind, st
 public sealed record SourceObligationResult(SourceObligation Obligation, string Status, string Reason,
     List<Place> Evidence, SourceControlFlow? Flow = null);
 
-public static class SourceObligations
+public static partial class SourceObligations
 {
     public static string Status(IEnumerable<SourceObligationResult> results)
     {
@@ -42,6 +42,10 @@ public static class SourceObligations
                     "reference-cas-gate" => o.Gate != null || o.Effect != null || o.When != null ||
                         o.AllowedCalls != null || o.AllowedProperties != null ||
                         string.IsNullOrWhiteSpace(o.Parameter) || !SyntaxFacts.IsValidIdentifier(o.Parameter),
+                    "reference-cas-effect" => o.Gate != null || !Method(o.Effect) || o.When != null ||
+                        o.AllowedCalls != null || o.AllowedProperties != null || o.Parameter != null,
+                    "callback-effect" => !Method(o.Gate) || !Method(o.Effect) || o.When != null ||
+                        o.AllowedCalls != null || o.AllowedProperties != null || o.Parameter != null,
                     "stable-storage" => o.Gate != null || o.Effect != null || o.When != null ||
                         o.Parameter != null || !Properties() ||
                         o.AllowedCalls is not { Count: > 0 and <= 100 } ||
@@ -125,7 +129,11 @@ public static class SourceObligations
                         "Dynamic and function-pointer calls are unsupported.");
                     flow = SourceControlFlows.Build(declaration, semantics, At);
                     if (o.Kind == "guarded-try-effect") CheckTryEffect(o, declaration, semantics);
-                    if (o.Kind is "guarded-effect" or "guarded-try-effect")
+                    if (o.Kind == "reference-cas-effect")
+                        CheckReferenceEffect(o, field, declaration, semantics, SourceControlFlows.Graph(declaration, semantics));
+                    else if (o.Kind == "callback-effect")
+                        CheckCallbackEffect(scope, o, field, declaration, semantics, evidence);
+                    else if (o.Kind is "guarded-effect" or "guarded-try-effect")
                         CheckGuard(o, field, SourceControlFlows.Graph(declaration, semantics), flow);
                     else if (o.Kind == "reference-cas-gate") CheckReferenceGate(o, field, declaration, semantics);
                     else CheckAtomic(field, declaration, semantics);
@@ -254,9 +262,11 @@ public static class SourceObligations
         foreach (SyntaxReference reference in field.DeclaringSyntaxReferences)
             if (reference.GetSyntax() is VariableDeclaratorSyntax { Initializer: { } initializer })
             {
-                Support(o.Kind is "monotonic-int32" or "reference-cell", "Stable storage initializers are not supported.");
                 IOperation value = scope.Compilation.GetSemanticModel(initializer.SyntaxTree).GetOperation(initializer.Value)!;
-                Need(o.Kind == "reference-cell" ? Null(value) : Constant(value, 0), "Storage must start at its empty value.");
+                if (o.Kind == "stable-storage")
+                    Support(field.Type.IsReferenceType && value is IObjectCreationOperation { Initializer: null },
+                        "Stable reference storage requires a direct fresh constructor initializer; value-type initializers and factories are unsupported.");
+                else Need(o.Kind == "reference-cell" ? Null(value) : Constant(value, 0), "Storage must start at its empty value.");
             }
         if (o.Kind == "monotonic-int32")
             Need(field.Type.SpecialType == SpecialType.System_Int32 && !field.IsReadOnly,
@@ -265,8 +275,12 @@ public static class SourceObligations
             Need(field.Type.IsReferenceType && !field.IsReadOnly, "Reference-cell storage must be a writable reference field.");
         else
         {
-            Need(field.ContainingType.IsReferenceType && field.Type.IsValueType && !field.IsReadOnly,
-                "Stable gate storage must be a writable value-type field in a reference-type owner.");
+            Need(field.ContainingType.IsReferenceType &&
+                (field.Type.IsValueType && !field.IsReadOnly || field.Type.IsReferenceType && field.IsReadOnly),
+                "Stable gate storage must be a writable value-type or readonly reference-type field in a reference-type owner.");
+            if (field.Type.IsReferenceType)
+                Support(field.DeclaringSyntaxReferences.Single().GetSyntax() is VariableDeclaratorSyntax { Initializer: not null },
+                    "Stable reference storage requires a direct fresh constructor initializer, not constructor replacement.");
             foreach (string target in o.AllowedCalls!)
                 IntegratedReview.Resolve(symbols, target);
             foreach (string target in o.AllowedProperties ?? [])
@@ -357,12 +371,14 @@ public static class SourceObligations
     {
         IMethodSymbol method = call.TargetMethod;
         bool read = type == "Volatile" && name == "Read";
+        ITypeSymbol? referenceType = method.IsGenericMethod && method.TypeArguments.Length == 1
+            ? method.TypeArguments[0] : !read && method.ReturnType.SpecialType == SpecialType.System_Object
+                ? method.ReturnType : null;
         return method.Name == name && method.ContainingType.ToDisplayString() == "System.Threading." + type &&
-            !method.Locations.Any(l => l.IsInSource) && method.IsStatic && method.IsGenericMethod &&
-            method.TypeArguments.Length == 1 && method.TypeArguments[0].IsReferenceType &&
+            !method.Locations.Any(l => l.IsInSource) && method.IsStatic && referenceType?.IsReferenceType == true &&
             method.Parameters.Length == (read ? 1 : 3) &&
-            method.Parameters.All(p => SymbolEqualityComparer.Default.Equals(p.Type, method.TypeArguments[0])) &&
-            SymbolEqualityComparer.Default.Equals(method.ReturnType, method.TypeArguments[0]) &&
+            method.Parameters.All(p => SymbolEqualityComparer.Default.Equals(p.Type, referenceType)) &&
+            SymbolEqualityComparer.Default.Equals(method.ReturnType, referenceType) &&
             (read ? method.Parameters[0].RefKind is RefKind.Ref or RefKind.In or RefKind.RefReadOnlyParameter :
                 method.Parameters[0].RefKind == RefKind.Ref && method.Parameters.Skip(1).All(p => p.RefKind == RefKind.None));
     }

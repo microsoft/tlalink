@@ -6,10 +6,10 @@ EXTENDS Naturals
 (* --algorithm Lifecycle
 variables active = 0;
 begin
-(* @link {"bind":[{"id":"demo::Admit"}]} *)
+(* @link {"bind":[{"id":"demo::Admit","reason":"lock","source":{"symbol":"M:Demo.Open","syntax":"ExpressionStatement","tokens":"this.active++;"}}],"capture":[{"binding":"demo::Admit","actor":"1","operation":"1","point":"commit","classification":"transition","observe":["demo::active"]}]} *)
 Admit:
     active := active + 1;
-(* @link {"bind":[{"id":"demo::Release"}]} *)
+(* @link {"bind":[{"id":"demo::Release","reason":"lock","source":{"symbol":"M:Demo.Release","syntax":"ExpressionStatement","tokens":"this.active--;"}}],"capture":[{"binding":"demo::Release","actor":"1","operation":"1","point":"commit","classification":"transition","observe":["demo::active"]}]} *)
 Release:
     active := active - 1;
 end algorithm; *)
@@ -43,6 +43,6 @@ Termination == <>(pc = "Done")
 \* END TRANSLATION 
 
 
-(* @link {"bind":[{"id":"demo::active"}]} *)
+(* @link {"bind":[{"id":"demo::active","source":{"symbol":"F:Demo.active"}}],"capture":[{"binding":"demo::active","guard":"this.gate","type":"int"}]} *)
 ObservedActive == active
 ====================================================================

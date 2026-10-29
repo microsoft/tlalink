@@ -44,6 +44,69 @@ formal backends supporting the C# workflow.
 
 ## Architecture
 
+### Typed JSON contracts
+
+Owned fixed-shape documents and native bridge messages have named C# contracts.
+Execution may accumulate typed mutable state, but workflow and acceptance
+operate on concrete result contracts, not serialized property bags. A small
+discriminator reader selects a strict contract once at the process/document
+boundary. Structural decoding remains separate from native semantic checks,
+archived-byte consistency, current applicability and acceptance.
+
+Summaries use explicit result-family records and typed projections. Worklist
+grouping, omission counts and truncation happen before serialization; full
+receipts are not mutated. Inspection section selection uses serialization
+metadata on the existing typed inspection records, preserving selected nulls
+and omitting unselected fields without a second copy of the inspection schema.
+Unsupported summary types produce an explicit error.
+
+Dynamic names (paths, bindings, counters and observations) use typed
+dictionaries. Trace values have a constrained scalar contract, including exact
+wire spelling where existing correlation keys depend on it. Raw JSON is limited
+to JSON Schema transformation, truly variable native payloads and short-lived
+boundary dispatch/invalid-input diagnostics. A fixed upstream format is not
+dynamic merely because another process produced it. No compatibility schema,
+historical-evidence rewrite or change to backend claim boundaries is introduced
+by converting the implementation contracts.
+
+Oracle case inputs use a separate native-boundary scalar contract restricted to
+Int32 and Boolean, matching the supported C#/Dafny signatures. They are not trace
+identities or arbitrary JSON values; unsupported scalar kinds and numeric
+encodings fail explicitly rather than being coerced.
+
+### Reviewed method summaries
+
+TLA+ method summaries are stateless parameterized relations paired with one
+C# method through existing binding IDs. Explicit correspondence-scope metadata
+declares pure/atomic intent, selected source files, assumptions, limits,
+optional native preconditions and acyclic same-scope summary dependencies.
+Source resolution accepts selected concrete synchronous, nonvirtual methods
+and constructors; native resolution uses SANY, not expression parsing.
+Neither shape validation nor an abstraction label proves purity or linearizability.
+
+TLC/trace stages explicitly reference summaries. Preflight resolves their
+endpoints and requires their modules in the consumer's native import closure.
+Import presence does not prove that the authored caller actually invokes the
+relation correctly. Caller preconditions and the relation between abstract
+arguments/results and C# remain authored checking/review obligations.
+
+The existing append-only review decision carries human/agent origin and
+summary-support fingerprints. Accepted inspection recording resolves the
+summary and pins its source/compiler context, formal imports and tools.
+Changes make support stale independently of the caller's native result.
+Acceptance requires current support for the transitive declared dependencies;
+agent decisions cannot satisfy human-origin obligations. Reports retain this
+conditional basis, not a generic composed C# correctness claim.
+
+No helper PC/retry state is generated into caller models. Relations take
+explicit abstract state and outcomes; callers supply separate storage for
+independent instances and preserve unrelated state. Atomic summaries describe
+logical effects, not call duration, fairness, termination or hidden partial
+effects. Formal traces, safety results and inspection remain distinct evidence.
+Existing TLC result-store keys and reuse semantics are unchanged.
+
+### Source and native correspondence
+
 The [source correspondence vocabulary](docs/proposals/source-correspondence.md)
 defines qualified `bind`, optional `capture` and
 explicit `exclude` directives, including symbol-resolved logging omissions.
@@ -62,9 +125,47 @@ capture and exclusion records, not a bespoke token language or free-form JSON
 objects. Old `@tla` markers and version-2 directives are rejected. The neutral
 marker does not unify backend semantics; source resolution remains C#-specific.
 
+Maintained examples now place `bind.source` and capture metadata in formal
+comments, leaving C# unmodified. Source selectors reuse the preparation
+contract's Roslyn declaration IDs, syntax kinds, token matching and explicit
+occurrence counts; both commands use one resolver. `links list/check/set/remove`
+indexes native declarations through their authoritative frontend before
+validating or editing metadata. One ID cannot have competing C#/formal owners.
+The staged example migration does not rewrite consumer inputs or historical
+receipts. Archived formal-owned bindings reconstruct their source selectors
+using archived source and the explicitly recorded compiler reference bytes.
+
+`links inspect` is a read-only authoring view over the same native index and
+Roslyn selector/matching implementation. Native declaration spans delimit the
+displayed model text; C# excerpts mark the exact attachment and expose lexical
+control, exception and lock context. Observed state bindings resolve to their
+field declarations and declared guards. Optional explicit call sites reuse
+the symbol-query resolver, retaining declared dispatch and source locations,
+not inferred runtime targets or transitive effects. Condition evaluation is
+distinct from entering a branch; lexical context outside a nested function
+does not establish its invocation-time guards. Earlier guard clauses and
+implicit cleanup require further review; block/member excerpts aid that review.
+Unlinked declarations are not classified as model-only automatically. Compact
+output omits input fingerprints, not diagnostics, and endpoint filtering records
+omitted counts. Full JSON includes the checked pins. Text/Markdown/JSON are
+presentations of the same inspection, not new binding stores, acceptance
+receipts, instrumentation-readiness checks or automatic review decisions.
+Exact multi-binding/endpoint selections define inspection scope. Subsequent
+source member/file, native kind/status, capture-point and literal search
+filters refine the presentation; same-binding constraints prevent accidental
+cross-matches on multi-bound endpoints. Deterministic endpoint paging preserves
+complete endpoint groups and reports candidate/matching/returned totals.
+Whitelisted section projection removes code or metadata consistently from
+JSON and readable output without removing identities, diagnostics or omission
+information. A calls section requests the existing explicit-call resolver, not
+transitive body expansion. Filters/pages cannot hide validation failures or
+turn an empty selection into an adequacy claim; page-to-page inputs are not
+transactionally frozen.
+
 One schema-4 `correspondence-scope` names explicit language/input aliases and
-symbol-resolved routine omission rules. Each side owns an endpoint declared by
-the same unique `scope::name` ID. Native manifests select IDs and own their cases,
+symbol-resolved routine omission rules. Each connection has one unique
+`scope::name` ID, a compiler-resolved source attachment and a native attachment.
+Native manifests select IDs and own their cases,
 assumptions and checks; C# does not spell native declaration names.
 SANY/PlusCal, Dafny's resolved AST and P's authoritative frontend resolve native
 endpoints from authoritative declaration spans and their annotations. Several independent
@@ -104,7 +205,30 @@ Source inventories can select the exact compiler context from independently
 checked regression evidence, requiring selected current sources/references to
 match the observed bytes. This avoids reconstructing long command lines without
 loading MSBuild or claiming all recorded compiler sources were analyzed.
+The `symbols find/show/resolve` commands share that compiler-context loader
+without running inventory CFG/call analysis. They query Roslyn declarations
+directly, group partial locations by documentation ID and preserve ambiguity
+rather than guessing from line proximity or span length. Symbol queries ignore
+annotation payloads; annotation-aware commands retain their validation.
+They emit source identities, signatures, physical UTF-16 spans and input pins,
+not metadata-wide lookup, runtime dispatch or source/model correspondence.
+Focused `references/callers/callees/describe` actions reuse the same symbol
+resolution and compilation. They inspect explicit syntax/semantic targets in
+the selected sources, preserving candidate references, constructed generic
+targets, extension declaration identities and nested-function boundaries.
+Incoming call sites do not infer possible implementations or delegate targets.
+Metadata declaration IDs can select scoped uses without scanning metadata
+bodies. `describe` shares member-fact extraction with source inventory but
+omits CFG construction; ordinary queries do not build unrelated member CFGs.
+No persistent source cache, daemon, separate query language or new evidence
+acceptance claim is introduced.
 Inventories declare their exact selected source list, including memberless files.
+Source compiler profiles select C# 8 or C# 14 through one `language_version`
+field and the equivalent standalone `--language-version` option. The selected
+version is pinned and reused by archive readers and recorded-context inventories.
+It is a source syntax/resolution setting, not a .NET Framework API-compatibility
+claim. Tool-generated instrumentation/runtime hosts remain .NET 10/C# 14 and
+record their actual build context separately from the original source context.
 Method/constructor inventories also expose Roslyn's explicit control-flow blocks,
 reachable-block dominance and resolved invocation receiver/ref-argument facts.
 Nested function bodies are not merged into a parent's graph. This supports
@@ -116,6 +240,47 @@ require an authorized Boolean branch edge on every path to one reachable effect
 site, not merely a dominating gate block. Stable-storage checks account for every
 selected field use; exchange-gate and monotonic-Int32 checks recognize a narrow
 set of resolved framework intrinsics. No source-to-Dafny translation is involved.
+Stable storage supports both writable inline value-type gates without an
+initializer and readonly reference helpers with a direct fresh constructor
+initializer. The latter preserves reference identity, not helper purity:
+constructor replacement, factories, copies, aliases and unapproved calls or
+getters do not become accepted storage summaries.
+
+Reference-CAS effect authorization recognizes a synchronous method's direct CAS
+result local (including a predeclared uninitialized local), its immediate
+built-in nonnull old-value return guard, and the following direct effect call.
+An optional Volatile.Read fast path may return an already observed reference.
+That same non-ref local may receive the subsequent CAS result only when its
+initializer is an authoritative read of the selected instance field and its
+declaration has an immediate built-in nonnull early return. Intervening writes,
+ref aliases, other-field reads and stale-result guards do not satisfy that
+shape. The following dispatch may discard its return with `_ = ...`; this is
+still a direct call, not evidence of asynchronous completion.
+Candidates must be structurally nonnull, not merely nullable-annotated; unknown
+property/factory contracts remain incomplete. The one explicit property contract
+is the BCL `TaskCompletionSource<T>.Task` getter on an unchanged, non-ref local
+initialized directly by fresh construction. The constructed type, nonvirtual
+getter and returned `Task<T>` must match framework metadata from the compiler's
+core assembly or its type forwarders; source/shadow lookalikes do not qualify.
+Direct BCL constructor-option constants are permitted, and the same getter can
+appear in the final return. This explicitly trusts the BCL nonnull-task contract
+and selected framework references, not arbitrary property purity or metadata
+authentication. Factory receivers, reassignment and ref escapes stay incomplete.
+Resolved intrinsic signatures and
+the same CFG authorized-edge/reachability helpers check dispatch authorization.
+An async callee's completion, exception handling, task settlement and progress
+are outside this premise.
+
+Callback-effect checks are a separate wiring inventory: one direct invocation
+on the readonly helper receives the owner's private instance callback as its
+only method-group argument. The callback's first direct effect may sit in one
+top-level try/catch, with return statements after that effect. Other callback
+references, delegate escapes, direct callback bypasses and other direct selected
+effect invocations in the owner fail the scoped inventory. It neither summarizes
+handlers or indirect calls nor proves helper authority. Claims relying on CAS
+authorization, scoped cell writes and stable helper identity need their separate
+premises and correspondence review; their passes are not automatically composed
+into a C# correctness or at-most-once completion proof.
 These checks use the same explicit compiler scope and pins as integrated links.
 They reject known structural counterexamples and report unsupported exception
 regions, alias escapes and partial storage containers as incomplete. They do not

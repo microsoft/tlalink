@@ -9,7 +9,7 @@ public sealed record ApalacheAnalysis(int SchemaVersion, string Kind, string Nam
 public sealed record ApalacheQuery(string Id, string Mode, string Init, List<string> Properties, int Length);
 public sealed record ApalacheProcessResult(string Id, List<string> Arguments, int? ExitCode, bool TimedOut,
     double DurationSeconds = 0);
-public sealed class ApalachePacket
+public sealed class ApalachePacket : IAnalysisResult, IArtifactEvidence
 {
     public int SchemaVersion => Schema.Version;
     public string Kind => "apalache-result";

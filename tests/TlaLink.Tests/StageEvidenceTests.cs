@@ -7,18 +7,107 @@ public static class StageEvidenceTests
 {
     public static void RegisterCore(Action<string, Action> test, string root, string work)
     {
+        test("CSharp8 regressions retain their actual language and supply recorded source context", () =>
+        {
+            string directory = Directory.CreateDirectory(Path.Combine(work, "regression-csharp8")).FullName;
+            string original = Path.Combine(root, "examples", "Evidence", "src", "Increment");
+            foreach (string file in new[] { "Regression.csproj", "Increment.cs", "regression.json" })
+                File.Copy(Path.Combine(original, file), Path.Combine(directory, file));
+            string projectPath = Path.Combine(directory, "Regression.csproj");
+            System.Xml.Linq.XDocument project = System.Xml.Linq.XDocument.Load(projectPath);
+            project.Descendants("LangVersion").Single().Value = "8";
+            project.Save(projectPath);
+            string configPath = Path.Combine(directory, "regression.json");
+            CSharpRegressionAnalysis definition = ProjectInputs.Read<CSharpRegressionAnalysis>(configPath);
+            File.WriteAllText(configPath, JsonSerializer.Serialize(definition with {
+                Compiler = definition.Compiler with { LanguageVersion = "8" }
+            }, Files.Json));
+            File.WriteAllText(Path.Combine(directory, "Program.cs"), """
+                using System;
+                using System.Collections.Generic;
+                using System.IO;
+                using System.Linq;
+                using System.Reflection;
+                using System.Security.Cryptography;
+                using System.Text.Json;
+                internal static class Entry {
+                    public static int Main(string[] args) {
+                        using JsonDocument selection = JsonDocument.Parse(File.ReadAllText(args[1]));
+                        string[] tests = selection.RootElement.GetProperty("tests").EnumerateArray().Select(t => t.GetString()).ToArray();
+                        var results = new List<object>();
+                        foreach (string test in tests) {
+                            bool passed = test == "increment" ? Arithmetic.Increment(3) == 4 :
+                                test == "limit" ? Arithmetic.Increment(10) == 10 :
+                                throw new InvalidOperationException("Unknown test.");
+                            if (!passed) throw new InvalidOperationException("Arithmetic assertion failed.");
+                            results.Add(new { id = test, status = "passed", message = "" });
+                        }
+                        string binary = Assembly.GetEntryAssembly().Location;
+                        using var stream = new FileStream(args[0], FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                        JsonSerializer.Serialize(stream, new {
+                            schema_version = 4, kind = "regression-observations", complete = true, binary,
+                            binary_sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(binary))).ToLowerInvariant(),
+                            selection = tests, results
+                        });
+                        return 0;
+                    }
+                }
+                """);
+            string setup = Path.Combine(directory, "NuGet.Config");
+            File.WriteAllText(setup, "<configuration><packageSources><clear /></packageSources></configuration>");
+            ObservedExecution.RequireSuccess(ObservedExecution.Invoke(["restore", projectPath,
+                "--configfile", setup, "-p:NuGetAudit=false"], directory, 60, "restore"));
+            string output = Path.Combine(directory, "evidence");
+            var execution = TestCli.Run(["check-regression", "--config", configPath, "--output", output, "--timeout", "60"]);
+            if (execution.Code != 0) throw new InvalidOperationException(execution.Json);
+            string resultPath = Path.Combine(output, "result.json");
+            CoreTests.Equal(0, TestCli.Run(["read-regression", "--result", resultPath, "--current", "true"]).Code);
+            CoreTests.Equal(0, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source",
+                Path.Combine(directory, "Increment.cs"), "--regression-result", resultPath,
+                "--output", Path.Combine(directory, "inventory.json")]).Code);
+            SourceInventoryResult inventory = ProjectInputs.Read<SourceInventoryResult>(Path.Combine(directory, "inventory.json"));
+            CoreTests.Equal("8", inventory.Compiler.LanguageVersion);
+            var lookup = TestCli.Run(["symbols", "find", "--source", Path.Combine(directory, "Increment.cs"),
+                "--name", "Increment", "--regression-result", resultPath]);
+            if (lookup.Code != 0) throw new InvalidOperationException(lookup.Json);
+            SourceSymbolsResult symbols = JsonSerializer.Deserialize<SourceSymbolsResult>(lookup.Json, ProjectInputs.Json)!;
+            CoreTests.Equal("8", symbols.Compiler.LanguageVersion);
+            CoreTests.Equal("explicit", symbols.Compiler.FrameworkReferences);
+            CoreTests.Equal(resultPath, symbols.Compiler.RegressionResult);
+            CoreTests.Equal(1, symbols.MatchCount);
+            var described = TestCli.Run(["symbols", "describe", "--source", Path.Combine(directory, "Increment.cs"),
+                "--id", symbols.Symbols.Single().Id, "--regression-result", resultPath]);
+            if (described.Code != 0) throw new InvalidOperationException(described.Json);
+            SourceSymbolsResult member = JsonSerializer.Deserialize<SourceSymbolsResult>(described.Json, ProjectInputs.Json)!;
+            CoreTests.Equal("explicit", member.Compiler.FrameworkReferences);
+            CoreTests.True(member.Details!.Members!.Single().Facts.Flow == null);
+            CoreTests.Equal(2, TestCli.Run(["symbols", "find", "--source", Path.Combine(directory, "Increment.cs"),
+                "--name", "Increment", "--regression-result", resultPath, "--define", "OTHER"]).Code);
+            CoreTests.Equal(2, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source",
+                Path.Combine(directory, "Increment.cs"), "--regression-result", resultPath,
+                "--language-version", "14"]).Code);
+        });
         test("code-adjacent examples declare the implementation endpoints they ask humans to review", () =>
         {
             foreach (var example in new[] {
                 (Path: "Components", Source: Path.Combine("src", "Counter", "Counter.cs"),
+                    Formal: Path.Combine("src", "Counter", "verification", "Counter.tla"),
                     Ids: new[] { "counter::value", "counter::step" }),
                 (Path: "Evidence", Source: Path.Combine("src", "Increment", "Increment.cs"),
+                    Formal: Path.Combine("src", "Increment", "verification", "Increment.dfy"),
                     Ids: new[] { "increment-spec::increment" })
             })
             {
                 CSharpScope source = CSharpScope.Parse([Path.Combine(root, "examples", example.Path, example.Source)]);
                 CoreTests.True(source.Diagnostics.All(d => d.Severity != "error"));
-                CoreTests.True(source.Bindings.Select(b => b.BindingId).ToHashSet(StringComparer.Ordinal).SetEquals(example.Ids));
+                CoreTests.Equal(0, source.Bindings.Count);
+                string text = Files.Read(Path.Combine(root, "examples", example.Path, example.Formal));
+                var comments = Links.Comments(text, example.Formal.EndsWith(".tla", StringComparison.Ordinal) ? "tla" : "dafny");
+                List<BindAnnotation> bindings = comments.SelectMany(c => Markup.Parse(c.Content, c.Start, c.End))
+                    .Select(a => a.Declaration).OfType<BindAnnotation>().ToList();
+                CoreTests.True(bindings.Select(b => b.Id).ToHashSet(StringComparer.Ordinal).SetEquals(example.Ids));
+                foreach (BindAnnotation binding in bindings)
+                    CoreTests.True(SourcePreparation.CSharpTarget(source.Compilation, null, binding.Source!).Span.Length > 0);
             }
         });
         test("public project examples retain their approved configuration bytes after checkout", () =>
@@ -387,7 +476,7 @@ public static class StageEvidenceTests
             if (run.Code != 0) throw new InvalidOperationException(run.Json);
             CoreTests.Equal(0, TestCli.Run(["accept", "--project", projectPath, "--run", output]).Code);
             string resultPath = Path.Combine(output, "model", "result.json");
-            JsonElement result = ProjectInputs.Read<JsonElement>(resultPath);
+            TlcResult result = ProjectInputs.Read<TlcResult>(resultPath);
             CoreTests.Equal(0, TlcResources.ValidateEvidence(result, stage, Path.Combine(output, "model")).Count);
             CoreTests.True(TlcResources.ValidateEvidence(result, stage with { Resources = new(1, 512) }, Path.Combine(output, "model")).Count > 0);
             Save(projectPath, project with { Scenarios = [new("small", [stage with { Resources = new(1, 256) }])] });

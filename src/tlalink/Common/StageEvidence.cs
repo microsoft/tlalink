@@ -38,6 +38,15 @@ public static class StageEvidence
     {
         Dictionary<string, string> fingerprints = result.GetProperty("fingerprints").Deserialize<Dictionary<string, string>>(ProjectInputs.Json)!;
         Dictionary<string, string> artifacts = result.GetProperty("artifacts").Deserialize<Dictionary<string, string>>(ProjectInputs.Json)!;
+        return Validate(fingerprints, artifacts, directory, current);
+    }
+
+    public static List<Issue> Validate(IArtifactEvidence result, string directory, bool current) =>
+        Validate(result.Fingerprints, result.Artifacts, directory, current);
+
+    private static List<Issue> Validate(Dictionary<string, string> fingerprints, Dictionary<string, string> artifacts,
+        string directory, bool current)
+    {
         List<Issue> issues = [];
         if (fingerprints.Count == 0 || artifacts.Count == 0)
             issues.Add(new(ErrorCode.WorkflowProvenanceInconsistent, "Stage evidence requires input and artifact closures."));
@@ -77,26 +86,26 @@ public static class StageEvidence
             throw new InputException(ErrorCode.WorkflowProvenanceInconsistent, "Invalid evidence SHA256.");
     }
 
-    public static int Read(CliOptions options, string kind, Func<JsonElement, string, List<Issue>> validate)
+    public static int Read<T>(CliOptions options, string kind, Func<T, string, bool, List<Issue>> validate)
+        where T : IAnalysisResult, IArtifactEvidence
     {
         bool current = options.Get("current", "false") switch {
             "true" => true, "false" => false,
             _ => throw new InputException(ErrorCode.InvalidWorkflowInput, "--current must be true or false.")
         };
         string file = FilePaths.Full(options.Required("result")), directory = Path.GetDirectoryName(file)!;
-        JsonElement result = ProjectInputs.Read<JsonElement>(file);
-        Files.RequireSchema(result, kind);
+        T result = ProjectInputs.Read<T>(file);
+        if (result.SchemaVersion != Schema.Version || result.Kind != kind)
+            throw new InputException(ErrorCode.InvalidWorkflowInput, "Expected current " + kind + ".");
         List<Issue> issues = Validate(result, directory, current);
         if (!issues.Any(i => i.Is(ErrorCode.WorkflowProvenanceInconsistent)))
-            issues.AddRange(kind == "csharp-regression-result" ? CSharpRegression.Validate(result, directory, current) : validate(result, directory));
-        ProjectWorkflow.Render(new {
-            SchemaVersion = Schema.Version, Kind = "stage-evidence-inspection",
-            ArchiveStatus = issues.Any(i => i.Is(ErrorCode.WorkflowProvenanceInconsistent)) ? "inconsistent" : "consistent",
-            SemanticStatus = issues.Any(i => i.Is(ErrorCode.WorkflowStageInconsistent)) ? "inconsistent" : "consistent",
-            CurrentApplicability = !current ? "not-checked" : issues.Any(i => i.Is(ErrorCode.WorkflowEvidenceStale)) ? "stale" : "current",
-            RecordedStatus = result.GetProperty("status"), AcceptanceStatus = "not-evaluated", Diagnostics = issues,
-            Boundary = "Independent archive, native-result consistency and optional applicability checks; no re-execution, acceptance, authentication or C# refinement."
-        }, options);
+            issues.AddRange(validate(result, directory, current));
+        ProjectWorkflow.Render(new StageEvidenceInspection(Schema.Version, "stage-evidence-inspection",
+            issues.Any(i => i.Is(ErrorCode.WorkflowProvenanceInconsistent)) ? "inconsistent" : "consistent",
+            issues.Any(i => i.Is(ErrorCode.WorkflowStageInconsistent)) ? "inconsistent" : "consistent",
+            !current ? "not-checked" : issues.Any(i => i.Is(ErrorCode.WorkflowEvidenceStale)) ? "stale" : "current",
+            result.Status, "not-evaluated", issues,
+            "Independent archive, native-result consistency and optional applicability checks; no re-execution, acceptance, authentication or C# refinement."), options);
         return issues.Any(i => i.Severity == "error" && !i.Is(ErrorCode.WorkflowEvidenceStale)) ? 1 : issues.Count > 0 ? 2 : 0;
     }
 }

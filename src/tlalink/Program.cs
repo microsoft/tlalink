@@ -13,9 +13,11 @@ public static class Program
         try
         {
             options = new(args);
+            if (options.Command == "symbols") return SourceSymbols.Run(options);
             if (options.Command is "prepare-sources" or "check-prepared-sources") return SourcePreparation.Run(options);
             if (CliOptions.AnnotationCommands.Contains(options.Command, StringComparer.Ordinal))
                 Markup.RequireVersion(options.AnnotationVersion);
+            if (options.Command == "links") return Links.Run(options);
             if (options.Command == "inspect-source") return SourceInventory.Run(options);
             if (options.Command == "report") return EvidenceReport.Run(options);
             if (options.Command == "project-schema") return ProjectEditorSchema.Run(options);
@@ -30,7 +32,7 @@ public static class Program
                 return IntegratedReview.Run(options);
             if (options.Command == "execute")
             {
-                object receipt = Execution.Run(options.Required("manifest"), options.Required("project"), options.Required("trace"),
+                ExecutionReceipt receipt = Execution.Run(options.Required("manifest"), options.Required("project"), options.Required("trace"),
                     options.Required("output"), options.Timeout, options.Many("arg"));
                 Render(receipt, options);
                 return 0;
@@ -54,10 +56,9 @@ public static class Program
             if (options.Command == "inputs")
             {
                 bool ready = models.Diagnostics.All(d => d.Severity != "error" && !d.Is(ErrorCode.StaleTranslation, ErrorCode.ToolFailure));
-                Render(new { SchemaVersion = Schema.Version, Kind = "model-inputs", Command = "inputs", Status = ready ? "ready" : "incomplete",
-                    Fingerprints = models.Fingerprints, Diagnostics = models.Diagnostics,
-                    Invocation = new { Arguments = args, WorkingDirectory = Environment.CurrentDirectory,
-                        ToolAssembly = typeof(Program).Assembly.Location } }, options);
+                Render(new ModelInputsResult(Schema.Version, "model-inputs", "inputs", ready ? "ready" : "incomplete",
+                    models.Fingerprints, models.Diagnostics,
+                    new(args, Environment.CurrentDirectory, typeof(Program).Assembly.Location)), options);
                 return ready ? 0 : 2;
             }
             if (options.Command == "validate-trace")
@@ -72,16 +73,16 @@ public static class Program
                 if (models.Documents.Count != 1 || models.Diagnostics.Any(d => d.Severity == "error" || d.Is(ErrorCode.StaleTranslation, ErrorCode.ToolFailure)))
                     throw new InputException(ErrorCode.InvalidTrace, "Trace validation requires one successfully parsed, fresh root model.");
                 TlaDocument document = models.Documents.Single();
-                object validation = TraceValidation.Validate(options.Required("manifest"), options.Required("trace"),
+                TraceValidationResult validation = TraceValidation.Validate(options.Required("manifest"), options.Required("trace"),
                     options.Required("config"), document.Path, document.Module, document.Variables.ToList(),
                     models.Bindings, models.Fingerprints, jar, options.Required("output"), options.Timeout,
                     options.Get("init", "Init"), options.Get("next", "Next"), options.Required("execution"), TlcResources.FromCli(options));
                 Render(validation, options);
-                using JsonDocument result = JsonDocument.Parse(JsonSerializer.Serialize(validation, Files.Json));
-                return result.RootElement.GetProperty("status").GetString() switch { "conforms" => 0, "rejected" => 1, _ => 2 };
+                return validation.Status switch { "conforms" => 0, "rejected" => 1, _ => 2 };
             }
             CSharpScope source = CSharpScope.Parse(Files.Discover(options.Many("source"), ".cs"),
-                options.Many("reference"), options.Has("define") ? options.Many("define") : null);
+                options.Many("reference"), options.Has("define") ? options.Many("define") : null,
+                languageVersion: options.Get("language-version", CSharpLanguages.Default));
             source.ApplyCorrespondence(correspondence!);
             source.SelectedTargets = new(StringComparer.Ordinal) { alias! };
             models.BindSources(source, correspondence!, alias);
@@ -98,12 +99,8 @@ public static class Program
             or DecoderFallbackException or Win32Exception or TimeoutException or KeyNotFoundException or BadImageFormatException ||
             error is (InvalidOperationException or FormatException) && error.TargetSite?.DeclaringType?.Assembly == typeof(JsonDocument).Assembly)
         {
-            object failure = new
-            {
-                SchemaVersion = Schema.Version, Kind = "command-error", Status = "incomplete",
-                Diagnostics = new[] { new Issue(
-                    error is InputException { Code: { } code } ? code : ErrorCode.ToolFailure, error.Message) }
-            };
+            CommandFailure failure = new(Schema.Version, "command-error", options?.Command, "incomplete",
+                [new Issue(error is InputException { Code: { } code } ? code : ErrorCode.ToolFailure, error.Message)]);
             if (options == null) Console.WriteLine(JsonSerializer.Serialize(failure, Files.Json));
             else Render(failure, options);
             return 2;
@@ -124,18 +121,10 @@ public static class Program
 
     public static void Baseline(string path, Packet packet)
     {
-        using JsonDocument snapshot = JsonDocument.Parse(Files.Read(path));
-        JsonElement root = snapshot.RootElement;
-        if (!root.TryGetProperty("schema_version", out JsonElement schema) || schema.GetInt32() != Schema.Version ||
-            !root.TryGetProperty("kind", out JsonElement kind) || kind.GetString() != "source-review" ||
-            !root.TryGetProperty("fingerprints", out JsonElement previous) || previous.ValueKind != JsonValueKind.Object)
+        Packet previous = ProjectInputs.Read<Packet>(path);
+        if (previous.SchemaVersion != Schema.Version || previous.Kind != "source-review")
             throw new InputException(ErrorCode.ReviewInputChanged, "Baseline needs a current source-review fingerprint object; older schemas are not accepted.");
-        Dictionary<string, string> fingerprints = [];
-        foreach (JsonProperty property in previous.EnumerateObject())
-        {
-            if (property.Value.ValueKind != JsonValueKind.String || !fingerprints.TryAdd(property.Name, property.Value.GetString()!))
-                throw new InputException(ErrorCode.ReviewInputChanged, "Baseline fingerprints must be unique strings.");
-        }
+        Dictionary<string, string> fingerprints = previous.Fingerprints;
         if (fingerprints.Count == 0) throw new InputException(ErrorCode.ReviewInputChanged, "Baseline fingerprints are empty.");
         foreach (string key in fingerprints.Keys.Union(packet.Fingerprints.Keys).Order(StringComparer.Ordinal))
             if (fingerprints.GetValueOrDefault(key) != packet.Fingerprints.GetValueOrDefault(key))

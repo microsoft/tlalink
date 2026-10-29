@@ -1,0 +1,21 @@
+{
+  "schema_version": 4,
+  "kind": "acceptance-policy",
+  "project": "method-summaries",
+  "requirements": [
+    {
+      "id": "caller-a-safe",
+      "scenario": "callers",
+      "stage": "caller-a",
+      "expected": "passed",
+      "config_sha256": "CEADDEF23B822E5D3233A650E18A7874F08BECD5FEEE8B7CB319E1BCB20FC32F"
+    },
+    {
+      "id": "caller-b-safe",
+      "scenario": "callers",
+      "stage": "caller-b",
+      "expected": "passed",
+      "config_sha256": "CEADDEF23B822E5D3233A650E18A7874F08BECD5FEEE8B7CB319E1BCB20FC32F"
+    }
+  ]
+}

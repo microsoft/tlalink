@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Collections.Immutable;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
@@ -101,9 +102,30 @@ public static class DafnyConformance
             using System.Runtime.Loader;
             using System.Runtime.CompilerServices;
             internal static class TlaLinkConformance {
-              static readonly List<object> Results = new();
+              sealed class CaseComparison {
+                public string Binding { get; }
+                public string Id { get; }
+                public string[] Expected { get; }
+                public string[] Actual { get; }
+                public bool Matches { get; }
+                public CaseComparison(string binding, string id, string[] expected, string[] actual) {
+                  Binding = binding; Id = id; Expected = expected; Actual = actual;
+                  Matches = expected.SequenceEqual(actual);
+                }
+              }
+              sealed class OracleComparisons {
+                public int SchemaVersion => {{Schema.Version}};
+                public string Kind => "oracle-comparisons";
+                public string Binary { get; }
+                public string BinarySHA256 { get; }
+                public List<CaseComparison> Cases { get; }
+                public OracleComparisons(string binary, string binarySHA256, List<CaseComparison> cases) {
+                  Binary = binary; BinarySHA256 = binarySHA256; Cases = cases;
+                }
+              }
+              static readonly List<CaseComparison> Results = new List<CaseComparison>();
               static void Add(string binding, string id, string[] expected, string[] actual) {
-                Results.Add(new { binding, id, expected, actual, matches = expected.SequenceEqual(actual) });
+                Results.Add(new CaseComparison(binding, id, expected, actual));
               }
               static int Main() {
                 var references = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { {{runtimeReferences}} };
@@ -116,11 +138,11 @@ public static class DafnyConformance
                 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
                 {{calls}}
                 string binary = Assembly.GetExecutingAssembly().Location;
-                File.WriteAllText({{JsonSerializer.Serialize(comparisons)}}, JsonSerializer.Serialize(new {
-                  schema_version = {{Schema.Version}}, kind = "oracle-comparisons",
-                  binary, binary_sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(binary))).ToLowerInvariant(),
-                  cases = Results
-                }));
+                var result = new OracleComparisons(binary,
+                  Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(binary))).ToLowerInvariant(),
+                  Results);
+                File.WriteAllText({{JsonSerializer.Serialize(comparisons)}}, JsonSerializer.Serialize(result,
+                  new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower }));
                 return 0;
               }
             }
@@ -156,32 +178,29 @@ public static class DafnyConformance
         IntegratedInputs.CheckPins(packet.GeneratedFiles);
         if (execution.Status != "passed" || !File.Exists(comparisons))
             throw new InputException(ErrorCode.OracleExecutionFailed, "Conformance execution did not complete: " + execution.Log);
-        using JsonDocument result = JsonDocument.Parse(Files.Read(comparisons));
-        JsonElement root = result.RootElement;
-        if (root.GetProperty("schema_version").GetInt32() != Schema.Version ||
-            root.GetProperty("kind").GetString() != "oracle-comparisons")
-            throw new InputException(ErrorCode.OracleExecutionFailed, "Expected current oracle-comparisons format.");
-        if (root.GetProperty("binary").GetString() != binary || root.GetProperty("binary_sha256").GetString() != packet.GeneratedFiles[binary])
-            throw new InputException(ErrorCode.OracleExecutionFailed, "Conformance did not execute the pinned entry binary.");
-        List<CaseComparison> cases = JsonSerializer.Deserialize<List<CaseComparison>>(root.GetProperty("cases"), Files.Json)
+        OracleComparisons result = JsonSerializer.Deserialize<OracleComparisons>(Files.Read(comparisons), IntegratedInputs.Json)
             ?? throw new InputException(ErrorCode.OracleExecutionFailed, "Missing case results.");
+        if (result.SchemaVersion != Schema.Version || result.Kind != "oracle-comparisons")
+            throw new InputException(ErrorCode.OracleExecutionFailed, "Expected current oracle-comparisons format.");
+        if (result.Binary != binary || result.BinarySHA256 != packet.GeneratedFiles[binary])
+            throw new InputException(ErrorCode.OracleExecutionFailed, "Conformance did not execute the pinned entry binary.");
+        ImmutableArray<CaseComparison> cases = result.Cases;
         var expectedCases = manifest.Bindings.SelectMany(b => b.Cases.Select(c => (b.Id, c.Id))).ToList();
-        if (cases.Count != expectedCases.Count || cases.Select(c => (c.Binding, c.Id)).Distinct().Count() != cases.Count ||
+        if (cases.Length != expectedCases.Count || cases.Any(c => c == null || c.Expected == null || c.Actual == null) ||
+            cases.Select(c => (c.Binding, c.Id)).Distinct().Count() != cases.Length ||
             !cases.Select(c => (c.Binding, c.Id)).ToHashSet().SetEquals(expectedCases) ||
             cases.Any(c => c.Matches != c.Expected.SequenceEqual(c.Actual)))
             throw new InputException(ErrorCode.OracleExecutionFailed, "Missing, duplicate or inconsistent comparison results.");
         packet.ConformanceStatus = cases.All(c => c.Matches) ? "conforms" : "rejected";
         if (packet.ConformanceStatus == "rejected")
             packet.Diagnostics.Add(new(ErrorCode.OracleComparisonFailed, "Compiled C# adapter disagreed with the generated Dafny oracle; see " + comparisons));
-        packet.Execution = new {
-            CompileInputs = compiled, References = referencePaths.Values.ToDictionary(p => p, p => source.Fingerprints[p], FilePaths.Comparer),
-            CompilerContext = new { LanguageVersion = parse.LanguageVersion.ToString(), Defines = parse.PreprocessorSymbolNames,
-                Nullable = executable.Options.NullableContextOptions.ToString(), Framework = "net10.0", Compiler = typeof(CSharpCompilation).Assembly.Location },
-            Binary = binary, BinarySHA256 = packet.GeneratedFiles[binary], Cases = cases, TestedBindings = tested,
-            UntestedBindings = manifest.Bindings.Where(b => b.Cases.Count == 0).Select(b => b.Id).ToList(),
-            ComparisonSHA256 = Files.Hash(comparisons),
-            Boundary = "Explicit Roslyn compilation of supplied sources, generated oracle/runtime and harness. Adapters are trusted test code; outputs only, no automatic side-effect, exception, concurrency or C# refinement proof."
-        };
+        packet.Execution = new(compiled.ToImmutableDictionary(FilePaths.Comparer),
+            referencePaths.Values.ToImmutableDictionary(p => p, p => source.Fingerprints[p], FilePaths.Comparer),
+            new(parse.LanguageVersion.ToString(), [.. parse.PreprocessorSymbolNames],
+                executable.Options.NullableContextOptions.ToString(), "net10.0", typeof(CSharpCompilation).Assembly.Location),
+            binary, packet.GeneratedFiles[binary], cases, [.. tested],
+            [.. manifest.Bindings.Where(b => b.Cases.Count == 0).Select(b => b.Id)], Files.Hash(comparisons),
+            "Explicit Roslyn compilation of supplied sources, generated oracle/runtime and harness. Adapters are trusted test code; outputs only, no automatic side-effect, exception, concurrency or C# refinement proof.");
     }
 
     public static void CheckSignature(ISymbol symbol, DafnyDeclaration declaration)
@@ -202,11 +221,11 @@ public static class DafnyConformance
                 throw new InputException(ErrorCode.InvalidOracleInput, "Adapter int/bool parameter types or out modes do not match the resolved Dafny signature.");
     }
 
-    private static string Literal(JsonElement value, string type)
+    private static string Literal(OracleInputScalar value, string type)
     {
-        if (type == "bool" && value.ValueKind is JsonValueKind.True or JsonValueKind.False)
-            return value.GetBoolean() ? "true" : "false";
-        if (type == "int" && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out int number))
+        if (type == "bool" && value.Boolean is bool boolean)
+            return boolean ? "true" : "false";
+        if (type == "int" && value.Integer is int number)
             return number.ToString(CultureInfo.InvariantCulture);
         throw new InputException(ErrorCode.InvalidOracleInput, "Cases require correctly typed bool or signed 32-bit int inputs; no coercions.");
     }

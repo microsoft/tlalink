@@ -43,9 +43,7 @@ public static partial class EvidenceGarbageCollection
         string planPath = FilePaths.Full(options.Required("apply"));
         string output = FilePaths.Full(options.Required("output"));
         var read = new Scan(Path.GetDirectoryName(planPath)!);
-        JsonElement json = read.Read(planPath);
-        Files.RequireSchema(json, "gc-plan");
-        GcPlan saved = json.Deserialize<GcPlan>(ProjectInputs.Json)!;
+        GcPlan saved = read.Read<GcPlan>(planPath, "gc-plan");
         if (saved.Status != "ready" || !saved.ReadOnly || saved.DeletionAuthorized ||
             saved.GraceHours is < 0 or > 87600 || !FilePaths.IsNativeAbsolute(saved.Store) ||
             !FilePaths.IsNativeAbsolute(saved.Retention) || saved.Snapshot.Count == 0 ||

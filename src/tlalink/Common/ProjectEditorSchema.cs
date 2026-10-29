@@ -11,8 +11,7 @@ public static class ProjectEditorSchema
     {
         string output = FilePaths.Full(options.Required("output"));
         Files.WriteNew(output, Create());
-        ProjectWorkflow.Render(new { SchemaVersion = Schema.Version, Kind = "project-schema-result",
-            Status = "ready", Path = output }, options);
+        ProjectWorkflow.Render(new ProjectSchemaResult(Schema.Version, "project-schema-result", "ready", output), options);
         return 0;
     }
 
@@ -68,6 +67,8 @@ public static class ProjectEditorSchema
                 obj["$ref"] = prefix + value[1..];
             if (obj["properties"] is JsonObject properties)
             {
+                if (properties.ContainsKey("language_version") && properties.ContainsKey("target_framework"))
+                    properties["language_version"]!["enum"] = new JsonArray("8", "14");
                 if (properties.ContainsKey("language") && properties.ContainsKey("inputs") &&
                     properties.ContainsKey("required_bindings"))
                 {
@@ -101,6 +102,23 @@ public static class ProjectEditorSchema
                 {
                     timeout["minimum"] = 1;
                     timeout["maximum"] = 7200;
+                }
+                if (properties["method_summaries"] is JsonObject summaries)
+                    summaries["maxItems"] = 1000;
+                if (properties.ContainsKey("abstraction") && properties.ContainsKey("inspection"))
+                {
+                    properties["abstraction"]!["enum"] = new JsonArray("pure", "atomic");
+                    properties["sources"]!["minItems"] = 1;
+                    properties["sources"]!["maxItems"] = 1000;
+                    properties["sources"]!["uniqueItems"] = true;
+                    properties["limits"]!["minItems"] = 1;
+                    properties["depends_on"]!["uniqueItems"] = true;
+                }
+                if (properties.ContainsKey("scope") && properties.ContainsKey("bindings") && !properties.ContainsKey("kind"))
+                {
+                    properties["bindings"]!["minItems"] = 1;
+                    properties["bindings"]!["maxItems"] = 1000;
+                    properties["bindings"]!["uniqueItems"] = true;
                 }
                 if (properties.ContainsKey("timeout_seconds") && properties["kind"] is JsonObject kind)
                     kind["enum"] = new JsonArray(ProjectInputs.StageKinds.Select(k => (JsonNode?)JsonValue.Create(k)).ToArray());

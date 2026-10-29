@@ -6,7 +6,8 @@ public sealed record DafnyAnalysis(int SchemaVersion, string Kind, List<string> 
 public sealed record DafnyResult(int SchemaVersion, string Kind, string Status, string Claim, string Config,
     string ConfigSha256, string Dafny, string Directory, int TimeoutSeconds, List<string> Roots, string ProofStatus,
     string AuditStatus, List<DafnyDeclaration> Inventory, Dictionary<string, StageResult> Stages,
-    Dictionary<string, string> Fingerprints, Dictionary<string, string> Artifacts, List<Issue> Diagnostics, string Boundary);
+    Dictionary<string, string> Fingerprints, Dictionary<string, string> Artifacts, List<Issue> Diagnostics, string Boundary)
+    : IAnalysisResult, IArtifactEvidence;
 
 public static class DafnyAnalysisBackend
 {
@@ -28,7 +29,8 @@ public static class DafnyAnalysisBackend
 
     public static int Run(CliOptions options)
     {
-        if (options.Command == "read-dafny") return StageEvidence.Read(options, "dafny-result", Validate);
+        if (options.Command == "read-dafny") return StageEvidence.Read<DafnyResult>(options, "dafny-result",
+            (result, directory, _) => Validate(result, directory));
         string config = FilePaths.Full(options.Required("config")), executable = FilePaths.Full(options.Required("dafny"));
         string output = FilePaths.Full(options.Required("output"));
         if (File.Exists(output) || System.IO.Directory.Exists(output))
@@ -77,12 +79,13 @@ public static class DafnyAnalysisBackend
         List<Issue> diagnostics = [];
         foreach (string line in log.Split('\n').Where(l => !string.IsNullOrWhiteSpace(l)))
         {
-            using JsonDocument document = JsonDocument.Parse(line);
-            JsonElement item = document.RootElement;
-            if (item.GetProperty("type").GetString() == "diagnostic" &&
-                item.GetProperty("value").GetProperty("severity").GetInt32() == 1)
-                diagnostics.Add(new(ErrorCode.DafnyVerificationFailed,
-                    item.GetProperty("value").GetProperty("defaultFormatMessage").GetString()!));
+            DafnyNativeMessage? message = JsonSerializer.Deserialize<DafnyNativeMessage>(line, DafnyNativeJson.Options);
+            if (message is DafnyNativeDiagnostic { Value.Severity: 1 } diagnostic)
+            {
+                if (!diagnostic.Value.HasDefaultFormatMessage || diagnostic.Value.DefaultFormatMessage == null)
+                    throw new InputException(ErrorCode.WorkflowStageInconsistent, "Native Dafny error diagnostic is missing its message.");
+                diagnostics.Add(new(ErrorCode.DafnyVerificationFailed, diagnostic.Value.DefaultFormatMessage));
+            }
         }
         return diagnostics;
     }
@@ -91,6 +94,13 @@ public static class DafnyAnalysisBackend
     {
         Files.RequireSchema(document, "dafny-result");
         DafnyResult result = document.Deserialize<DafnyResult>(ProjectInputs.Json)!;
+        return Validate(result, directory);
+    }
+
+    public static List<Issue> Validate(DafnyResult result, string directory)
+    {
+        if (result.SchemaVersion != Schema.Version || result.Kind != "dafny-result")
+            throw new InputException(ErrorCode.WorkflowStageInconsistent, "Expected current dafny-result.");
         result = result with { Fingerprints = StageEvidence.PathPins(result.Fingerprints) };
         List<Issue> issues = [];
         void Error(string text) => issues.Add(new(ErrorCode.WorkflowStageInconsistent, text));
@@ -122,18 +132,19 @@ public static class DafnyAnalysisBackend
                 Error("Dafny process status contradicts its exit code.");
             _ = FileFor(stage.Value.Log);
             if (stage.Key == "dafny-bridge") continue;
-            JsonElement invocation = ProjectInputs.Read<JsonElement>(FileFor(stage.Key + ".invocation.json"));
-            Files.RequireSchema(invocation, "process-invocation");
-            if (invocation.GetProperty("timeout_seconds").GetInt32() != result.TimeoutSeconds ||
-                invocation.GetProperty("working_directory").GetString() != result.Directory)
+            NativeProcessInvocation invocation = ProjectInputs.Read<NativeProcessInvocation>(FileFor(stage.Key + ".invocation.json"));
+            if (invocation.SchemaVersion != Schema.Version || invocation.Kind != "process-invocation")
+                throw new InputException(ErrorCode.WorkflowStageInconsistent, "Expected current process-invocation.");
+            if (invocation.TimeoutSeconds != result.TimeoutSeconds ||
+                invocation.WorkingDirectory != result.Directory)
                 Error("Dafny stage invocation has a different deadline/directory.");
             string[]? expected = stage.Key switch {
                 "dafny-version" => ["--version"],
                 "dafny-discover" or "dafny-resolve" => [Path.Combine(result.Directory, "DafnyIndex.dll"),
                     Path.GetDirectoryName(result.Dafny)!, Path.Combine(result.Directory, stage.Key + ".json"), .. result.Roots],
                 _ => null };
-            if (expected != null && (!invocation.GetProperty("arguments").EnumerateArray().Select(a => a.GetString()).SequenceEqual(expected) ||
-                stage.Key == "dafny-version" && invocation.GetProperty("executable").GetString() != result.Dafny))
+            if (expected != null && (!invocation.Arguments.SequenceEqual(expected) ||
+                stage.Key == "dafny-version" && invocation.Executable != result.Dafny))
                 Error("Dafny version/frontend invocation differs from the selected distribution/roots.");
         }
         string proofStatus = "not-run", auditStatus = "not-run";
@@ -141,11 +152,11 @@ public static class DafnyAnalysisBackend
         {
             string log = Files.Read(FileFor(proof.Log));
             proofStatus = DafnyBackend.ClassifyVerification(proof, log);
-            JsonElement invocation = ProjectInputs.Read<JsonElement>(FileFor("dafny-verify.invocation.json"));
+            NativeProcessInvocation invocation = ProjectInputs.Read<NativeProcessInvocation>(FileFor("dafny-verify.invocation.json"));
             string[] expected = ["verify", .. result.Roots, "--verify-included-files", "--json-output", "--show-snippets=false",
                 "--verification-time-limit", result.TimeoutSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)];
-            if (invocation.GetProperty("executable").GetString() != result.Dafny ||
-                !invocation.GetProperty("arguments").EnumerateArray().Select(a => a.GetString()).SequenceEqual(expected))
+            if (invocation.Executable != result.Dafny ||
+                !invocation.Arguments.SequenceEqual(expected))
                 Error("Dafny verification invocation differs from the selected obligation.");
             if (proofStatus == "rejected" && !VerificationDiagnostics(log).SequenceEqual(result.Diagnostics.Where(d => d.Is(ErrorCode.DafnyVerificationFailed))))
                 Error("Dafny rejection diagnostics differ from the native verifier output.");
@@ -157,9 +168,9 @@ public static class DafnyAnalysisBackend
             DafnyIndexResult index = ProjectInputs.Read<DafnyIndexResult>(FileFor("dafny-resolve.json"));
             string[] expected = ["audit", .. index.Dependencies.Concat(result.Roots).Distinct(FilePaths.Comparer),
                 "--report-file", Path.Combine(result.Directory, "dafny-audit.txt"), "--report-format", "txt"];
-            JsonElement invocation = ProjectInputs.Read<JsonElement>(FileFor("dafny-audit.invocation.json"));
-            if (invocation.GetProperty("executable").GetString() != result.Dafny ||
-                !invocation.GetProperty("arguments").EnumerateArray().Select(a => a.GetString()).SequenceEqual(expected))
+            NativeProcessInvocation invocation = ProjectInputs.Read<NativeProcessInvocation>(FileFor("dafny-audit.invocation.json"));
+            if (invocation.Executable != result.Dafny ||
+                !invocation.Arguments.SequenceEqual(expected))
                 Error("Dafny assumption audit invocation differs from the resolved proof closure.");
         }
         string expectedStatus = proofStatus == "verified" && auditStatus == "passed" ? "passed" :

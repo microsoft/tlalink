@@ -2,6 +2,9 @@ using System.Text.Json;
 
 namespace TlaLink;
 
+public sealed record PEvidenceResult(int SchemaVersion, string Kind, string ArchiveStatus,
+    string CurrentApplicability, string Status, List<Issue> Diagnostics);
+
 public static class PEvidence
 {
     public static void Archive(string output, PPacket packet)
@@ -37,24 +40,34 @@ public static class PEvidence
         });
         bool consistent = issues.All(i => i.Severity != "error");
         bool stale = issues.Any(i => i.Is(ErrorCode.PEvidenceStale));
-        ProjectWorkflow.Render(new {
-            SchemaVersion = Schema.Version, Kind = "p-evidence",
-            ArchiveStatus = consistent ? "consistent" : "inconsistent",
-            CurrentApplicability = options.Get("current", "false") == "false" ? "not-checked" : stale ? "stale" : "current",
-            Status = !consistent ? "rejected" : stale ? "incomplete" : "passed", Diagnostics = issues
-        }, options);
+        ProjectWorkflow.Render(new PEvidenceResult(Schema.Version, "p-evidence",
+            consistent ? "consistent" : "inconsistent",
+            options.Get("current", "false") == "false" ? "not-checked" : stale ? "stale" : "current",
+            !consistent ? "rejected" : stale ? "incomplete" : "passed", issues), options);
         return !consistent ? 1 : stale ? 2 : 0;
     }
 
     public static List<Issue> Validate(JsonElement root, string output, bool current = false)
     {
+        try
+        {
+            Files.RequireSchema(root, "p-result");
+            PPacket packet = root.Deserialize<PPacket>(ProjectInputs.Json)
+                ?? throw new InputException(ErrorCode.InvalidPEvidence, "Missing P packet.");
+            return Validate(packet, output, current);
+        }
+        catch (Exception error) when (error is JsonException or InputException)
+        {
+            return [new(ErrorCode.InvalidPEvidence, error.Message)];
+        }
+    }
+
+    public static List<Issue> Validate(PPacket packet, string output, bool current = false)
+    {
         List<Issue> issues = [];
         void Error(string message) => issues.Add(new(ErrorCode.InvalidPEvidence, message));
         try
         {
-            Files.RequireSchema(root, "p-result");
-            PPacket packet = JsonSerializer.Deserialize<PPacket>(root.GetRawText(), ProjectInputs.Json)
-                ?? throw new InputException(ErrorCode.InvalidPEvidence, "Missing P packet.");
             if (!PInputs.Engines.Contains(packet.Engine, StringComparer.Ordinal) ||
                 packet.Command is not ("inspect-p" or "check-p") || packet.Fingerprints.Count == 0 || packet.Artifacts.Count == 0)
                 Error("Missing engine/command/provenance.");
@@ -82,12 +95,12 @@ public static class PEvidence
                 if (packet.ProvenanceStatus != "consistent" || packet.Diagnostics.Any(i => i.Severity == "error") && packet.Status != "rejected")
                     Error("Completed P evidence has inconsistent provenance or error diagnostics.");
                 if (packet.Inventory.Count == 0) Error("Completed evidence lacks native inventory.");
-                using JsonDocument index = JsonDocument.Parse(Files.Read(Safe(output, Path.Combine("frontend", "p-index.json"))));
-                Files.RequireSchema(index.RootElement, "p-source-index");
-                List<PDeclaration> inventory = JsonSerializer.Deserialize<List<PDeclaration>>(
-                    index.RootElement.GetProperty("declarations").GetRawText(), ProjectInputs.Json)!;
+                PFrontendIndex index = ProjectInputs.Read<PFrontendIndex>(Safe(output, Path.Combine("frontend", "p-index.json")));
+                if (index.SchemaVersion != Schema.Version || index.Kind != "p-source-index")
+                    throw new InputException(ErrorCode.InvalidPEvidence, "Expected current p-source-index.");
+                List<PDeclaration> inventory = index.Declarations;
                 if (!packet.Inventory.SequenceEqual(inventory) || packet.Inventory.Any(d => !packet.Fingerprints.ContainsKey(d.Path)) ||
-                    index.RootElement.GetProperty("profile").GetString() != (packet.Engine == "pverifier" ? "pverifier" : "pchecker"))
+                    index.Profile != (packet.Engine == "pverifier" ? "pverifier" : "pchecker"))
                     Error("P inventory differs from the authoritative frontend result or source pins.");
                 if (packet.Links.Select(l => l.Id).Distinct(StringComparer.Ordinal).Count() != packet.Links.Count ||
                     !packet.Links.Select(l => l.Id).Order().SequenceEqual(config.Bindings.Select(b => b.Id).Order()))
@@ -101,14 +114,14 @@ public static class PEvidence
                         throw new InputException(ErrorCode.InvalidPEvidence, "Changed archived correspondence input: " + file);
                     return Files.Read(copy);
                 }
-                Dictionary<string, ArchivedSourceBinding> inline = config.Bindings.Count == 0 ? [] :
-                    CorrespondenceEvidence.Bindings(config.Sources.Select(p => ProjectInputs.Resolve(packet.Config, p)),
-                        packet.Fingerprints, Recorded);
                 CorrespondenceConfiguration? scope = config.Bindings.Count == 0 ? null :
                     CorrespondenceEvidence.Scope(ProjectInputs.Resolve(packet.Config, config.Scope ??
                         throw new InputException(ErrorCode.InvalidPEvidence, "Missing correspondence scope.")), Recorded);
                 List<FormalLinkDeclaration> formal = config.Bindings.Count == 0 ? [] :
                     FormalCorrespondence.P(packet.Inventory, packet.Fingerprints, Recorded);
+                Dictionary<string, ArchivedSourceBinding> inline = config.Bindings.Count == 0 ? [] :
+                    CorrespondenceEvidence.Bindings(config.Sources.Select(p => ProjectInputs.Resolve(packet.Config, p)),
+                        packet.Fingerprints, Recorded, formal, hash => Safe(output, Path.Combine("inputs", hash)));
                 foreach (PSourceLink link in packet.Links)
                 {
                     if (!packet.Inventory.Contains(link.Specification) ||
@@ -127,13 +140,13 @@ public static class PEvidence
                     Error("Duplicate native process identities.");
                 foreach (PProcessResult process in packet.Processes)
                 {
-                    using JsonDocument invocation = JsonDocument.Parse(Files.Read(Safe(output, process.Label + ".invocation.json")));
-                    JsonElement native = invocation.RootElement;
-                    Files.RequireSchema(native, "process-invocation");
-                    if (native.GetProperty("executable").GetString() != process.Executable ||
-                        native.GetProperty("working_directory").GetString() != process.WorkingDirectory ||
-                        native.GetProperty("timeout_seconds").GetInt32() != packet.TimeoutSeconds ||
-                        !native.GetProperty("arguments").EnumerateArray().Select(a => a.GetString()).SequenceEqual(process.Arguments) ||
+                    PProcessInvocation native = ProjectInputs.Read<PProcessInvocation>(Safe(output, process.Label + ".invocation.json"));
+                    if (native.SchemaVersion != Schema.Version || native.Kind != "process-invocation")
+                        throw new InputException(ErrorCode.InvalidPEvidence, "Expected current process-invocation.");
+                    if (native.Executable != process.Executable ||
+                        native.WorkingDirectory != process.WorkingDirectory ||
+                        native.TimeoutSeconds != packet.TimeoutSeconds ||
+                        !native.Arguments.SequenceEqual(process.Arguments) ||
                         !packet.Fingerprints.ContainsKey(process.Executable))
                         Error("Native invocation differs from its receipt, deadline or tool pins.");
                 }

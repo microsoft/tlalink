@@ -39,8 +39,9 @@ public static class EvidenceReportTests
             string project = Path.Combine(work, "absent-report-project.json");
             string first = Path.Combine(work, "first-run"), second = Path.Combine(work, "second-run");
             string[] arguments = ["report", "--project", project, "--run", first, "--run", second, "--format", "summary"];
-            JsonObject summary = CommandSummary.Create(new { SchemaVersion = Schema.Version, Kind = "report-result" },
-                new CliOptions(arguments));
+            JsonObject summary = JsonNode.Parse(CommandSummary.Create(
+                new ReportResult(Schema.Version, "report-result", "generated", "current", "", 0, 0, 0, [], ""),
+                new CliOptions(arguments)).ToJsonString())!.AsObject();
             CoreTests.Equal(2, summary["runs"]!.AsArray().Count);
             CoreTests.Equal(first, summary["runs"]![0]!.GetValue<string>());
             CoreTests.Equal(second, summary["runs"]![1]!.GetValue<string>());

@@ -27,18 +27,18 @@ public sealed record InstrumentManifest(int SchemaVersion, string BindingId, Dic
     public int AnnotationVersion { get; init; } = Markup.Version;
 }
 public sealed record ModelBinding(string Model, Tag Tag, Endpoint Endpoint, int Arity);
+internal sealed record InstrumentationIdentity(Dictionary<string, string> Fingerprints, List<EventBinding> Events);
 
 public static class Instrumentation
 {
     public static InstrumentManifest ReadManifest(string path)
     {
-        using JsonDocument document = JsonDocument.Parse(Files.Read(path));
-        Files.RequireSchema(document.RootElement, "instrumentation-manifest");
-        InstrumentManifest manifest = document.RootElement.Deserialize<InstrumentManifest>(Files.Json)
-            ?? throw new InputException(ErrorCode.InvalidTrace, "Invalid binding manifest.");
+        InstrumentManifest manifest = ProjectInputs.Read<InstrumentManifest>(path);
+        if (manifest.SchemaVersion != Schema.Version || manifest.Kind != "instrumentation-manifest")
+            throw new InputException(ErrorCode.InvalidTrace, "Expected current instrumentation-manifest.");
         Markup.RequireVersion(manifest.AnnotationVersion);
         if (manifest.Events.Count == 0 ||
-            manifest.BindingId != Files.HashText(JsonSerializer.Serialize(new { manifest.Fingerprints, manifest.Events }, Files.Json)) ||
+            manifest.BindingId != Files.HashText(JsonSerializer.Serialize(new InstrumentationIdentity(manifest.Fingerprints, manifest.Events), Files.Json)) ||
             manifest.Events.Select(e => (e.Model, e.Step)).Distinct().Count() != manifest.Events.Count)
             throw new InputException(ErrorCode.InvalidTrace, "Binding manifest identity or event uniqueness is invalid.");
         foreach (EventBinding binding in manifest.Events)
@@ -114,8 +114,13 @@ public static class Instrumentation
                 point == "fault" && !usingCapture && (binding.Node is not ExpressionStatementSyntax ||
                     binding.Node.DescendantNodes().Any(n => n is DeclarationExpressionSyntax) || binding.Locks.Count != 0))
                 throw new InputException(ErrorCode.InvalidInstrumentation, "Capture requires expression statements, ordinary local declarations, or invoke-only return/throw/switch statements in a block/switch section; using declarations are not completion points.");
-            if (binding.Node.DescendantNodes().Any(n => n is AnonymousFunctionExpressionSyntax))
-                throw new InputException(ErrorCode.InvalidInstrumentation, "Nested lambda capture is unsupported.");
+            List<AnonymousFunctionExpressionSyntax> lambdas = binding.Node.DescendantNodes()
+                .OfType<AnonymousFunctionExpressionSyntax>().ToList();
+            if (lambdas.Count != 0 && (binding.Node is not ExpressionStatementSyntax { Expression: AwaitExpressionSyntax } ||
+                scope.Bindings.Any(other => other.Capture != null && FilePaths.Comparer.Equals(other.Path, binding.Path) &&
+                    lambdas.Any(lambda => lambda.Span.Contains(other.Node.Span)))))
+                throw new InputException(ErrorCode.InvalidInstrumentation,
+                    "Only an outer await statement may contain delegate arguments, without nested capture sites.");
             string actor = RequiredIdentity(binding, "actor");
             string operation = tag.Options.GetValueOrDefault("operation") == "$call"
                 ? InvocationIdentity(binding) : RequiredIdentity(binding, "operation");
@@ -204,7 +209,7 @@ public static class Instrumentation
         }
         if (events.Select(e => (e.Model, e.Step)).Distinct().Count() != events.Count)
             throw new InputException(ErrorCode.InvalidInstrumentation, "Observable step IDs must be unique; use distinct invocation/completion bindings.");
-        string bindingId = Files.HashText(JsonSerializer.Serialize(new { packet.Fingerprints, Events = events }, Files.Json));
+        string bindingId = Files.HashText(JsonSerializer.Serialize(new InstrumentationIdentity(packet.Fingerprints, events), Files.Json));
         Dictionary<(string Path, int Position), List<(int Start, string Text)>> closers = [];
         foreach (var group in captures.GroupBy(c => (c.Binding.Path, c.Binding.Node.SpanStart)))
         {
@@ -249,8 +254,11 @@ public static class Instrumentation
             throw new InputException(ErrorCode.InvalidInstrumentation, "Runtime/schema source basenames are reserved.");
         rewritten["TlaLink.TraceRuntime.cs"] = Files.Read(runtime);
         rewritten["TlaLink.Schema.cs"] = $"namespace TlaLink;\npublic static class Schema {{ public const int Version = {Schema.Version}; }}\n";
+        // The original sources passed their selected dialect; the appended tool runtime uses C# 14.
+        CSharpParseOptions generatedOptions = ((CSharpParseOptions)scope.Compilation.SyntaxTrees.First().Options)
+            .WithLanguageVersion(LanguageVersion.CSharp14);
         List<SyntaxTree> generatedTrees = rewritten.Select(p => CSharpSyntaxTree.ParseText(p.Value,
-            (CSharpParseOptions)scope.Compilation.SyntaxTrees.First().Options, p.Key)).Cast<SyntaxTree>().ToList();
+            generatedOptions, p.Key)).Cast<SyntaxTree>().ToList();
         var rewrittenCompilation = scope.Compilation.RemoveAllSyntaxTrees().AddSyntaxTrees(generatedTrees);
         var errors = rewrittenCompilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
         if (errors.Count != 0) throw new InputException(ErrorCode.InvalidInstrumentation, "Generated compilation rejected: " + string.Join("; ", errors.Take(8)));

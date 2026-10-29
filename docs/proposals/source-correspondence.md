@@ -1,9 +1,22 @@
 # Paired source correspondence vocabulary
 
-Annotation version 4 uses standard JSON inside native block comments. Each side
-declares its own endpoint with the same unique `scope::name` ID. The checker
-resolves both attachments independently and joins by ID, never by declaration
-spelling or a source-side native-symbol reference.
+Annotation version 4 uses standard JSON inside native block comments.
+Maintained examples put the unique `scope::name` ID and typed `source` selector
+on the formal declaration. Roslyn resolves the C# declaration/syntax and the
+native frontend resolves the formal attachment independently. C# remains
+unmodified; declaration spelling is not a pairing heuristic.
+
+Use [symbols and link maintenance](../../REFERENCE.md#maintaining-model-owned-links)
+to discover, inspect, validate and edit metadata. Selectors reuse the existing
+preparation contract rather than a new tokenizer or external binding catalogue.
+Competing owners of one ID are errors. The example-first migration leaves
+nonmigrated consumer inputs and historical receipts unchanged.
+
+Bulk migration uses the same native indexes and selector resolver, defaults to
+read-only planning and requires explicit apply. Typed exclusions can also be
+formal-owned through `exclude.source`; their alias scope, reason, input pins and
+effect checks remain intact. Migration is metadata movement, not correspondence
+approval or permission to revise independent requirements.
 
 JSON manifest schema 4 is independent of annotation grammar 4. Earlier
 annotation versions and source-side `target` properties are rejected.
@@ -12,8 +25,8 @@ annotation versions and source-side `target` properties are rejected.
 
 | Array | Responsibility |
 |---|---|
-| `bind` | Declare participation in a named correspondence, on either side |
-| `capture` | C# execution observation metadata for a supported adapter |
+| `bind` | Name a correspondence; formal-owned entries select C# through `source` |
+| `capture` | C# observation metadata alongside the formal-owned binding, for a supported adapter |
 | `exclude` | C# correspondence-scope disposition, not code removal |
 
 `BindAnnotation`, `CaptureAnnotation`, `ExcludeAnnotation` and resolved
@@ -27,14 +40,11 @@ identifies an explicitly declared formal scope; the second names the
 correspondence, not a C# or native symbol. IDs are ordinal case-sensitive and
 must never be normalized as filepaths.
 
-## Independently owned endpoints
+## Independently resolved endpoints
 
 C#:
 
 ```csharp
-/* @link {
-  "bind": [{"id":"lamp::enable","reason":"Assignment under the instance gate."}]
-} */
 enabled = true;
 ```
 
@@ -42,7 +52,8 @@ TLA+:
 
 ```tla
 (* @link {
-  "bind": [{"id":"lamp::enable"}]
+  "bind": [{"id":"lamp::enable","reason":"Assignment under the instance gate.",
+    "source":{"symbol":"M:Lamp.Enable","syntax":"ExpressionStatement","tokens":"enabled = true;"}}]
 } *)
 SwitchOn == enabled' = TRUE
 ```
@@ -79,7 +90,7 @@ attached. Moving or retargeting an endpoint remains an evidence/review change.
 One schema-4 `correspondence-scope` declares aliases, native languages and
 explicit input files. TLA+ scopes select one root and preserve import pinning;
 `required_bindings` can independently require named correspondences even when
-both source markers were accidentally removed. Native marked endpoints in a
+the formal marker was accidentally removed. Native marked endpoints in a
 selected TLA+ scope are checked in both directions. Unmarked helper operators
 do not require invented source links.
 
@@ -94,22 +105,24 @@ incomplete, not a reason to weaken the claim.
 
 ## Source execution metadata
 
-```csharp
-/* @link {
-  "bind": [{"id":"lamp::value"}],
+```tla
+(* @link {
+  "bind": [{"id":"lamp::value","source":{"symbol":"F:Lamp.enabled"}}],
   "capture": [{"binding":"lamp::value","guard":"gate","type":"bool"}]
-} */
-bool enabled;
+} *)
+ObservedEnabled == enabled
 ```
 
-```csharp
-/* @link {
-  "bind": [{"id":"lamp::change"}],
+```tla
+(* @link {
+  "bind": [{"id":"lamp::change","source":{
+    "symbol":"M:Lamp.Change(System.Boolean)","syntax":"ExpressionStatement",
+    "tokens":"enabled = requested;"}}],
   "capture": [{"binding":"lamp::change","point":"commit",
     "classification":"transition","actor":"actorId","operation":"$call",
     "arguments":["requested"],"observe":["lamp::value"]}]
-} */
-enabled = requested;
+} *)
+Change == enabled' = ~enabled
 ```
 
 Formal declarations with the same IDs own their native semantics. Source capture
@@ -131,6 +144,21 @@ Dafny retains explicit adapters, oracle cases and source premises. Ghost lemma
 links are review-only. Statement/expression bindings need an explicit adapter
 for oracle execution. P retains native exploration/induction/monitoring inputs
 and claims. Matching identities do not create a common native execution API.
+
+## Reviewed method summaries
+
+The same paired method/operator binding can identify a reviewed method summary;
+there is no fourth inline annotation array. Optional correspondence-scope
+`method_summaries` metadata declares explicit C# source files, pure/atomic
+intent, assumptions, limits, inspection identity and acyclic same-scope summary
+dependencies. The behavior remains a stateless parameterized TLA+ relation.
+
+Project TLC/trace stages explicitly select summary bindings and import their
+modules. Current source-pinned inspection supports substitution; it does not
+prove native argument/state mapping, purity, linearizability or caller
+preconditions. An agent-origin inspection is distinct from human approval.
+Source/model changes invalidate support independently of caller model results.
+See the [reference](../../REFERENCE.md#reviewed-method-summaries).
 
 ## Source exclusions and routine logging
 

@@ -10,7 +10,7 @@ public sealed record FormalTarget(string Id, string Language, List<string> Input
 public sealed record OmissionRule(string Id, List<string> Targets, List<string> Calls, string Reason,
     List<string> Assumptions);
 public sealed record CorrespondenceConfiguration(int SchemaVersion, string Kind, int AnnotationVersion,
-    List<FormalTarget> Targets, List<OmissionRule> Omissions);
+    List<FormalTarget> Targets, List<OmissionRule> Omissions, List<MethodSummary>? MethodSummaries = null);
 public sealed record SourceDisposition(string Id, string Target, string Status, string Reason, Place Location,
     List<string> Assumptions, List<Boundary> Boundaries);
 public sealed record OmissionRuleMatch(string Id, string Target, int MatchedSites);
@@ -27,7 +27,8 @@ public static class CorrespondenceInputs
         CorrespondenceConfiguration config = System.Text.Json.JsonSerializer.Deserialize<CorrespondenceConfiguration>(
             Files.ReadPinned(path, pins), ProjectInputs.Json)
             ?? throw new InputException(ErrorCode.InvalidAnnotation, "Empty correspondence scope.");
-        Files.RequireSchema(System.Text.Json.JsonSerializer.SerializeToElement(config, Files.Json), "correspondence-scope");
+        if (config.SchemaVersion != Schema.Version || config.Kind != "correspondence-scope")
+            throw new InputException(ErrorCode.InvalidAnnotation, "Expected current correspondence-scope.");
         Markup.RequireVersion(config.AnnotationVersion);
         if (config.Targets.Count is 0 or > 1000 || config.Omissions.Count > 1000 ||
             config.Targets.Any(t => t is null) || config.Omissions.Any(r => r is null))
@@ -72,7 +73,9 @@ public static class CorrespondenceInputs
                 rule.Targets.Any(t => !targets.Any(d => d.Id == t)))
                 throw new InputException(ErrorCode.InvalidAnnotation, "Omissions require exact method declaration IDs, explicit unique targets, a reason and boundary assumptions.");
         }
-        return config with { Targets = targets };
+        config = config with { Targets = targets };
+        MethodSummaries.Validate(config);
+        return config;
     }
 
     public static FormalTarget Target(CorrespondenceConfiguration config, string alias, string language) =>
@@ -82,7 +85,37 @@ public static class CorrespondenceInputs
 
 public sealed partial class CSharpScope
 {
+    internal void AttachFormal(FormalLinkDeclaration declaration)
+    {
+        foreach (ExcludeAnnotation exclusion in declaration.Exclusions ?? [])
+        {
+            if (exclusions.Any(e => e.Declaration.Id == exclusion.Id && e.Declaration.From.SequenceEqual(exclusion.From)))
+                continue;
+            SyntaxNode excluded = SourcePreparation.CSharpTarget(Compilation, null, exclusion.Source!);
+            string excludedPath = excluded.SyntaxTree.FilePath;
+            exclusions.Add(new(exclusion, excluded.SpanStart, excluded.Span.End, excluded,
+                Compilation.GetSemanticModel(excluded.SyntaxTree), excludedPath, Texts[excludedPath]));
+        }
+        List<SourceBinding> existing = Bindings.Where(b => b.BindingId == declaration.Binding.Id).ToList();
+        if (existing.Count > 0)
+        {
+            if (existing.Any(b => b.Declaration != declaration.Binding))
+                throw new InputException(ErrorCode.DuplicateBinding, "A connection has competing source/formal owners: " + declaration.Binding.Id);
+            return;
+        }
+        SyntaxNode node = SourcePreparation.CSharpTarget(Compilation, null, declaration.Binding.Source!);
+        string path = node.SyntaxTree.FilePath, text = Texts[path];
+        List<(LocatedAnnotation Annotation, SyntaxNode Node)> annotations = [
+            (new(declaration.Binding, node.SpanStart, node.Span.End), node)
+        ];
+        annotations.AddRange((declaration.Captures ?? []).Select(c =>
+            (new LocatedAnnotation(c, node.SpanStart, node.Span.End), node)));
+        AttachCorrespondence(annotations, Compilation.GetSemanticModel(node.SyntaxTree), path, text);
+    }
+
     private readonly List<SourceExclusion> exclusions = [];
+    private readonly HashSet<Issue> correspondenceDiagnostics = new(ReferenceEqualityComparer.Instance);
+    internal IReadOnlyList<SourceExclusion> Exclusions => exclusions;
     public List<SourceDisposition> Dispositions { get; } = [];
     public List<OmissionRuleMatch> OmissionMatches { get; } = [];
 
@@ -148,6 +181,11 @@ public sealed partial class CSharpScope
 
     public void ApplyCorrespondence(CorrespondenceConfiguration config)
     {
+        Diagnostics.RemoveAll(correspondenceDiagnostics.Contains);
+        correspondenceDiagnostics.Clear();
+        Dispositions.Clear();
+        OmissionMatches.Clear();
+        int initialDiagnostics = Diagnostics.Count;
         HashSet<string> aliases = config.Targets.Select(t => t.Id).ToHashSet(StringComparer.Ordinal);
         Dictionary<string, HashSet<ISymbol>> ruleMethods = new(StringComparer.Ordinal);
         foreach (SourceBinding binding in Bindings)
@@ -227,6 +265,7 @@ public sealed partial class CSharpScope
                     OmissionMatches.Add(new(rule.Id, alias,
                         Dispositions.Count(d => d.Id == rule.Id && d.Target == alias && d.Status == "rule-omitted")));
         }
+        foreach (Issue issue in Diagnostics.Skip(initialDiagnostics)) correspondenceDiagnostics.Add(issue);
     }
 
     private void CheckOmittedEffects(SyntaxNode node, SemanticModel semantics, string path, string text, string alias)

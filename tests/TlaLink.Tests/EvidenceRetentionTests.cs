@@ -14,9 +14,8 @@ public static class EvidenceRetentionTests
             string producer = f.Unit("producer");
             string kept = f.Unit("milestone", Path.Combine(producer, "stage", "result.json"));
             string spare = f.Unit("superseded");
-            Files.WriteNew(Path.Combine(spare, "acceptance.json"), new {
-                SchemaVersion = Schema.Version, Kind = "acceptance-result", Project = "synthetic", Reviews = Array.Empty<object>()
-            });
+            Files.WriteNew(Path.Combine(spare, "acceptance.json"),
+                AcceptanceSummaryTests.Packet(acceptance: "accepted") with { Project = "synthetic" });
             f.Old();
             f.Pins([new("store\\milestone\\run.json", "accepted milestone")]);
             var before = f.Snapshot();
@@ -119,10 +118,8 @@ public static class EvidenceRetentionTests
             string accepted = f.Unit("accepted");
             string relative = @"store\evidence\run.json";
             var review = f.Review(relative);
-            Files.WriteNew(Path.Combine(accepted, "receipt.json"), new {
-                SchemaVersion = Schema.Version, Kind = "acceptance-result", Project = "synthetic",
-                Reviews = new[] { new { Obligation = "review", Status = "stale", Decision = review } }
-            });
+            Files.WriteNew(Path.Combine(accepted, "receipt.json"),
+                AcceptanceSummaryTests.Packet(reviews: [new("review", "stale", review)]) with { Project = "synthetic" });
             f.Old();
             f.Pins([new(@"store\accepted", "retained receipt")]);
             GcPlan plan = f.Plan();

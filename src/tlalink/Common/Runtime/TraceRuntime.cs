@@ -14,11 +14,80 @@ using System.Threading;
 
 namespace TlaLink.Runtime;
 
+[JsonConverter(typeof(TraceScalarConverter))]
+public sealed record TraceScalar
+{
+    private TraceScalar(JsonValueKind kind, long integer, bool boolean, string? text, string? wire)
+        => (Kind, Integer, Boolean, Text, Wire) = (kind, integer, boolean, text, wire);
+
+    public JsonValueKind Kind { get; }
+    public long Integer { get; }
+    public bool Boolean { get; }
+    public string? Text { get; }
+    internal string? Wire { get; }
+    public bool IsIdentity => Kind is JsonValueKind.Number or JsonValueKind.String;
+
+    public static TraceScalar From(object value) => value switch
+    {
+        sbyte or byte or short or ushort or int or uint or long =>
+            new(JsonValueKind.Number, Convert.ToInt64(value, CultureInfo.InvariantCulture), false, null, null),
+        bool boolean => new(boolean ? JsonValueKind.True : JsonValueKind.False, 0, boolean, null, null),
+        string text => new(JsonValueKind.String, 0, false, text, null),
+        _ => throw new InvalidOperationException("Trace values must be non-null signed-64-bit-compatible integers, booleans or strings.")
+    };
+
+    internal static TraceScalar Read(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.Number when value.TryGetInt64(out long integer) =>
+            new(JsonValueKind.Number, integer, false, null, JsonSerializer.Serialize(value)),
+        JsonValueKind.True or JsonValueKind.False =>
+            new(value.ValueKind, 0, value.GetBoolean(), null, null),
+        JsonValueKind.String => new(JsonValueKind.String, 0, false, value.GetString()!, JsonSerializer.Serialize(value)),
+        _ => throw new JsonException("Only non-null signed-64-bit-compatible integers, booleans and strings are trace values.")
+    };
+}
+
+public sealed class TraceScalarConverter : JsonConverter<TraceScalar>
+{
+    public override bool HandleNull => true;
+
+    public override TraceScalar Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        using JsonDocument document = JsonDocument.ParseValue(ref reader);
+        return TraceScalar.Read(document.RootElement);
+    }
+
+    public override void Write(Utf8JsonWriter writer, TraceScalar value, JsonSerializerOptions options)
+    {
+        if (value is null) throw new JsonException("Trace scalars cannot be null.");
+        if (value.Wire is string wire) writer.WriteRawValue(wire);
+        else if (value.Kind == JsonValueKind.Number) writer.WriteNumberValue(value.Integer);
+        else if (value.Kind == JsonValueKind.String) writer.WriteStringValue(value.Text);
+        else writer.WriteBooleanValue(value.Boolean);
+    }
+}
+
+public sealed class TraceArgumentsConverter : JsonConverter<TraceScalar[]>
+{
+    public override bool HandleNull => true;
+
+    public override TraceScalar[] Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        => JsonSerializer.Deserialize<TraceScalar[]>(ref reader, options)
+            ?? throw new JsonException("Present action arguments cannot be null.");
+
+    public override void Write(Utf8JsonWriter writer, TraceScalar[] value, JsonSerializerOptions options)
+        => JsonSerializer.Serialize(writer, value, options);
+}
+
+public sealed record TraceEnvelope(int SchemaVersion, string Kind, string BindingId, bool Complete, int EventCount,
+    string Runtime, string OS, string Executable, Dictionary<string, string> Binaries, TraceEvent[] Events, string Boundary);
+
 public sealed record TraceEvent(long Sequence, string Model, string Step, string Point, string Classification,
-    object Connection, object Actor, object Operation, Dictionary<string, object> Observations, long? Guard,
+    TraceScalar Connection, TraceScalar Actor, TraceScalar Operation, Dictionary<string, TraceScalar> Observations, long? Guard,
     int Thread, long[] Causes, long[] Predecessors,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] object? Entity = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] object[]? Arguments = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TraceScalar? Entity = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(TraceArgumentsConverter))]
+    TraceScalar[]? Arguments = null);
 
 public sealed class TraceHandoff
 {
@@ -72,8 +141,7 @@ public static class TraceRuntime
     public static long EmitEntity(string bindingId, string model, string step, string point, string classification,
         object connection, object actor, object operation, object entity, object? guard, Dictionary<string, object> observations, params long[] causes)
     {
-        Validate(entity);
-        if (entity is bool) throw new InvalidOperationException("Trace entity identities require integers or strings.");
+        if (!TraceScalar.From(entity).IsIdentity) throw new InvalidOperationException("Trace entity identities require integers or strings.");
         return EmitCore(bindingId, model, step, point, classification, connection, actor, operation, entity, null, guard, observations, causes);
     }
 
@@ -83,8 +151,8 @@ public static class TraceRuntime
     {
         ArgumentNullException.ThrowIfNull(arguments);
         if (arguments.Length is < 1 or > 8) throw new InvalidOperationException("Action arguments require 1..8 scalar values.");
-        foreach (object value in arguments) Validate(value);
-        if (entity != null) { Validate(entity); if (entity is bool) throw new InvalidOperationException("Entity identities require integers or strings."); }
+        foreach (object value in arguments) _ = TraceScalar.From(value);
+        if (entity != null && !TraceScalar.From(entity).IsIdentity) throw new InvalidOperationException("Entity identities require integers or strings.");
         return EmitCore(bindingId, model, step, point, classification, connection, actor, operation, entity,
             arguments.ToArray(), guard, observations, causes);
     }
@@ -127,11 +195,15 @@ public static class TraceRuntime
         object connection, object actor, object operation, object? entity, object[]? arguments,
         object? guard, Dictionary<string, object> observations, long[] causes)
     {
-        Validate(connection); Validate(actor); Validate(operation);
-        if (connection is bool || actor is bool || operation is bool)
+        TraceScalar capturedConnection = TraceScalar.From(connection), capturedActor = TraceScalar.From(actor),
+            capturedOperation = TraceScalar.From(operation);
+        if (!capturedConnection.IsIdentity || !capturedActor.IsIdentity || !capturedOperation.IsIdentity)
             throw new InvalidOperationException("Trace identities require integers or strings, not booleans.");
-        foreach (object value in observations.Values) Validate(value);
-        string operationKey = "operation:" + JsonSerializer.Serialize(new object?[] { connection, actor, operation, entity });
+        Dictionary<string, TraceScalar> capturedObservations = observations.ToDictionary(pair => pair.Key, pair => TraceScalar.From(pair.Value));
+        TraceScalar? capturedEntity = entity is null ? null : TraceScalar.From(entity);
+        TraceScalar[]? capturedArguments = arguments?.Select(TraceScalar.From).ToArray();
+        string operationKey = "operation:" + JsonSerializer.Serialize(new object?[] {
+            capturedConnection, capturedActor, capturedOperation, capturedEntity });
         lock (Gate)
         {
             if (finished) throw new InvalidOperationException("Trace was already completed.");
@@ -157,8 +229,8 @@ public static class TraceRuntime
             Last[operationKey] = current;
             Last[threadKey] = current;
             if (guardKey is not null) Last[guardKey] = current;
-            Events.Enqueue(new(current, model, step, point, classification, connection, actor, operation,
-                new(observations), guardId, thread, explicitCauses.Order().ToArray(), predecessors.Order().ToArray(), entity, arguments));
+            Events.Enqueue(new(current, model, step, point, classification, capturedConnection, capturedActor, capturedOperation,
+                capturedObservations, guardId, thread, explicitCauses.Order().ToArray(), predecessors.Order().ToArray(), capturedEntity, capturedArguments));
             return current;
         }
     }
@@ -180,19 +252,9 @@ public static class TraceRuntime
             }
             JsonSerializerOptions json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
             using FileStream file = new(path, FileMode.CreateNew, FileAccess.Write);
-            JsonSerializer.Serialize(file, new
-            {
-                SchemaVersion = global::TlaLink.Schema.Version, Kind = "trace", BindingId = binding, Complete = true, EventCount = Events.Count,
-                Runtime = RuntimeInformation.FrameworkDescription, OS = RuntimeInformation.OSDescription,
-                Executable = executable, Binaries = binaries, Events = Events.ToArray(),
-                Boundary = "Loaded assembly hashes and runtime identity; not host authentication or a full OS dependency closure."
-            }, json);
+            JsonSerializer.Serialize(file, new TraceEnvelope(global::TlaLink.Schema.Version, "trace", binding, true, Events.Count,
+                RuntimeInformation.FrameworkDescription, RuntimeInformation.OSDescription, executable, binaries, Events.ToArray(),
+                "Loaded assembly hashes and runtime identity; not host authentication or a full OS dependency closure."), json);
         }
-    }
-
-    private static void Validate(object value)
-    {
-        if (value is not (sbyte or byte or short or ushort or int or uint or long or bool or string))
-            throw new InvalidOperationException("Trace values must be non-null signed-64-bit-compatible integers, booleans or strings.");
     }
 }

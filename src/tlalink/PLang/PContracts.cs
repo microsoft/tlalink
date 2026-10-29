@@ -33,8 +33,10 @@ public sealed record PSourceLink(string Id, Endpoint Implementation, PDeclaratio
 }
 public sealed record PProcessResult(string Label, string Executable, List<string> Arguments,
     string WorkingDirectory, string Stdout, string Stderr, int? ExitCode, bool TimedOut);
+public sealed record PProcessInvocation(int SchemaVersion, string Kind, string Executable,
+    List<string> Arguments, string WorkingDirectory, int TimeoutSeconds, string[] DependencyDirectories);
 
-public sealed class PPacket
+public sealed class PPacket : IAnalysisResult, IArtifactEvidence
 {
     public int SchemaVersion => Schema.Version;
     public string Kind => "p-result";

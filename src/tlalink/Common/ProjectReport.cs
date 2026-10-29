@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace TlaLink;
 
 public static class ProjectReport
@@ -57,7 +55,7 @@ public static class ProjectReport
             }
         }
         List<EvidenceReportNode> nodes = [];
-        List<(string File, JsonElement Report)> pending = [];
+        List<(string File, AcceptanceResult Report)> pending = [];
         List<string> gaps = ["Source dispositions and source/model correspondence are not inferred from project stages. No code inventory is manufactured."];
         for (int i = 0; i < runs.Count; i++)
         {
@@ -73,7 +71,8 @@ public static class ProjectReport
             AnalysisScenario scenario = project.Scenarios.SingleOrDefault(s => s.Id == run.Scenario)
                 ?? throw new InputException(ErrorCode.InvalidReportInput, "Run scenario is not declared by this project.");
             List<AnalysisRequirement> requirements = policy.Requirements.Where(r => r.Scenario == scenario.Id).ToList();
-            List<string> reviews = requirements.SelectMany(r => r.Reviews ?? []).Distinct(StringComparer.Ordinal).ToList();
+            List<string> reviews = requirements.SelectMany(r => r.Reviews ?? [])
+                .Concat(MethodSummaries.Inspections(path, project, scenario.Stages)).Distinct(StringComparer.Ordinal).ToList();
             foreach (string id in reviews)
                 foreach (string file in project.Obligations.Single(o => o.Id == id).Inputs)
                     Observe(ProjectInputs.Resolve(path, file));
@@ -87,10 +86,10 @@ public static class ProjectReport
                 foreach (string input in decision.Fingerprints.Keys) Observe(ProjectInputs.Resolve(path, input));
             }
             var evaluation = ProjectAcceptance.Evaluate(path, project, policy, runs[i]);
-            foreach (JsonElement review in evaluation.Report.GetProperty("reviews").EnumerateArray())
-                if (review.GetProperty("decision").ValueKind == JsonValueKind.Object)
-                    foreach (JsonProperty input in review.GetProperty("decision").GetProperty("fingerprints").EnumerateObject())
-                        Observe(ProjectInputs.Resolve(path, input.Name));
+            foreach (ReviewResult review in evaluation.Report.Reviews)
+                if (review.Decision is { } decision)
+                    foreach (string input in decision.Fingerprints.Keys)
+                        Observe(ProjectInputs.Resolve(path, input));
             List<string> finalReviews = Directory.Exists(reviewDirectory)
                 ? Directory.EnumerateFiles(reviewDirectory, "*.json", SearchOption.AllDirectories).Order(FilePaths.Comparer).ToList() : [];
             if (!reviewFiles.SequenceEqual(finalReviews, FilePaths.Comparer))
@@ -100,6 +99,18 @@ public static class ProjectReport
                 .ToDictionary(p => p.Id, p => p.ReportId, StringComparer.Ordinal);
             Dictionary<string, string> reviewIds = reviews.Select((id, n) => (Id: id, ReportId: prefix + ".review-" + (n + 1)))
                 .ToDictionary(p => p.Id, p => p.ReportId, StringComparer.Ordinal);
+            List<SelectedMethodSummary> summaries = MethodSummaries.Select(path, project, scenario.Stages);
+            Dictionary<string, string> summaryIds = summaries.Select((s, n) => (s.Summary.Binding, Id: prefix + ".summary-" + (n + 1)))
+                .ToDictionary(p => p.Binding, p => p.Id, StringComparer.Ordinal);
+            foreach (SelectedMethodSummary summary in summaries)
+            {
+                string status = evaluation.Report.Reviews.Single(r => r.Obligation == summary.Summary.Inspection).Status;
+                nodes.Add(new(summaryIds[summary.Summary.Binding], "code", summary.Summary.Binding,
+                    "Declared " + summary.Summary.Abstraction + " method abstraction; no machine-checked C# refinement.",
+                    status, "accepted", new[] { reviewIds[summary.Summary.Inspection] }
+                        .Concat(summary.Summary.DependsOn.Select(id => summaryIds[id])).ToList(),
+                    [runPath, evaluations[i]], summary.Summary.Assumptions, summary.Summary.Limits));
+            }
             foreach (AnalysisStage stage in scenario.Stages)
             {
                 WorkflowStageResult? recorded = run.Stages.FirstOrDefault(s => s.Id == stage.Id);
@@ -110,35 +121,39 @@ public static class ProjectReport
                     stage.Kind == "dafny-verify" ? "proof" : stage.Kind == "trace" ? "trace" : "check",
                     scenario.Id + ": " + stage.Id, "Recorded " + stage.Kind + " result; scope remains backend-specific.",
                     recorded?.Outcome ?? "incomplete", outcomes.Count == 1 ? outcomes[0] : null,
-                    stage.DependsOn.Select(id => stageIds[id]).ToList(), evidence, [], []));
+                    stage.DependsOn.Select(id => stageIds[id]).Concat(MethodSummaries.Select(path, project, [stage])
+                        .Select(s => summaryIds[s.Summary.Binding])).ToList(), evidence, [], []));
             }
             foreach (string id in reviews)
             {
                 ReviewObligation obligation = project.Obligations.Single(o => o.Id == id);
-                JsonElement review = evaluation.Report.GetProperty("reviews").EnumerateArray().Single(r => r.GetProperty("obligation").GetString() == id);
-                nodes.Add(new(reviewIds[id], "review", id, obligation.Claim, review.GetProperty("status").GetString()!,
-                    "accepted", [], [evaluations[i], path], obligation.Assumptions, []));
+                ReviewResult review = evaluation.Report.Reviews.Single(r => r.Obligation == id);
+                nodes.Add(new(reviewIds[id], "review", id, obligation.Claim, review.Status,
+                    "accepted", [], [evaluations[i], path], obligation.Assumptions,
+                    ["Review origin: " + obligation.Origin.ToString().ToLowerInvariant() + "; an assertion, not an authenticated identity or machine proof."]));
             }
             List<string> requirementIds = [];
             for (int n = 0; n < requirements.Count; n++)
             {
                 AnalysisRequirement requirement = requirements[n];
-                JsonElement disposition = evaluation.Report.GetProperty("requirements").EnumerateArray().Single(r => r.GetProperty("id").GetString() == requirement.Id);
+                RequirementResult disposition = evaluation.Report.Requirements.Single(r => r.Id == requirement.Id);
                 string id = prefix + ".requirement-" + (n + 1);
                 requirementIds.Add(id);
                 nodes.Add(new(id, "requirement", requirement.Id,
                     "Requires " + requirement.Expected + (requirement.Claim == null ? "" : " (" + requirement.Claim + ")"),
-                    disposition.GetProperty("status").GetString()!, "satisfied",
-                    new[] { stageIds[requirement.Stage] }.Concat((requirement.Reviews ?? []).Select(r => reviewIds[r])).ToList(),
+                    disposition.Status, "satisfied",
+                    new[] { stageIds[requirement.Stage] }.Concat((requirement.Reviews ?? [])
+                        .Concat(MethodSummaries.Inspections(path, project, [scenario.Stages.Single(s => s.Id == requirement.Stage)]))
+                        .Distinct(StringComparer.Ordinal).Select(r => reviewIds[r])).ToList(),
                     [evaluations[i], ProjectInputs.Resolve(path, project.Requirements)], [],
-                    disposition.GetProperty("missing").EnumerateArray().Select(m => m.GetString()!).ToList()));
+                    disposition.Missing));
             }
-            List<string> missing = evaluation.Report.GetProperty("diagnostics").EnumerateArray().Select(d => d.GetProperty("message").GetString()!).ToList();
+            List<string> missing = evaluation.Report.Diagnostics.Select(d => d.Message).ToList();
             nodes.Add(new(prefix, "milestone", scenario.Id,
-                "Independent acceptance of this explicit run. Archive: " + evaluation.Report.GetProperty("archive_status").GetString() +
-                "; current applicability: " + evaluation.Report.GetProperty("current_applicability").GetString() +
+                "Independent acceptance of this explicit run. Archive: " + evaluation.Report.ArchiveStatus +
+                "; current applicability: " + evaluation.Report.CurrentApplicability +
                 "; execution: " + run.ExecutionStatus + ".",
-                evaluation.Report.GetProperty("acceptance_status").GetString()!, "accepted", requirementIds,
+                evaluation.Report.AcceptanceStatus, "accepted", requirementIds,
                 [runPath, evaluations[i], path], [], missing));
         }
         foreach (var observed in snapshot)

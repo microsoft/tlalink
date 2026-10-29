@@ -116,10 +116,8 @@ public static class ObservedExecution
         string executable = ProjectWorkflow.Executable("dotnet");
         ProcessStartInfo start = new(executable) { RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = output };
         foreach (string argument in arguments) start.ArgumentList.Add(argument);
-        Files.WriteNew(Path.Combine(output, label + ".invocation.json"), new {
-            SchemaVersion = Schema.Version, Kind = "process-invocation", Executable = executable,
-            Arguments = arguments, WorkingDirectory = output, TimeoutSeconds = timeout
-        });
+        Files.WriteNew(Path.Combine(output, label + ".invocation.json"), new NativeProcessInvocation(
+            Schema.Version, "process-invocation", executable, arguments, output, timeout));
         using Process process = Process.Start(start) ?? throw new InputException(ErrorCode.InvalidExecution, "Could not start dotnet.");
         Task<string> stdout = process.StandardOutput.ReadToEndAsync(), stderr = process.StandardError.ReadToEndAsync();
         bool timedOut = !process.WaitForExit(checked(timeout * 1000));

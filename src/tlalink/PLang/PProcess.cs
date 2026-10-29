@@ -17,10 +17,8 @@ public static class PProcess
             .Distinct(FilePaths.Comparer).ToArray();
         if (folders.Length > 0)
             start.Environment["PATH"] = string.Join(Path.PathSeparator, folders) + Path.PathSeparator + start.Environment["PATH"];
-        Files.WriteNew(Path.Combine(output, label + ".invocation.json"), new {
-            SchemaVersion = Schema.Version, Kind = "process-invocation", Executable = executable,
-            Arguments = arguments, WorkingDirectory = output, TimeoutSeconds = timeout, DependencyDirectories = folders
-        });
+        Files.WriteNew(Path.Combine(output, label + ".invocation.json"), new PProcessInvocation(
+            Schema.Version, "process-invocation", executable, arguments, output, timeout, folders));
         using Process process = Process.Start(start) ?? throw new InputException(ErrorCode.PToolFailure, "Could not start " + executable);
         Task<string> stdout = process.StandardOutput.ReadToEndAsync(), stderr = process.StandardError.ReadToEndAsync();
         bool finished = process.WaitForExit(checked(timeout * 1000));

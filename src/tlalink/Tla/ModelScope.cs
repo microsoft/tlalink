@@ -43,6 +43,7 @@ public sealed class ModelScope
 
     public void BindSources(CSharpScope source, CorrespondenceConfiguration config, string? selected = null)
     {
+        int previous = source.Bindings.Count;
         foreach (FormalTarget target in config.Targets.Where(t => t.Language == "tla" && (selected == null || t.Id == selected)))
         {
             List<string> ids = Declarations.Where(d => Markup.Name(d.Binding.Id).Alias == target.Id).Select(d => d.Binding.Id)
@@ -52,6 +53,7 @@ public sealed class ModelScope
                 Bindings.Add(new(target.Id, pair.Implementation.Tag, pair.Specification.Endpoint, pair.Specification.Arity));
         }
         AddHidden(config, selected);
+        if (source.Bindings.Count != previous) source.ApplyCorrespondence(config);
     }
 
     public void BindManifest(InstrumentManifest manifest, CorrespondenceConfiguration config)

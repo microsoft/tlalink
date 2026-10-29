@@ -2,6 +2,12 @@ namespace TlaLink;
 
 public enum ErrorCode
 {
+    [DiagnosticInfo("SY001", IssueSeverity.Error)]
+    InvalidSymbolQuery,
+    [DiagnosticInfo("SY002", IssueSeverity.Error)]
+    SourceSymbolNotFound,
+    [DiagnosticInfo("SY003", IssueSeverity.Error)]
+    SourceSymbolAmbiguous,
     [DiagnosticInfo("SC003", IssueSeverity.Error)]
     MissingImplementationEndpoint,
     [DiagnosticInfo("SC001", IssueSeverity.Error)]

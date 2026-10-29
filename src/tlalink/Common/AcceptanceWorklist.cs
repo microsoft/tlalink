@@ -1,16 +1,11 @@
-using System.Text.Json;
-using System.Text.Json.Nodes;
-
 namespace TlaLink;
 
 internal sealed class AcceptanceWorklist
 {
-    private sealed record StageItem(string Id, string Kind, string ExecutionStatus, string? Outcome,
-        string Reason, int RequirementCount);
     private sealed record ReviewItem(string Id, string Status, HashSet<string> Stages, HashSet<string> Requirements);
     private sealed record RequirementItem(string Id, string Stage, List<string> Missing);
 
-    private readonly List<StageItem> stages;
+    private readonly List<IncompleteStageItem> stages;
     private readonly Dictionary<string, ReviewItem> reviews = new(StringComparer.Ordinal);
     private readonly List<RequirementItem> requirements = [];
     private readonly List<Issue> diagnostics;
@@ -48,65 +43,61 @@ internal sealed class AcceptanceWorklist
         if (missing.Count > 0) requirements.Add(new(requirement.Id, requirement.Stage, missing));
     }
 
-    internal void Apply(JsonObject summary)
+    internal AcceptanceSummary Apply(AcceptanceSummary summary)
     {
         const int itemLimit = 10, detailLimit = 3;
-        JsonArray groups = [];
-        JsonArray actions = [];
+        List<WorklistGroup> groups = [];
+        List<string> actions = [];
         int itemCount = 0;
         void Group<T>(string kind, string action, List<T> items)
         {
             if (items.Count == 0) return;
             itemCount += items.Count;
-            groups.Add(new JsonObject {
-                ["kind"] = kind, ["count"] = items.Count, ["next_action"] = action,
-                ["items"] = JsonSerializer.SerializeToNode(items.Take(itemLimit), Files.Json),
-                ["omitted"] = Math.Max(0, items.Count - itemLimit)
-            });
+            groups.Add(new WorklistGroup<T>(kind, items.Count, action, items.Take(itemLimit).ToList(),
+                Math.Max(0, items.Count - itemLimit)));
             actions.Add(action);
         }
         Group("incomplete_stages", "Inspect the recorded stage failure/logs and rerun the affected analysis with unchanged requirements.",
             stages.OrderBy(s => s.Id, StringComparer.Ordinal).ToList());
         Group("reviews", "Review the scoped claims and evidence, then record a reasoned decision; do not approve a review merely to clear acceptance.",
-            reviews.Values.OrderBy(r => r.Id, StringComparer.Ordinal).Select(r => new {
-                r.Id, r.Status, StageCount = r.Stages.Count, RequirementCount = r.Requirements.Count
-            }).ToList());
+            reviews.Values.OrderBy(r => r.Id, StringComparer.Ordinal).Select(r =>
+                new PendingReviewItem(r.Id, r.Status, r.Stages.Count, r.Requirements.Count)).ToList());
         Group("requirements", "Inspect the unmet evidence requirements; preserve approved configuration pins, expected outcomes and controls.",
-            requirements.OrderBy(r => r.Id, StringComparer.Ordinal).Select(r => new {
-                r.Id, r.Stage, Missing = r.Missing.Take(detailLimit).ToList(),
-                OmittedMissing = Math.Max(0, r.Missing.Count - detailLimit)
-            }).ToList());
+            requirements.OrderBy(r => r.Id, StringComparer.Ordinal).Select(r => new UnmetRequirementItem(
+                r.Id, r.Stage, r.Missing.Take(detailLimit).ToList(),
+                Math.Max(0, r.Missing.Count - detailLimit))).ToList());
         Group("diagnostics", "Inspect the remaining diagnostics and their examples; preserve their recorded severity and the separate acceptance verdict.",
             diagnostics.Where(i => !groupedDiagnostics.Contains(i)).GroupBy(i => (i.Code, i.Severity))
                 .OrderBy(g => g.Key.Severity == "error" ? 0 : 1).ThenBy(g => g.Key.Code, StringComparer.Ordinal)
-                .Select(g => new { g.Key.Code, g.Key.Severity, Count = g.Count(), Example = g.First() }).ToList());
-        summary["worklist"] = new JsonObject { ["item_count"] = itemCount, ["groups"] = groups };
-        summary["next_actions"] = actions;
-        summary["diagnostic_counts"] = JsonSerializer.SerializeToNode(diagnostics.GroupBy(i => i.Severity)
-            .OrderBy(g => g.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count()), Files.Json);
-        JsonObject counts = new(), omitted = new();
-        foreach (string field in new[] { "diagnostics", "requirements", "check_coverage", "review_status" })
+                .Select(g => new DiagnosticItem(g.Key.Code, g.Key.Severity, g.Count(), g.First())).ToList());
+        Dictionary<string, int> counts = new(StringComparer.Ordinal) {
+            ["diagnostics"] = summary.Diagnostics.Count, ["requirements"] = summary.Requirements.Count,
+            ["check_coverage"] = summary.CheckCoverage.Count, ["review_status"] = summary.ReviewStatus.Count
+        };
+        Dictionary<string, int>? Omitted(params (string Name, int Count)[] fields)
         {
-            if (summary[field] is not JsonArray rows) continue;
-            counts[field] = rows.Count;
-            omitted[field] = Math.Max(0, rows.Count - detailLimit);
-            if (field is "requirements" or "review_status")
-                summary[field + "_counts"] = JsonSerializer.SerializeToNode(rows.GroupBy(r => r!["status"]!.GetValue<string>())
-                    .OrderBy(g => g.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count()), Files.Json);
-            summary[field] = new JsonArray(rows.Take(detailLimit).Select(row => {
-                JsonObject copy = row!.DeepClone().AsObject();
-                JsonObject nestedOmitted = new();
-                foreach (string nested in new[] { "missing", "requirements", "gaps" })
-                    if (copy[nested] is JsonArray details && details.Count > detailLimit)
-                    {
-                        nestedOmitted[nested] = details.Count - detailLimit;
-                        copy[nested] = new JsonArray(details.Take(detailLimit).Select(d => d!.DeepClone()).ToArray());
-                    }
-                if (nestedOmitted.Count > 0) copy["omitted"] = nestedOmitted;
-                return (JsonNode)copy;
-            }).ToArray());
+            Dictionary<string, int> result = fields.Where(f => f.Count > detailLimit)
+                .ToDictionary(f => f.Name, f => f.Count - detailLimit, StringComparer.Ordinal);
+            return result.Count == 0 ? null : result;
         }
-        summary["counts"] = counts;
-        summary["omitted"] = omitted;
+        static Dictionary<string, int> StatusCounts(IEnumerable<string> statuses) => statuses
+            .GroupBy(s => s, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        return summary with {
+            Worklist = new(itemCount, groups), NextActions = actions,
+            DiagnosticCounts = StatusCounts(diagnostics.Select(d => d.Severity)),
+            RequirementsCounts = StatusCounts(summary.Requirements.Select(r => r.Status)),
+            ReviewStatusCounts = StatusCounts(summary.ReviewStatus.Select(r => r.Status)),
+            Counts = counts, Omitted = counts.ToDictionary(p => p.Key, p => Math.Max(0, p.Value - detailLimit), StringComparer.Ordinal),
+            Diagnostics = summary.Diagnostics.Take(detailLimit).ToList(),
+            Requirements = summary.Requirements.Take(detailLimit).Select(r => r with {
+                Missing = r.Missing.Take(detailLimit).ToList(), Omitted = Omitted(("missing", r.Missing.Count))
+            }).ToList(),
+            CheckCoverage = summary.CheckCoverage.Take(detailLimit).Select(c => c with {
+                Requirements = c.Requirements.Take(detailLimit).ToList(), Gaps = c.Gaps.Take(detailLimit).ToList(),
+                Omitted = Omitted(("requirements", c.Requirements.Count), ("gaps", c.Gaps.Count))
+            }).ToList(),
+            ReviewStatus = summary.ReviewStatus.Take(detailLimit).ToList()
+        };
     }
 }
