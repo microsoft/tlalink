@@ -25,6 +25,16 @@ switch to [link maintenance](../tlalink-maintain-links/SKILL.md) only for reques
 4. Use `links list` for the native binding inventory if IDs are unknown. Do not
    infer pairs from matching source/model names.
 
+Use the package's selected wrapper/distribution, not an unrelated executable
+from PATH or the workspace build. A package can pin a tool older than this
+skill: a usage error rejecting `links inspect` is a capability/setup gap, not
+an unresolved source/model attachment. Pause analysis and use its documented
+distribution-selection setup with user authorization; then repeat preflight.
+Never silently bypass the wrapper or switch formal engines. Updating the tool
+can make recorded compiler evidence or review support stale. Obtain fresh
+execution evidence where required, and keep reviews pending until separately
+revisited rather than renewing them merely to clear drift.
+
 ## Start narrow, then request the missing context
 
 This synthetic recipe runs from the repository root. Keep the common arguments
@@ -107,6 +117,12 @@ do not collapse those model actions as duplicate source locations.
 - Native delegations are shown as authored, not recursively interpreted.
   Explicit calls retain declared dispatch; implicit and transitive effects are
   outside the call list.
+- For a reviewed method summary, also read the selected scope's
+  `method_summaries` entry: its abstraction, precondition, assumptions, limits,
+  dependencies and inspection obligation are not established by the inline
+  relation/source excerpt. Follow competing writers and real caller storage.
+  Keep publication, action dispatch, settlement, cleanup and completion
+  distinct; a resolved whole-member attachment does not make the method atomic.
 
 ## Return a focused review
 

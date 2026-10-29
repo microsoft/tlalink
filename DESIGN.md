@@ -134,6 +134,10 @@ validating or editing metadata. One ID cannot have competing C#/formal owners.
 The staged example migration does not rewrite consumer inputs or historical
 receipts. Archived formal-owned bindings reconstruct their source selectors
 using archived source and the explicitly recorded compiler reference bytes.
+Reconstruction resolves only the binding IDs selected by the declaring native
+manifest, matching live pairing. Imported declarations remain pinned native
+dependencies, but their unselected source attachments do not enlarge the
+selected C# compilation. A missing selected attachment still fails.
 
 `links inspect` is a read-only authoring view over the same native index and
 Roslyn selector/matching implementation. Native declaration spans delimit the
@@ -245,6 +249,19 @@ initializer and readonly reference helpers with a direct fresh constructor
 initializer. The latter preserves reference identity, not helper purity:
 constructor replacement, factories, copies, aliases and unapproved calls or
 getters do not become accepted storage summaries.
+
+Async gate lifetime checks use one conservative structured C# rule: a normal
+direct acquisition is immediately followed by a top-level try whose finally
+contains only the matching release call on the same readonly fresh helper.
+The acquisition may be the last statement under an immediately preceding
+Monitor lock; normal lock exit is an explicit trusted premise. Compiler
+reachability rejects dead sites, while C# try/finally semantics cover implicit
+exceptions and faulted/canceled awaits without inventing exceptional CFG edges.
+The receipt identifies both calls, the protected region and explicit awaits.
+Unsupported alias/control-flow/task-transfer shapes remain incomplete.
+The result concerns release attempts on completing invocations, not the
+helper's implementation semantics, transitive callee effects, successful
+release, eventual drain or permission to destroy protected resources.
 
 Reference-CAS effect authorization recognizes a synchronous method's direct CAS
 result local (including a predeclared uninitialized local), its immediate

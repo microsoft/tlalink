@@ -223,6 +223,14 @@ public static class IntegratedEvidence
                     Error("Source obligations require a supported outcome, explanation and source evidence.");
                 if (premise.Status == "passed" && premise.Obligation.Kind is "guarded-effect" or "guarded-try-effect" && premise.Flow == null)
                     Error("Passed guarded effects require recorded source-flow facts.");
+                if (premise.Status == "passed" && premise.Obligation.Kind == "balanced-async-gate" &&
+                    (premise.Flow == null || premise.AsyncGate == null || premise.Evidence == null ||
+                     string.IsNullOrWhiteSpace(premise.AsyncGate.Boundary) ||
+                     !premise.Evidence.Contains(premise.AsyncGate.Acquisition) ||
+                     !premise.Evidence.Contains(premise.AsyncGate.Release) ||
+                     !premise.Evidence.Contains(premise.AsyncGate.ProtectedRegion) ||
+                     premise.AsyncGate.Awaits == null || premise.AsyncGate.Awaits.Any(p => !premise.Evidence.Contains(p))))
+                    Error("Passed async gate lifetimes require compiler-flow and acquisition/release/region evidence.");
             }
             sourceStatus = SourceObligations.Status(premises);
         }
@@ -267,7 +275,8 @@ public static class IntegratedEvidence
                     List<FormalLinkDeclaration> formal = FormalCorrespondence.Dafny(
                         result.Inventory.ToList(), recordedPins, Recorded);
                     Dictionary<string, ArchivedSourceBinding> inline = CorrespondenceEvidence.Bindings(
-                        policy.Sources.Select(p => ProjectInputs.Resolve(manifestPath, p)), recordedPins, Recorded, formal,
+                        policy.Sources.Select(p => ProjectInputs.Resolve(manifestPath, p)), policy.Bindings.Select(b => b.Id),
+                        recordedPins, Recorded, formal,
                         hash => Path.Combine(archiveDirectory, hash));
                     bool hasTla = result.Tla != null;
                     if (hasTla != (policy.TlaTargets.Count > 0) || hasTla &&

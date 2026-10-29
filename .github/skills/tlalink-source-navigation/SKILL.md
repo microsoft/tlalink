@@ -26,6 +26,12 @@ for requested connection edits use [link maintenance](../tlalink-maintain-links/
 4. Report missing context or compiler diagnostics. Do not turn incomplete
    resolution into plausible partial answers. Analysis must not provision tools.
 
+Use the package's selected wrapper/distribution. If it rejects a documented
+symbols action, treat that as a tool-capability/setup gap, not absence of the
+requested declaration. Pause for authorized documented setup; do not silently
+substitute a workspace build. After a tool change, obtain fresh applicable
+compiler evidence if the existing receipt fails validation.
+
 The following independently synthetic examples run from the repository root.
 Use document-relative inputs from the selected package, resolved to CLI paths
 against the caller's directory; do not assume the tool changes that directory.
@@ -34,7 +40,7 @@ against the caller's directory; do not assume the tool changes that directory.
 
 | Question | Query |
 |---|---|
-| What IDs correspond to this name? | `symbols find --name <name>`; inspect all overloads |
+| What IDs correspond to this exact name? | `symbols find --name <name>`; inspect all overloads |
 | What declaration does this exact ID identify? | `symbols show --id <emitted-ID>` |
 | What declaration contains this source position? | `symbols resolve --file <selected-file> --line <line> --column <column>` |
 | Where is this symbol used in selected sources? | `symbols references --id <emitted-ID>` |
@@ -58,6 +64,11 @@ only when the complete pinned result is needed. Symbol commands do not need
 - Copy returned declaration IDs. Do not synthesize overload/generic IDs.
   In PowerShell, single-quote IDs containing backticks or pass emitted IDs as
   variables. Renames and signature changes can change IDs.
+- `find --name` matches the exact ordinal, case-sensitive simple name; it is
+  not prefix, substring, wildcard or regex search. A miss for a name fragment
+  does not establish that the intended declaration is absent. If the name is
+  unknown, use `resolve` at a known declaration position or inspect the scoped
+  source inventory, then reuse the emitted ID.
 - `find` returns candidates, not an automatic choice. `resolve` identifies a
   containing declaration, not the symbol referenced at the cursor. Positions
   are physical one-based lines and UTF-16 columns; multiple sources require
