@@ -67,6 +67,20 @@ public static class AcceptanceSummaryTests
             CoreTests.True(summary.ToJsonString(Files.Json).Length < CommandSummary.Create(packet, options).ToJsonString(Files.Json).Length / 3);
             CoreTests.Equal(before, JsonSerializer.Serialize(packet, Files.Json));
         });
+        test("acceptance summaries bound next-step vectors without truncating full receipts", () =>
+        {
+            var f = Fixture(14, 14);
+            AcceptanceResult packet = Packet() with {
+                NextSteps = Enumerable.Range(0, 14).Select(i => new WorkflowNextStep("check-stage", "stage-" + i,
+                    "Synthetic isolated search advice.", ["check-stage", "--stage", "stage-" + i], work)).ToList()
+            };
+            JsonObject summary = Summary(packet, new CliOptions(["accept", "--format", "summary"]),
+                new(f.Run, f.Scenario, f.Policy, [], new(ReferenceEqualityComparer.Instance)));
+            CoreTests.Equal(10, summary["next_steps"]!.AsArray().Count);
+            CoreTests.Equal(14, summary["counts"]!["next_steps"]!.GetValue<int>());
+            CoreTests.Equal(4, summary["omitted"]!["next_steps"]!.GetValue<int>());
+            CoreTests.Equal(14, packet.NextSteps.Count);
+        });
         test("acceptance worklist bounds each group and keeps unclassified diagnostics visible", () =>
         {
             var f = Fixture(14, 14);

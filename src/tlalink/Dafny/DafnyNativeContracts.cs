@@ -21,6 +21,9 @@ internal sealed record DafnyNativeStatus(string? Value) : DafnyNativeMessage;
 internal sealed record DafnyNativeDiagnostic(DafnyNativeDiagnosticValue Value) : DafnyNativeMessage;
 internal sealed record DafnyNativeDiagnosticValue(int Severity, string? Source = null)
 {
+    public string? ErrorId { get; init; }
+    public DafnyProofLocation? Location { get; init; }
+    public List<DafnyNativeRelatedInformation>? RelatedInformation { get; init; }
     private string? defaultFormatMessage;
     public string? DefaultFormatMessage
     {
@@ -30,7 +33,10 @@ internal sealed record DafnyNativeDiagnosticValue(int Severity, string? Source =
             defaultFormatMessage = value;
             HasDefaultFormatMessage = true;
         }
+
     }
     [JsonIgnore]
     public bool HasDefaultFormatMessage { get; private init; }
 }
+
+internal sealed record DafnyNativeRelatedInformation(string? DefaultFormatMessage, DafnyProofLocation? Location);

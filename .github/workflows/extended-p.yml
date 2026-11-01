@@ -1,0 +1,176 @@
+name: Explicit extended-P native controls
+
+on:
+  workflow_dispatch:
+    inputs:
+      engines:
+        description: Explicit native engine selection (no fallback)
+        type: choice
+        options: [pex, psym, pobserve, pverifier, all]
+        default: pex
+      dependency_archive_url:
+        description: Reviewed HTTPS ZIP containing the complete selected dependency caches
+        type: string
+        required: true
+      dependency_archive_sha256:
+        description: Independently reviewed SHA256 of that ZIP (not a latest refresh)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  native-controls:
+    runs-on: windows-2025
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      SELECTED_ENGINES: ${{ inputs.engines }}
+      DEPENDENCY_URL: ${{ inputs.dependency_archive_url }}
+      DEPENDENCY_SHA256: ${{ inputs.dependency_archive_sha256 }}
+    steps:
+      - name: Check out selected source revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Read shared native prerequisite pins
+        id: toolchain
+        run: |
+          . .\scripts\Native-Toolchain.ps1
+          $pin = Get-TlaLinkNativeToolchain $PWD
+          "dotnet8=$($pin.dotnet.sdk8)" >> $env:GITHUB_OUTPUT
+          "p=$($pin.p.version)" >> $env:GITHUB_OUTPUT
+
+      - name: Provision explicit compiler prerequisites
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+          dotnet-version: ${{ steps.toolchain.outputs.dotnet8 }}
+
+      - name: Validate reviewed dependency archive
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\tests\Toolchain.Tests.ps1
+          if ($env:DEPENDENCY_SHA256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'A reviewed archive SHA256 is required.' }
+          $uri = [Uri]$env:DEPENDENCY_URL
+          if (!$uri.IsAbsoluteUri -or $uri.Scheme -ne 'https' -or $uri.UserInfo) { throw 'The reviewed dependency archive requires an HTTPS URL without credentials.' }
+          New-Item -ItemType Directory -Path .\Results\extended-p-ci | Out-Null
+          Invoke-WebRequest -Uri $uri -OutFile .\Results\extended-p-ci\dependencies.zip
+          if ((Get-FileHash .\Results\extended-p-ci\dependencies.zip).Hash -ne $env:DEPENDENCY_SHA256) { throw 'Dependency archive pin mismatch.' }
+
+      - name: Explicitly build selected extended-P closures
+        run: |
+          $engines = if ($env:SELECTED_ENGINES -eq 'all') { @('pex', 'psym', 'pobserve', 'pverifier') } else { @($env:SELECTED_ENGINES) }
+          & .\examples\Dispatcher\setup\Initialize-Native.ps1 -Engines $engines `
+            -Output .\.tools\extended-p-ci `
+            -DependencyArchive .\Results\extended-p-ci\dependencies.zip `
+            -DependencyArchiveSha256 $env:DEPENDENCY_SHA256
+
+      - name: Build TlaLink and collect fresh C# observations
+        run: |
+          dotnet build .\TlaLink.sln -c Release --configfile .\NuGet.Config --nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:SELECTED_ENGINES -in @('all', 'pobserve')) {
+            & .\TlaLink.ps1 check-regression --config .\examples\Dispatcher\src\observation-regression.json --output .\Results\extended-p-ci\observations
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Create independent requirements with pending human reviews
+        id: projects
+        run: |
+          $engines = if ($env:SELECTED_ENGINES -eq 'all') { @('pex', 'psym', 'pobserve', 'pverifier') } else { @($env:SELECTED_ENGINES) }
+          $arguments = @{
+            Engines = $engines; Setup = '.\.tools\extended-p-ci'
+            Output = '.\Results\extended-p-ci\projects'
+            PCompiler = '.\.tools\extended-p-ci\p-${{ steps.toolchain.outputs.p }}-compiler\p.dll'
+          }
+          if ($engines -contains 'pobserve') {
+            $arguments.Log = '.\Results\extended-p-ci\observations\dispatcher.log'
+            $arguments.RegressionResult = '.\Results\extended-p-ci\observations\result.json'
+          }
+          & .\examples\Dispatcher\setup\Initialize-NativeProjects.ps1 @arguments
+
+      - name: Run focused native translation controls with explicit pinned inputs
+        run: |
+          $env:TLALINK_P_COMPILER = (Resolve-Path '.\.tools\extended-p-ci\p-${{ steps.toolchain.outputs.p }}-compiler\p.dll').Path
+          $env:TLALINK_P_TRANSLATION_COMPILER = $env:TLALINK_P_COMPILER
+          $engines = if ($env:SELECTED_ENGINES -eq 'all') { @('pex', 'psym', 'pobserve', 'pverifier') } else { @($env:SELECTED_ENGINES) }
+          $variables = @{ pex = 'TLALINK_P_EX_CONFIG'; pobserve = 'TLALINK_P_OBSERVE_CONFIG'; pverifier = 'TLALINK_P_VERIFIER_CONFIG' }
+          foreach ($engine in $engines) {
+            if ($variables.ContainsKey($engine)) {
+              [Environment]::SetEnvironmentVariable($variables[$engine],
+                (Resolve-Path ".\Results\extended-p-ci\projects\$engine\healthy.json").Path)
+            }
+          }
+          dotnet .\tests\TlaLink.Tests\bin\Release\net10.0\TlaLink.Tests.dll . `
+            .\Results\extended-p-ci\translation-results.json --p 2>&1 |
+            Tee-Object -FilePath .\Results\extended-p-ci\translation-controls.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Execute healthy and defect controls without granting review
+        if: ${{ !cancelled() && steps.projects.outcome == 'success' }}
+        run: |
+          $engines = if ($env:SELECTED_ENGINES -eq 'all') { @('pex', 'psym', 'pobserve', 'pverifier') } else { @($env:SELECTED_ENGINES) }
+          $failed = $false
+          foreach ($engine in $engines) {
+            $project = ".\Results\extended-p-ci\projects\$engine\project.json"
+            & .\TlaLink.ps1 doctor --project $project --scenario dispatcher 2>&1 |
+              Tee-Object -FilePath ".\Results\extended-p-ci\$engine-doctor.log"
+            if ($LASTEXITCODE -ne 0) { $failed = $true; continue }
+            $run = ".\Results\extended-p-ci\runs\$engine"
+            & .\TlaLink.ps1 run --project $project --scenario dispatcher --output $run 2>&1 |
+              Tee-Object -FilePath ".\Results\extended-p-ci\$engine-run.log"
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+            if (Test-Path "$run\run.json") {
+              $receipt = Get-Content "$run\run.json" -Raw | ConvertFrom-Json
+              $requirements = (Get-Content ".\Results\extended-p-ci\projects\$engine\requirements.json" -Raw | ConvertFrom-Json).requirements
+              foreach ($requirement in $requirements) {
+                $stage = @($receipt.stages | Where-Object { $_.id -ceq $requirement.stage })
+                if ($stage.Count -ne 1 -or $stage[0].execution_status -cne 'completed' -or $stage[0].outcome -cne $requirement.expected) {
+                  Write-Error "Unmet native control $engine/$($requirement.stage)" -ErrorAction Continue
+                  $failed = $true
+                  continue
+                }
+                $native = Get-Content (Join-Path $run $stage[0].evidence) -Raw | ConvertFrom-Json
+                if ($native.claim -cne $requirement.claim -or
+                    ($requirement.diagnostic -and $stage[0].diagnostics -cnotcontains $requirement.diagnostic)) {
+                  Write-Error "Native claim/diagnostic mismatch $engine/$($requirement.stage)" -ErrorAction Continue
+                  $failed = $true
+                }
+              }
+            } else { $failed = $true }
+            & .\TlaLink.ps1 accept --project $project --run $run --format json 2>&1 |
+              Tee-Object -FilePath ".\Results\extended-p-ci\$engine-accept-pending.log"
+            if ($LASTEXITCODE -eq 0) { throw 'CI must not discharge the required human build/source review.' }
+            $acceptance = Get-Content ".\Results\extended-p-ci\$engine-accept-pending.log" -Raw | ConvertFrom-Json
+            if ($acceptance.archive_status -cne 'consistent' -or $acceptance.current_applicability -cne 'current') {
+              Write-Error "Archived-byte consistency/current applicability failed for $engine" -ErrorAction Continue
+              $failed = $true
+            }
+            if ($engine -eq 'pobserve') {
+              & .\TlaLink.ps1 check-p --config .\Results\extended-p-ci\projects\pobserve\parser-error.json `
+                --p .\.tools\extended-p-ci\p-3.1.0-compiler\p.dll `
+                --output .\Results\extended-p-ci\parser-error --timeout 240 2>&1 |
+                Tee-Object -FilePath .\Results\extended-p-ci\parser-error.log
+              if ($LASTEXITCODE -ne 2) { $failed = $true }
+            }
+          }
+          if ($failed) { throw 'Selected native controls were incomplete or failed. Evidence is retained; no engine was substituted and no review granted.' }
+
+      - name: Archive native evidence and selected build closure (pending review)
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: extended-p-pending-review-${{ inputs.engines }}
+          path: |
+            Results/extended-p-ci
+            .tools/extended-p-ci
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7

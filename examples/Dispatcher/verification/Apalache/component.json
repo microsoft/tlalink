@@ -1,0 +1,16 @@
+{
+  "schema_version": 4,
+  "kind": "project-component",
+  "id": "apalache",
+  "stages": [
+    {"id": "apalache-types", "kind": "apalache-typecheck", "timeout_seconds": 120, "config": "typecheck.json"},
+    {"id": "apalache-bounded", "kind": "apalache-check", "timeout_seconds": 120, "config": "bounded.json"},
+    {"id": "apalache-inductive", "kind": "apalache-inductive", "timeout_seconds": 120, "config": "inductive.json"},
+    {"id": "apalache-leak", "kind": "apalache-check", "timeout_seconds": 120, "config": "leaked-credit.json"},
+    {"id": "apalache-early", "kind": "apalache-check", "timeout_seconds": 120, "config": "early-release.json"},
+    {"id": "apalache-retry-reachable", "kind": "apalache-check", "timeout_seconds": 120, "config": "retry-reachable.json"}
+  ],
+  "check_obligations": [
+    {"id": "symbolic-dispatcher-safety", "kind": "safety", "scenario": "apalache", "requirements": ["apalache-bounded", "apalache-inductive"]}
+  ]
+}

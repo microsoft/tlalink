@@ -1,0 +1,10 @@
+{
+  "schema_version": 4,
+  "kind": "project-component",
+  "id": "dafny",
+  "stages": [
+    {"id": "dafny-links", "kind": "inspect", "timeout_seconds": 120, "bindings": "bindings.json"},
+    {"id": "dafny-history", "kind": "dafny-verify", "timeout_seconds": 120, "config": "proof.json"},
+    {"id": "dafny-leak", "kind": "dafny-verify", "timeout_seconds": 120, "config": "leaked-credit.json"}
+  ]
+}

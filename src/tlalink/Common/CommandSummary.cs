@@ -40,12 +40,18 @@ public static class CommandSummary
                 packet.Diagnostics.ToList(), packet.Boundaries.ToList()),
             ApalachePacket packet => new ApalacheSummary(packet.Status, packet.Claim, packet.Mode, packet.Directory,
                 packet.Processes.Select(p => new ProcessSummary(p.Id, p.ExitCode, p.TimedOut, p.DurationSeconds)).ToList(),
-                packet.Diagnostics, packet.Boundaries),
+                packet.Diagnostics, packet.Boundaries)
+                {
+                    PhaseTimings = packet.Processes.Where(p => p.PhaseTimings.Count > 0)
+                        .ToDictionary(p => p.Id, p => p.PhaseTimings, StringComparer.Ordinal)
+                },
             PPacket packet => new PAnalysisSummary(packet.Command, packet.Status, packet.Claim, packet.LinksStatus,
                 packet.ProvenanceStatus, packet.Processes.Select(p => new ProcessSummary(p.Label, p.ExitCode,
-                    p.TimedOut, null)).ToList(), packet.Diagnostics, packet.Boundaries),
+                    p.TimedOut, null)).ToList(), packet.Diagnostics, packet.Boundaries)
+                { ProofDiagnostics = packet.ProofDiagnostics, NativeMetrics = packet.NativeMetrics },
             DafnyResult native => new DafnySummary(native.Status, native.Claim, native.Directory, native.ProofStatus,
-                native.AuditStatus, native.Stages, native.Diagnostics, native.Boundary),
+                native.AuditStatus, native.Stages, native.Diagnostics, native.Boundary)
+                { ProofDiagnostics = native.ProofDiagnostics, ProofTimings = native.ProofTimings },
             CSharpRegressionResult regression => new RegressionSummary(regression.Status, regression.Claim,
                 regression.Directory, regression.Diagnostics, regression.Boundary),
             IntegratedEvidenceInspection inspection => new EvidenceInspectionSummary(inspection.Kind,
@@ -117,7 +123,7 @@ public static class CommandSummary
             result.Reviews.Select(r => new ReviewSummary(r.Obligation, r.Status, r.Decision?.Disposition,
                 r.Decision?.Reviewer, r.Decision?.Rationale, r.Decision?.RecordedAt, r.Decision?.Origin)).ToList(),
             result.NextActions, result.Boundary) { Run = result.Run, ChangedReviewInputs = result.ChangedReviewInputs,
-                PolicyReassessment = result.PolicyReassessment };
+                PolicyReassessment = result.PolicyReassessment, NextSteps = result.NextSteps };
         return worklist == null ? summary : worklist.Apply(summary);
     }
 

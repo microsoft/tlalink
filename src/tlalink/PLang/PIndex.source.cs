@@ -77,6 +77,15 @@ internal static class PIndex
         }).ToArray();
         Scope scope = Analyzer.AnalyzeCompilationUnit(config, trees);
         if (config.Diagnostics.HasErrors) throw new InvalidOperationException("Native P analysis reported errors.");
+        if (profile == "pverifier")
+        {
+            Function? caller = scope.Machines.SelectMany(machine => machine.Methods).Concat(scope.Functions)
+                .FirstOrDefault(function => function.Callees.Any());
+            if (caller != null)
+                throw new NotSupportedException("PVerifier runtime function calls are outside the supported profile: " +
+                    (caller.Owner == null ? "" : caller.Owner.Name + ".") + caller.Name +
+                    ". The pinned native generator can overwrite helper effects with caller-local state; inline effects or use declared pure expressions.");
+        }
         List<Declaration> declarations = Inventory(config, scope, paths, pathComparer);
         var json = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower, WriteIndented = true };
         using FileStream output = new(Path.GetFullPath(args[1]), FileMode.CreateNew, FileAccess.Write);

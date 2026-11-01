@@ -5,3 +5,11 @@ examples/Evidence/src/Increment/regression.json text eol=crlf
 examples/Evidence/src/Increment/verification/dafny.json text eol=crlf
 examples/Components/**/*.cfg -text
 examples/MethodSummaries/**/*.cfg text eol=crlf
+# Dispatcher campaign requirements pin CRLF configuration bytes.
+examples/Dispatcher/**/*.cfg text eol=crlf
+examples/Dispatcher/**/*.json text eol=crlf
+# Explicit setup pins the native generation patch bytes.
+# Patch context retains upstream whitespace; do not rewrite pinned patch bytes.
+examples/Dispatcher/setup/*.patch text eol=lf whitespace=-blank-at-eol
+# Preserve the authoritative PlusCal translator's generated body.
+examples/Dispatcher/verification/PlusCal/DispatcherAlgorithm.tla whitespace=-blank-at-eol

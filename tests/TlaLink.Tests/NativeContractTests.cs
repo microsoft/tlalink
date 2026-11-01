@@ -8,6 +8,80 @@ public static class NativeContractTests
 {
     public static void Register(Action<string, Action> test, string work)
     {
+        test("native P executable selection ignores same-stem documentation and libraries", () =>
+        {
+            foreach (string name in new[] { "java", "uclid" })
+            {
+                string filename = OperatingSystem.IsWindows() ? name + ".exe" : name;
+                ToolPin executable = new(Path.Combine(work, "bin", filename), new('0', 64));
+                ToolPin[] supporting = [
+                    new(Path.Combine(work, "legal", name + ".md"), new('1', 64)),
+                    new(Path.Combine(work, "lib", name + ".dll"), new('2', 64))
+                ];
+                CoreTests.Equal(executable, PInputs.RequiredExecutable([.. supporting, executable], name));
+                CoreTests.ThrowsAny<InputException>(() => PInputs.RequiredExecutable(supporting, name));
+                CoreTests.ThrowsAny<InputException>(() => PInputs.RequiredExecutable([
+                    executable, executable with { Path = Path.Combine(work, "other", filename) }
+                ], name));
+            }
+        });
+        test("native PObserve arguments use upstream option names and enum spellings", () =>
+        {
+            PObservation observation = new(new(Path.Combine(work, "runtime jar.jar"), new('0', 64)),
+                new(Path.Combine(work, "monitor jar.jar"), new('1', 64)), "DispatcherMonitor",
+                "dispatcher.sample.DispatcherParser", [Path.Combine(work, "serial log.txt")], "text", 17);
+            string output = Path.Combine(work, "observations");
+            CoreTests.True(PBackend.ObservationArguments(observation, output).SequenceEqual([
+                "-Xmx512m", "-jar", observation.RuntimeJar.Path, "--jars", observation.MonitorJar.Path,
+                "--spec", observation.Specification, "--parser", observation.Parser, "--logs", observation.Logs[0],
+                "--outputDir", output, "--inputkind", "TEXT", "--replaySize", "17"
+            ]));
+            List<string> json = PBackend.ObservationArguments(observation with { InputKind = "json", Replay = 1 }, output);
+            CoreTests.Equal("JSON", json[json.IndexOf("--inputkind") + 1]);
+            CoreTests.Equal("1", json[json.IndexOf("--replaySize") + 1]);
+            CoreTests.True(!json.Contains("--inputKind") && !json.Contains("--replay"));
+        });
+        test("PObserve reader rechecks approved arguments and runtime monitor log identities", () =>
+        {
+            string directory = Path.Combine(work, "observe-reader");
+            string javaName = OperatingSystem.IsWindows() ? "java.exe" : "java";
+            ToolPin java = new(Path.Combine(directory, javaName), new('0', 64));
+            PObservation observation = new(new(Path.Combine(directory, "runtime.jar"), new('1', 64)),
+                new(Path.Combine(directory, "monitor.jar"), new('2', 64)), "DispatcherMonitor",
+                "DispatcherParser", [Path.Combine(directory, "serial.log")], "text", 17);
+            PAnalysis config = new(Schema.Version, "p-analysis", "observe-reader", "pobserve",
+                [], [], [], [java], Observation: observation);
+            PPacket packet = new() {
+                Command = "check-p", Engine = "pobserve", Config = Path.Combine(directory, "analysis.json"),
+                ConfigSha256 = new('3', 64), TimeoutSeconds = 37
+            };
+            foreach (ToolPin pin in new[] { java, observation.RuntimeJar, observation.MonitorJar })
+                packet.Fingerprints.Add(pin.Path, pin.Sha256);
+            packet.Fingerprints.Add(observation.Logs[0], new('4', 64));
+            PProcessResult process = new("p-external", java.Path,
+                PBackend.ObservationArguments(observation, Path.Combine(directory, "observations")),
+                directory, "stdout.log", "stderr.log", 0, false);
+            List<string> errors = [];
+            PEvidence.ValidateObservationInvocation(config, packet, process, errors.Add);
+            CoreTests.Equal(0, errors.Count);
+            foreach (string option in new[] { "-jar", "--jars", "--spec", "--parser", "--logs", "--inputkind", "--replaySize" })
+            {
+                List<string> changed = [.. process.Arguments];
+                changed[changed.IndexOf(option) + 1] = "unapproved";
+                errors.Clear();
+                PEvidence.ValidateObservationInvocation(config, packet, process with { Arguments = changed }, errors.Add);
+                CoreTests.True(errors.Count > 0);
+            }
+            foreach (string path in new[] { java.Path, observation.RuntimeJar.Path, observation.MonitorJar.Path, observation.Logs[0] })
+            {
+                string hash = packet.Fingerprints[path];
+                packet.Fingerprints.Remove(path);
+                errors.Clear();
+                PEvidence.ValidateObservationInvocation(config, packet, process, errors.Add);
+                CoreTests.True(errors.Count > 0);
+                packet.Fingerprints.Add(path, hash);
+            }
+        });
         ApalachePacket packet = new()
         {
             Config = Path.Combine(work, "analysis.json"), ConfigSha256 = new('0', 64),
@@ -234,8 +308,10 @@ public static class NativeContractTests
                 is DafnyNativeDiagnostic { Value.HasDefaultFormatMessage: true, Value.DefaultFormatMessage: null });
             CoreTests.True(Read("""{"type":"diagnostic","value":{"severity":2}}""")
                 is DafnyNativeDiagnostic { Value.HasDefaultFormatMessage: false });
-            CoreTests.True(Read("""{"type":"diagnostic","value":{"severity":1,"source":"Verifier","defaultFormatMessage":"failure","relatedInformation":[{}]}}""")
+            CoreTests.True(Read("""{"type":"diagnostic","value":{"severity":1,"source":"Verifier","defaultFormatMessage":"failure","relatedInformation":[{"defaultFormatMessage":"related","location":null}]}}""")
                 is DafnyNativeDiagnostic { Value.DefaultFormatMessage: "failure" });
+            CoreTests.ThrowsAny<JsonException>(() => Read(
+                """{"type":"diagnostic","value":{"severity":1,"source":"Verifier","defaultFormatMessage":"failure","relatedInformation":[{}]}}"""));
         });
         test("native Dafny classifier keeps malformed message shapes and absent error messages incomplete", () =>
         {

@@ -1,0 +1,9 @@
+{
+  "schema_version": 4,
+  "kind": "project-component",
+  "id": "pluscal",
+  "stages": [
+    {"id": "pluscal-links", "kind": "inspect", "timeout_seconds": 120, "bindings": "bindings.json"},
+    {"id": "pluscal-safety", "kind": "tlc", "timeout_seconds": 120, "models": ["DispatcherAlgorithm.tla"], "config": "Safety.cfg"}
+  ]
+}

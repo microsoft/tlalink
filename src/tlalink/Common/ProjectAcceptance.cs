@@ -295,6 +295,7 @@ public static class ProjectAcceptance
             issues.Select(i => i.Message).Distinct().ToList(),
             "Acceptance of declared bounded evidence and explicit reviews, not general C# refinement or host authentication.")
             { ChangedReviewInputs = changedReviewInputs, PolicyReassessment = comparison.Report };
+        report = report with { NextSteps = WorkflowRerunGuidance.Create(path, project, scenario, run, report) };
         return (report,
             accepted ? 0 : issues.Any(i => i.Is(ErrorCode.WorkflowProjectChanged, ErrorCode.WorkflowExecutionIncomplete, ErrorCode.WorkflowEvidenceStale)) ? 2 : 1,
             worklist);

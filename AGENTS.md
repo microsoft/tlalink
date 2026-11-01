@@ -82,6 +82,35 @@ Skills do not install tools, approve correspondence or discharge human gates.
   require revisiting the affected decisions, not replaying unchanged execution.
   Keep execution applicability, changed review inputs and review status separate;
   never carry approval forward merely because native inputs remain current.
+- Read `accept`/`explain` `next_steps` before rerunning. They are read-only CLI
+  argument vectors with a working directory, not shell commands or a new
+  execution plan. Empty vectors require investigation/review. Current
+  review-only drift needs review then acceptance, not execution. Only eligible
+  incomplete TLC searches with a declared `result_store` suggest `check-stage`;
+  other execution advice selects the whole scenario and a new output.
+  Damaged archives and changed independent expectations block automatic
+  execution advice; never treat rerunning as a repair of historical evidence.
+- Use project `report` with explicit `--run` selections for campaign comparison.
+  Its stage matrix separates expected/observed controls, requirement status,
+  elapsed time, available native metrics, incomplete reasons, reviews and
+  archive/applicability/acceptance. Missing metrics are not zero, reused TLC
+  time is not a fresh search, and backend outcomes are not equivalent claims.
+- Extended-P provisioning is explicitly invoked through
+  [the setup commands](scripts/README.md), with a new output, exact native
+  source/tool pins and retained build closure. Start with `-Plan`; use
+  `-CheckPrerequisites` without installing during analysis. The manual native
+  CI lane and [translation controls](tests/TlaLink.Tests/Fixtures/PTranslation/README.md)
+  preserve separate property rejection, compilation failure and incomplete
+  parser/solver outcomes. Optional test selections that print `SKIP` are
+  uncovered, not successful controls. No setup/CI operation grants human review.
+- For proof investigation, use `proof_diagnostics` in native PVerifier/Dafny
+  summaries and their archived logs to localize failures/unknowns. Dafny
+  `proof_timings` measures native named verification efforts, not source-mapped
+  diagnostic time; Apalache `phase_timings` measures emitted timestamp
+  intervals, including reporting. Preserve omission counts and absent native
+  values. Mixed unknowns, frontend/parser errors and timeouts remain incomplete,
+  never successful rejection controls. Readers reconstruct these fields;
+  diagnostics do not replace source/model review or grant acceptance.
 - Keep the established caller path spelling during an evidence campaign.
   Host-equivalent paths can still produce different native cache keys or be
   embedded differently in generated compiler inputs and binaries. Diagnose that
@@ -267,12 +296,26 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   `TLALINK_APALACHE_JAR` overrides;
   `--core` runs without external backend tools. Provisioning is explicit;
   analysis commands must not install or upgrade tools.
+- Common build tools use one authoritative pin: `global.json` selects the exact
+  SDK without roll-forward; `java-toolchain.json` selects the shared JDK;
+  `native-toolchain.json` selects remaining native prerequisites and documents
+  narrowly justified exceptions. CI, native setup and project initialization
+  consume these pins, not floating or independently duplicated versions.
+  `scripts\DotNet-Toolchain.ps1` discovers an already installed exact SDK;
+  `TlaLink.ps1` selects it for children without installing or changing the
+  shared product-tree SDK. After an SDK switch, regenerate incompatible
+  restore assets rather than substituting another SDK. Test bootstrap behavior
+  with `tests\Toolchain.Tests.ps1`. Changing a pin requires fresh applicable
+  evidence, not rewritten receipts, requirements or carried-forward review.
 - Java selection uses the single `java-toolchain.json` version pin: Temurin JDK 25
   with explicit Windows/Linux x64 distributions, provisioned with
   `scripts\Initialize-Java.ps1` under PowerShell 7.
   SANY/PlusCal, TLC, Apalache and their tests use `JavaToolchain`, never PATH or
   `JAVA_HOME`. `TLALINK_JAVA_HOME` may relocate only the same pinned JDK.
-  Keep native P manifests' explicitly selected Java dependencies independent.
+  Maintained native P profiles share that JDK where compatible. Keep any
+  backend-specific Java exception explicit in `native-toolchain.json`, with
+  measured incompatibility and a reason; native manifests still select and
+  pin their actual Java dependency independently.
   Setup verifies the distribution archive; selection checks the pinned release
   and launcher bytes. This is not authentication or full installed-file attestation.
 - Supply narrow sources/references/defines explicitly. Roslyn is not a product
@@ -313,7 +356,7 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   and bounds; do not update those pins merely to clear an acceptance failure.
   Pinned fixture inputs must declare any required checkout line endings in
   `.gitattributes`, so host defaults cannot change their approved bytes.
-  Workflow, evidence-stage and Apalache examples pin CRLF configuration bytes; preserve those
+  Workflow, evidence-stage, Apalache and Dispatcher examples pin CRLF configuration bytes; preserve those
   bytes on either host rather than changing requirements after checkout.
 
 ## Maintenance safeguards
@@ -429,6 +472,15 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   output, partial exploration, missing tools and deadlines are incomplete.
   Pin complete local tool distributions and explicitly selected dependencies;
   never install or upgrade tools while executing an analysis.
+- PVerifier procedural helper calls remain unsupported: its pinned generator
+  can overwrite callee field/message effects with caller-local state. Use
+  inline handlers and declared pure expressions, and test non-vacuity rather
+  than trusting a native pass. Select native dependency executables by exact
+  platform filename, not the stem of supporting DLLs or documentation.
+- External P sample builds use explicitly pinned Maven/runtime versions and
+  generation-only compiler copies outside maintained sources; do not invoke
+  upstream latest-version update goals. Keep compiler deltas, generated Java,
+  runtime closure and build recipes in the required build/source review.
 - When multiple standards or representations are possible, choose one and
   document the choice and rationale here before introducing new usage. Apply
   it consistently to maintained code, schemas, examples and tests. Do not add

@@ -1,0 +1,10 @@
+🎉 Verified 2 invariants!
+✅ CreditConservation
+✅ default P proof obligations
+❓ Remaining Goals:
+- TerminalCredit at synthetic.p:12:4
+- default P proof obligations
+❌ Failed to verify 2 properties!
+❌ Failed to verify invariant TerminalCredit at synthetic.p:15:2
+❓ assert(credit == 0) at synthetic.p:18:6 failed
+Compilation succeeded.

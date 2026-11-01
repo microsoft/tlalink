@@ -1,0 +1,13 @@
+{
+  "schema_version": 4,
+  "kind": "apalache-analysis",
+  "name": "dispatcher-leaked-credit",
+  "mode": "bounded",
+  "model": "../Tla/LeakedCredit.tla",
+  "init": "ControlInit",
+  "next": "BadNext",
+  "properties": ["ControlInv"],
+  "length": 8,
+  "const_init": "ControlConstInit",
+  "assumptions": ["Deliberately mutated terminal completion; require a native safety counterexample, not a parse error."]
+}

@@ -1,0 +1,13 @@
+diff --git a/Src/PCompiler/CompilerCore/Backend/Symbolic/SymbolicCodeGenerator.cs b/Src/PCompiler/CompilerCore/Backend/Symbolic/SymbolicCodeGenerator.cs
+index 31c205f..be94540 100644
+--- a/Src/PCompiler/CompilerCore/Backend/Symbolic/SymbolicCodeGenerator.cs
++++ b/Src/PCompiler/CompilerCore/Backend/Symbolic/SymbolicCodeGenerator.cs
+@@ -27,7 +27,7 @@ namespace Plang.Compiler.Backend.Symbolic
+         /// <summary>
+         /// This compiler has a compilation stage.
+         /// </summary>
+-        public bool HasCompilationStage => true;
++        public bool HasCompilationStage => false;
+ 
+         public void Compile(ICompilerConfiguration job)
+         {

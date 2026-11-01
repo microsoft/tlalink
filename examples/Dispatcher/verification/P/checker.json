@@ -1,0 +1,21 @@
+{
+  "schema_version": 4,
+  "kind": "p-analysis",
+  "name": "Dispatcher",
+  "engine": "pchecker",
+  "models": ["Dispatcher.p"],
+  "sources": ["../../src/Dispatcher.cs"],
+  "scope": "scope.json",
+  "bindings": [
+    {"id": "dispatcher-p::admit", "relation": "Atomic admission preserves the outstanding-credit bound.", "assumptions": ["Three jobs and capacity two; actor requests represent lock acquisition order."]},
+    {"id": "dispatcher-p::start", "relation": "Starting queued work creates one active attempt.", "assumptions": ["The selected healthy driver disables both defect switches."]},
+    {"id": "dispatcher-p::complete", "relation": "Completion retries or retires exactly once.", "assumptions": ["Worker outcomes are abstract Boolean results; no callback or I/O semantics."]},
+    {"id": "dispatcher-p::cancel", "relation": "Running cancellation requests settlement without releasing live ownership.", "assumptions": ["Per-client replies order calls; messages do not model a C# Task handoff."]},
+    {"id": "dispatcher-p::close", "relation": "Closure rejects admission and preserves unsettled ownership.", "assumptions": ["No general progress claim follows from these sampled schedules."]}
+  ],
+  "dependencies": [],
+  "test_case": "tcDispatcher",
+  "schedules": 100,
+  "max_steps": 3000,
+  "seed": 17
+}

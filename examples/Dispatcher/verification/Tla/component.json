@@ -1,0 +1,20 @@
+{
+  "schema_version": 4,
+  "kind": "project-component",
+  "id": "tla",
+  "stages": [
+    {"id": "tla-links", "kind": "inspect", "timeout_seconds": 120, "bindings": "bindings.json"},
+    {"id": "tla-safety", "kind": "tlc", "timeout_seconds": 120, "models": ["Dispatcher.tla"], "config": "Safety.cfg"},
+    {"id": "tla-progress", "kind": "tlc", "timeout_seconds": 120, "models": ["Dispatcher.tla"], "config": "Progress.cfg"},
+    {"id": "tla-unfair", "kind": "tlc", "timeout_seconds": 120, "models": ["Dispatcher.tla"], "config": "Unfair.cfg"},
+    {"id": "tla-leak", "kind": "tlc", "timeout_seconds": 120, "models": ["LeakedCredit.tla"], "config": "Defect.cfg"},
+    {"id": "tla-early", "kind": "tlc", "timeout_seconds": 120, "models": ["EarlyRelease.tla"], "config": "Defect.cfg"},
+    {"id": "tla-retry-reachable", "kind": "tlc", "timeout_seconds": 120, "models": ["Dispatcher.tla"], "config": "RetryReachable.cfg"},
+    {"id": "tla-cancel-reachable", "kind": "tlc", "timeout_seconds": 120, "models": ["Dispatcher.tla"], "config": "CancelReachable.cfg"},
+    {"id": "tla-drain-reachable", "kind": "tlc", "timeout_seconds": 120, "models": ["Dispatcher.tla"], "config": "DrainReachable.cfg"}
+  ],
+  "check_obligations": [
+    {"id": "dispatcher-safety", "kind": "safety", "scenario": "tla", "requirements": ["tla-safety"]},
+    {"id": "dispatcher-progress", "kind": "progress", "scenario": "tla", "requirements": ["tla-progress"]}
+  ]
+}

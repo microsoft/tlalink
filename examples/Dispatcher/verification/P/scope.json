@@ -1,0 +1,7 @@
+{
+  "schema_version": 4,
+  "kind": "correspondence-scope",
+  "annotation_version": 4,
+  "targets": [{"id": "dispatcher-p", "language": "p", "inputs": ["Dispatcher.p"]}],
+  "omissions": []
+}

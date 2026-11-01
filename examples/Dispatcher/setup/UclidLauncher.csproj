@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>uclid</AssemblyName>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="UclidLauncher.cs" />
+    <Compile Include="NativeToolchain.cs" Condition="Exists('NativeToolchain.cs')" />
+    <Compile Include="..\..\..\src\tlalink\Common\NativeToolchain.cs" Condition="!Exists('NativeToolchain.cs')" />
+  </ItemGroup>
+</Project>

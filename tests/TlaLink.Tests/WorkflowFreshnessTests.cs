@@ -120,6 +120,9 @@ public static class WorkflowFreshnessTests
                 new CliOptions(["accept", "--project", f.ProjectPath, "--run", f.RunDirectory]), result.Worklist);
             CoreTests.Equal(review, summary.ChangedReviewInputs.Single());
             CoreTests.Equal(1, summary.Counts!["changed_review_inputs"]);
+            CoreTests.True(summary.NextSteps.Any(s => s.Kind == "review"));
+            CoreTests.True(summary.NextSteps.All(s => s.Kind is not ("run" or "check-stage")));
+            CoreTests.True(summary.NextSteps.Single(s => s.Kind == "accept").Arguments.Contains(f.RunDirectory));
         });
         test("execution dependencies win when a declared review input is also consumed by the stage", () =>
         {
@@ -129,6 +132,10 @@ public static class WorkflowFreshnessTests
             CoreTests.Equal("stale", result.Report.CurrentApplicability);
             CoreTests.Equal(0, result.Report.ChangedReviewInputs.Count);
             CoreTests.True(result.Report.Diagnostics.Any(d => d.Is(ErrorCode.WorkflowEvidenceStale)));
+            CoreTests.True(result.Report.NextSteps.Select(s => s.Kind).SequenceEqual(["doctor", "run"]));
+            WorkflowNextStep rerun = result.Report.NextSteps.Single(s => s.Kind == "run");
+            CoreTests.Equal("scope", new CliOptions(rerun.Arguments.ToArray()).Required("scenario"));
+            CoreTests.True(!Directory.Exists(new CliOptions(rerun.Arguments.ToArray()).Required("output")));
         });
         test("review-only changes invalidate a recorded review without invalidating the native execution", () =>
         {
@@ -401,7 +408,74 @@ public static class WorkflowFreshnessTests
             CoreTests.Equal("current", acceptance.CurrentApplicability);
             CoreTests.Equal("pending", acceptance.Reviews.Single().Status);
             CoreTests.True(File.ReadAllText(output).Contains("policy reassessment: review-only", StringComparison.Ordinal));
+            CoreTests.True(File.ReadAllText(output).Contains("## Campaign comparison", StringComparison.Ordinal));
+            EvidenceReportManifest manifest = ProjectInputs.Read<EvidenceReportManifest>(output + ".json");
+            ReportCampaignStage stage = manifest.Nodes.Single(n => n.Stage != null).Stage!;
+            CoreTests.Equal("inputs", stage.Backend);
+            CoreTests.Equal("passed", stage.Requirements.Single().Expected);
+            CoreTests.Equal("unsatisfied", stage.Requirements.Single().Status);
+            CoreTests.Equal("pending", stage.Reviews.Single().Status);
+            CoreTests.Equal("current", stage.CurrentApplicability);
+            CoreTests.Equal("not-accepted", stage.AcceptanceStatus);
+            CoreTests.True(stage.NextSteps.All(s => s.Kind is not ("run" or "check-stage")));
             CoreTests.True(run.SequenceEqual(File.ReadAllBytes(Path.Combine(f.RunDirectory, "run.json"))));
+        });
+        test("rerun guidance fails closed on damaged archives and changed independent expectations", () =>
+        {
+            Fixture f = Create(work, "guidance-damaged");
+            File.AppendAllText(Path.Combine(f.RunDirectory, "inputs", f.Run.RequirementsSha256), "damaged");
+            CoreTests.True(f.Evaluate().Report.NextSteps.All(s => s.Kind == "investigate" && s.Arguments.Count == 0));
+            f = Create(work, "guidance-expectations");
+            Save(Path.Combine(f.Directory, "requirements.json"), f.Policy with {
+                Requirements = [f.Policy.Requirements.Single() with { Expected = "rejected", Diagnostic = "SYN001" }]
+            });
+            CoreTests.True(Reload(f).Evaluate().Report.NextSteps.All(s => s.Kind == "investigate"));
+        });
+        test("current accepted runs do not create an endless reassessment work item", () =>
+        {
+            Fixture f = Create(work, "guidance-accepted");
+            Decision(f, "inspection");
+            var result = f.Evaluate();
+            CoreTests.Equal("accepted", result.Report.AcceptanceStatus);
+            CoreTests.Equal(0, result.Report.NextSteps.Count);
+        });
+        test("isolated TLC guidance requires a declared store and never reuses other backend evidence", () =>
+        {
+            Fixture f = Create(work, "guidance-tlc");
+            AcceptanceResult report = f.Evaluate().Report;
+            AnalysisStage tlc = new("search", "tlc", [], 120, Config: "Model.cfg", Models: ["Model.tla"]);
+            AnalysisStage proof = new("proof", "dafny-verify", [], 120, Config: "proof.json");
+            AnalysisScenario scenario = new("scope", [tlc, proof]);
+            WorkflowRun run = new() {
+                Project = f.Project.Id, ProjectDirectory = f.Directory, Scenario = "scope",
+                ProjectSha256 = f.Run.ProjectSha256, RequirementsSha256 = f.Run.RequirementsSha256,
+                Stages = [
+                    new("search", "tlc", "incomplete", "incomplete", "", "", [], 120),
+                    new("proof", "dafny-verify", "incomplete", "incomplete", "", "", [], 120)
+                ]
+            };
+            List<WorkflowNextStep> guidance = WorkflowRerunGuidance.Create(f.ProjectPath,
+                f.Project with { ResultStore = "store" }, scenario, run, report);
+            WorkflowNextStep isolated = guidance.Single(s => s.Kind == "check-stage");
+            CoreTests.Equal("search", isolated.Stage);
+            CliOptions command = new(isolated.Arguments.ToArray());
+            CoreTests.Equal("scope", command.Required("scenario"));
+            CoreTests.Equal("search", command.Required("stage"));
+            CoreTests.True(!command.Has("timeout") && !command.Has("fingerprint"));
+            CoreTests.True(guidance.Any(s => s.Kind == "run"));
+            string output = new CliOptions(guidance.Single(s => s.Kind == "run").Arguments.ToArray()).Required("output");
+            CoreTests.Equal(output, new CliOptions(WorkflowRerunGuidance.Create(f.ProjectPath,
+                f.Project with { ResultStore = "store" }, scenario, run, report)
+                .Single(s => s.Kind == "run").Arguments.ToArray()).Required("output"));
+            Directory.CreateDirectory(output);
+            string fresh = new CliOptions(WorkflowRerunGuidance.Create(f.ProjectPath,
+                f.Project with { ResultStore = "store" }, scenario, run, report)
+                .Single(s => s.Kind == "run").Arguments.ToArray()).Required("output");
+            CoreTests.True(fresh != output && !Directory.Exists(fresh));
+            CoreTests.True(WorkflowRerunGuidance.Create(f.ProjectPath, f.Project, scenario, run, report)
+                .All(s => s.Kind != "check-stage"));
+            CoreTests.True(WorkflowRerunGuidance.Create(f.ProjectPath, f.Project with { ResultStore = "store" },
+                scenario, run, report with { CurrentApplicability = "stale" }).All(s => s.Kind != "check-stage"));
         });
     }
 }

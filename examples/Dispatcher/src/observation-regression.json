@@ -1,0 +1,13 @@
+{
+  "schema_version": 4,
+  "kind": "csharp-regression",
+  "project": "Regression.csproj",
+  "sources": ["Dispatcher.cs", "DispatcherCases.cs", "DispatcherObservationLog.cs", "Program.cs"],
+  "compiler": {
+    "target_framework": "net10.0", "language_version": "14", "nullable": "enable",
+    "checked": false, "allow_unsafe": true, "defines": ["DEBUG", "TRACE"], "references": []
+  },
+  "tests": ["observation-log"],
+  "inputs": [],
+  "arguments": []
+}

@@ -31,14 +31,23 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Read shared native prerequisite pins
+        id: toolchain
+        run: |
+          . .\scripts\Native-Toolchain.ps1
+          $pin = Get-TlaLinkNativeToolchain $PWD
+          "dotnet8=$($pin.dotnet.sdk8)" >> $env:GITHUB_OUTPUT
+          "p=$($pin.p.version)" >> $env:GITHUB_OUTPUT
+
       - name: Set up .NET
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           global-json-file: global.json
-          dotnet-version: 8.0.x
+          dotnet-version: ${{ steps.toolchain.outputs.dotnet8 }}
 
       - name: Restore and build
         run: |
+          & .\tests\Toolchain.Tests.ps1
           dotnet restore TlaLink.sln --configfile NuGet.Config --nologo
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet build TlaLink.sln --configuration Release --no-restore --nologo
@@ -80,7 +89,7 @@ jobs:
             'A46A9FF7CDD720F7955854C78E95DF13F4CFE6B80691B05F8654FE19E8267179'
           unzip -q $dafny -d $tools
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          dotnet tool install P --version 3.1.0 --tool-path (Join-Path $tools 'p') --configfile NuGet.Config
+          dotnet tool install P --version '${{ steps.toolchain.outputs.p }}' --tool-path (Join-Path $tools 'p') --configfile NuGet.Config
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $apalacheArchive = Join-Path $env:RUNNER_TEMP 'apalache-0.62.4.zip'
           Get-PinnedArchive `

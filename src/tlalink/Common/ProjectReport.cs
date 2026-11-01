@@ -114,15 +114,32 @@ public static class ProjectReport
             foreach (AnalysisStage stage in scenario.Stages)
             {
                 WorkflowStageResult? recorded = run.Stages.FirstOrDefault(s => s.Id == stage.Id);
-                List<string> evidence = [runPath];
+                List<string> evidence = [runPath, evaluations[i]];
                 if (recorded?.Evidence is { Length: > 0 }) evidence.Add(ProjectAcceptance.SafePath(runs[i], recorded.Evidence));
                 List<string> outcomes = requirements.Where(r => r.Stage == stage.Id).Select(r => r.Expected).Distinct().ToList();
+                List<AnalysisRequirement> stageRequirements = requirements.Where(r => r.Stage == stage.Id).ToList();
+                List<string> stageReviews = stageRequirements.SelectMany(r => r.Reviews ?? [])
+                    .Concat(MethodSummaries.Inspections(path, project, [stage])).Distinct(StringComparer.Ordinal).ToList();
+                List<string> incomplete = recorded == null ? ["missing-stage"] :
+                    recorded.ExecutionStatus != "completed" || recorded.Outcome == "incomplete"
+                        ? [recorded.ExecutionStatus + " / " + recorded.Outcome, .. recorded.Diagnostics] : [];
                 nodes.Add(new(stageIds[stage.Id], stage.Kind == "csharp-regression" ? "test" :
                     stage.Kind == "dafny-verify" ? "proof" : stage.Kind == "trace" ? "trace" : "check",
                     scenario.Id + ": " + stage.Id, "Recorded " + stage.Kind + " result; scope remains backend-specific.",
                     recorded?.Outcome ?? "incomplete", outcomes.Count == 1 ? outcomes[0] : null,
                     stage.DependsOn.Select(id => stageIds[id]).Concat(MethodSummaries.Select(path, project, [stage])
-                        .Select(s => summaryIds[s.Summary.Binding])).ToList(), evidence, [], []));
+                        .Select(s => summaryIds[s.Summary.Binding])).ToList(), evidence, [], [],
+                    new(prefix, scenario.Id, stage.Id, stage.Kind, recorded?.ExecutionStatus ?? "missing",
+                        recorded?.DurationSeconds, recorded?.StoredResults?.Any(s => s.Primary && s.Origin == "reused") == true,
+                        Metrics(recorded, runs[i], Pin, incomplete),
+                        stageRequirements.Select(r => {
+                            RequirementResult disposition = evaluation.Report.Requirements.Single(d => d.Id == r.Id);
+                            return new ReportCampaignRequirement(r.Id, r.Expected, disposition.Status, disposition.Missing);
+                        }).ToList(),
+                        stageReviews.Select(id => new ReportCampaignReview(id,
+                            evaluation.Report.Reviews.Single(r => r.Obligation == id).Status)).ToList(),
+                        incomplete, evaluation.Report.ArchiveStatus, evaluation.Report.CurrentApplicability,
+                        evaluation.Report.AcceptanceStatus, evaluation.Report.NextSteps)));
             }
             foreach (string id in reviews)
             {
@@ -173,5 +190,109 @@ public static class ProjectReport
             [.. gaps, .. sourceReport?.Gaps ?? []], sourceReport?.SourceInventories);
         Files.WriteNew(manifestPath, manifest);
         return EvidenceReport.Run(new(["report", "--manifest", manifestPath, "--output", output, "--format", options.Get("format", "json")]));
+    }
+
+    internal static List<ReportMetric> Metrics(WorkflowStageResult? stage, string run,
+        Action<string> pin, List<string> incomplete)
+    {
+        List<ReportMetric> metrics = [];
+        void Count(string name, long? value, string unit = "count")
+        {
+            if (value is long measured) metrics.Add(new(name,
+                measured.ToString(System.Globalization.CultureInfo.InvariantCulture), unit));
+        }
+        if (stage?.Statistics is { } statistics)
+        {
+            Count("states_generated", statistics.StatesGenerated);
+            Count("distinct_states", statistics.DistinctStates);
+            Count("states_left", statistics.StatesLeft);
+            Count("search_depth", statistics.SearchDepth);
+        }
+        if (stage?.Evidence is not { Length: > 0 }) return metrics;
+        string file = ProjectAcceptance.SafePath(run, stage.Evidence);
+        if (!File.Exists(file))
+        {
+            incomplete.Add("missing-stage-evidence");
+            return metrics;
+        }
+        pin(file);
+        if (Files.Hash(file) != stage.Sha256)
+        {
+            incomplete.Add("inconsistent-stage-evidence");
+            return metrics;
+        }
+        void Reasons(IEnumerable<Issue> diagnostics)
+        {
+            if (incomplete.Count == 0) return;
+            foreach (Issue issue in diagnostics)
+                if (!incomplete.Contains(issue.Message, StringComparer.Ordinal)) incomplete.Add(issue.Message);
+        }
+        IAnalysisResult result = AnalysisDocuments.Read(file);
+        Reasons(result.Diagnostics);
+        if (result is PPacket p)
+        {
+            if (p.ProofDiagnostics is { } proof)
+            {
+                Count("verified_invariants", proof.VerifiedInvariants);
+                Count("failed_properties", proof.FailedProperties);
+                Count("observed_proof_goals", proof.ObservedGoals);
+                Count("omitted_proof_goals", proof.OmittedGoals);
+            }
+            if (p.NativeMetrics is { } native)
+            {
+                Count("distinct_states", native.DistinctStates);
+                Count("timelines", native.Timelines);
+                Count("schedules", native.Schedules);
+                Count("symbolic_executions", native.SymbolicExecutions);
+                Count("maximum_reported_depth", native.MaximumReportedDepth, "steps");
+                Count("events_read", native.EventsRead);
+                Count("verified_events", native.VerifiedEvents);
+                Count("verified_keys", native.VerifiedKeys);
+                Count("partition_keys", native.PartitionKeys);
+                Count("parser_errors", native.ParserErrors);
+                Count("spec_errors", native.SpecErrors);
+                Count("out_of_order_errors", native.OutOfOrderErrors);
+                Count("unknown_errors", native.UnknownErrors);
+            }
+        }
+        else if (result is DafnyResult dafny)
+        {
+            DafnyResult packet = dafny;
+            if (packet.ProofTimings is { } timings)
+            {
+                Count("observed_proof_efforts", timings.ObservedEfforts);
+                Count("omitted_proof_efforts", timings.OmittedEfforts);
+                for (int i = 0; i < timings.Efforts.Count; i++)
+                {
+                    DafnyProofEffort effort = timings.Efforts[i];
+                    string name = "native_proof_effort." + (i + 1) + "." + effort.Name;
+                    metrics.Add(new(name, effort.DurationSeconds.ToString("R",
+                        System.Globalization.CultureInfo.InvariantCulture), "seconds"));
+                    Count(name + ".resource_count", effort.ResourceCount, "solver-resource-units");
+                }
+            }
+            if (packet.ProofDiagnostics is { } proof)
+            {
+                Count("verified_obligations", proof.VerifiedObligations);
+                Count("errors", proof.Errors);
+                Count("observed_proof_goals", proof.ObservedGoals);
+                Count("omitted_proof_goals", proof.OmittedGoals);
+                if (incomplete.Count > 0)
+                    foreach (DafnyProofGoal goal in proof.Goals)
+                        if (!incomplete.Contains(goal.Message, StringComparer.Ordinal)) incomplete.Add(goal.Message);
+            }
+        }
+        else if (result is ApalachePacket apalache)
+        {
+            foreach (ApalacheProcessResult process in apalache.Processes)
+            {
+                metrics.Add(new("native_process." + process.Id, process.DurationSeconds.ToString(
+                    "R", System.Globalization.CultureInfo.InvariantCulture), "seconds"));
+                foreach (ApalachePhaseTiming phase in process.PhaseTimings)
+                    metrics.Add(new("native_log_interval." + process.Id + ".pass-" + phase.Pass + "." + phase.Phase,
+                        phase.DurationSeconds.ToString("R", System.Globalization.CultureInfo.InvariantCulture), "seconds"));
+            }
+        }
+        return metrics;
     }
 }

@@ -1,0 +1,11 @@
+{
+  "schema_version": 4,
+  "kind": "apalache-analysis",
+  "name": "dispatcher-types",
+  "mode": "typecheck",
+  "model": "../Tla/Dispatcher.tla",
+  "init": "Init",
+  "next": "Next",
+  "properties": [],
+  "assumptions": ["Typing only; not safety or source refinement."]
+}

@@ -1,0 +1,8 @@
+{
+  "schema_version": 4,
+  "kind": "project-component",
+  "id": "source",
+  "stages": [
+    {"id": "regressions", "kind": "csharp-regression", "timeout_seconds": 120, "config": "regression.json"}
+  ]
+}

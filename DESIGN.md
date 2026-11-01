@@ -36,6 +36,26 @@ run locally; the surrounding agent's data handling is outside this tool's
 guarantees. Trusted hosts, build projects and asserted reviewer identities
 remain trust boundaries, not authentication.
 
+Extended-P setup is an explicitly invoked Windows build recipe, with pinned
+source/tool archives and generation patches, fresh private dependency caches,
+and separately required SDK/runtime prerequisites. Its retained files and
+command logs are build provenance, not a new analysis-evidence document or
+approval. Ordinary project initialization selects the complete build closure
+for the existing human review obligation. Manual CI exercises that same setup
+and named native controls without discharging the review. Missing prerequisites,
+failed builds and unsupported native outcomes remain explicit.
+
+Common tool selection reuses the existing SDK and Java authorities:
+`global.json` selects one exact SDK without roll-forward, and
+`java-toolchain.json` selects the shared JDK distribution. The schema-4
+`native-toolchain` pin document supplies remaining native build prerequisites
+and explicit compatibility exceptions, not a competing SDK/JDK catalogue.
+Setup, project initialization and CI consume those selections. Existing
+installations and archived outcomes are not rewritten when a pin changes;
+new builds retain their actual selected closure for review. Backend-bundled
+dependencies remain an explicit distribution boundary rather than being
+replaced merely to match a version number.
+
 The implementation-facing design targets the C#/.NET toolchain, not a
 language-neutral source abstraction. Roslyn supplies C# resolution and capture
 validation; compiler context, compiled adapters and loaded .NET binaries tie
@@ -401,6 +421,22 @@ one another's verdicts. Generated projects do not invent source dispositions.
 The generic renderer's freshness describes its presentation snapshot; historical
 run applicability remains the separately recorded per-run assessment.
 
+Optional typed stage details live on existing report nodes, not a separate
+campaign document. They preserve authored requirement IDs/expectations and
+review statuses alongside measured stage wall time, available native metrics,
+reuse provenance and incomplete reasons. Matrix comparisons do not equate
+different engine claims or manufacture missing statistics. Report byte pins
+support presentation consistency, not independent native semantic validation.
+
+Selective next steps are a read-only projection of ordinary acceptance,
+archived execution definitions and current applicability. They do not create
+an execution cache, stage dependency graph, approval receipt or automatic
+retry. Review-only changes retain execution; stale/unknown execution does not
+infer safe stage-level reuse. Eligible incomplete TLC searches can use the
+existing explicitly declared result store, otherwise execution advice is
+scenario-wide. Damaged evidence and changed independent checker expectations
+require investigation before new execution advice.
+
 Acceptance worklists are transient presentation metadata, not additional evidence
 or a saved acceptance format. Evaluation associates unmet reviews and incomplete
 stages with their requirements; other requirement gaps stay explicit. Unclassified
@@ -431,6 +467,17 @@ or source-generator behavior; the inventory remains source facts, not coverage.
 Standalone Dafny uses the same authoritative frontend, distribution pinning,
 verification classifier and assumption audit as integrated bindings. Its native
 contracts do not become C# correspondence or executable-oracle evidence.
+Its `proof_diagnostics` projects native JSON error records, including primary
+and related source ranges, without parsing formal expressions. Native terminal
+verified/error counts remain separate from bounded diagnostic-entry counts.
+Readers reconstruct this projection from pinned native output; previews are
+not another proof obligation language or a verdict. Missing/ambiguous counts
+are null, and parser failures and deadlines remain incomplete.
+Native Dafny CSV verification logging supplies separately bounded named
+proof-effort timings/resource counts. It does not time error messages or
+provide source ranges; no inferred join assigns durations to diagnostics.
+Assertion isolation is not enabled, and native CSV outcomes do not replace
+the JSON completion classifier.
 
 TLC model/trace resource settings share one typed representation and conservative
 validation. Defaults remain command-specific; recorded effective resources and
@@ -481,6 +528,18 @@ PObserve consumes pinned runtime and separately generated monitor/parser JARs.
 External artifact/source correspondence requires a current build review and
 does not acquire an automatic provenance or refinement proof.
 
+The PVerifier frontend rejects procedural helper calls identified by the
+native call graph. The pinned generator can commit callee effects and then
+overwrite them with caller-local copies of machine fields or sent messages.
+Inline event-handler effects and declared pure expressions avoid that known
+unsupported shape; the guard is not a whole-program effect analysis or a
+general attestation of the native compiler. Meaningful controls still need
+to challenge each proof. Native executable selection uses exact platform
+launcher filenames, not stems shared by documentation or library files.
+PObserve invocation records and readers agree on the upstream `--inputkind`
+enum and `--replaySize` window options, and recheck the selected parser,
+monitor, runtime, log and Java identities independently of native outcomes.
+
 P manifests may share workflow review obligations with TLA+/Dafny stages.
 Cross-model correspondence remains an explicit human obligation; no native
 success composes a theorem across backends. PObserve's timestamp-sequenced
@@ -489,6 +548,12 @@ monitoring remains separate from TLC's causal existential whole-trace matcher.
 P output archives are independent of the project run: the reader checks
 original inputs, generated artifacts and native outcome semantics, optionally
 checks current bytes, and never silently upgrades a historical result.
+PVerifier's bounded `proof_diagnostics` retains native failed/unknown/remaining
+goal messages and source coordinates only where the compiler emitted them.
+Native invariant/property totals and preview omission counts retain distinct
+meanings. Diagnostic output parsing does not resolve or interpret formal
+expressions, infer dependencies, or promote mixed unknown/counterexamples to
+completed rejection. Independent readers rederive the projection from logs.
 
 ## Apalache as a selected TLA+ engine
 
@@ -539,6 +604,12 @@ claim requirement. A bounded pass cannot satisfy an induction or TLC requirement
 Archived validity, optional current applicability and acceptance stay separate.
 Existing TLC causal trace witness/rejection semantics are unchanged; no
 bounded absence of an Apalache witness is promoted to trace rejection.
+Available native `PASS` timestamps additionally delimit recorded wall-clock
+phase intervals. The final interval ends at the native total-time log marker
+and can include reporting, not just the last pass. These intervals are not
+internal CPU/solver timers; unclosed phases remain absent. The native query,
+phase number/name and both timestamps accompany every duration, and readers
+reconstruct them from archived logs without changing outcome classification.
 
 ## Evidence retention and dependency impact
 

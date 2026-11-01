@@ -27,6 +27,8 @@ public static class TestTools
         }
         if (selection is not ("--core" or "--diagnostics" or "--symbols" or "--p"))
             foreach (string file in JavaToolchain.Resolve().Fingerprints.Keys) yield return file;
+        if (selection is null or "--p")
+            foreach (string file in PTranslationTests.ImmutableAssets()) yield return file;
     }
 
     public static string Apalache(string root) =>

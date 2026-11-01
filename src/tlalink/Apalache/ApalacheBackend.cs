@@ -228,7 +228,10 @@ public static class ApalacheBackend
         if (!finished) { process.Kill(entireProcessTree: true); process.WaitForExit(); }
         File.WriteAllText(Path.Combine(packet.Directory, id + ".stdout.log"), stdout.GetAwaiter().GetResult());
         File.WriteAllText(Path.Combine(packet.Directory, id + ".stderr.log"), stderr.GetAwaiter().GetResult());
-        ApalacheProcessResult result = new(id, arguments, finished ? process.ExitCode : null, !finished, clock.Elapsed.TotalSeconds);
+        ApalacheProcessResult result = new(id, arguments, finished ? process.ExitCode : null, !finished, clock.Elapsed.TotalSeconds)
+        {
+            PhaseTimings = ApalacheTiming.Read(Text(packet.Directory, id))
+        };
         Files.WriteNew(Path.Combine(packet.Directory, id + ".invocation.json"),
             new ApalacheNativeInvocation(Schema.Version, "apalache-invocation", packet.Java,
                 packet.Directory, packet.TimeoutSeconds, "isolated", result));

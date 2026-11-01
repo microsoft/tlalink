@@ -90,6 +90,26 @@ public static class PEvidence
             PAnalysis config = PInputs.Parse(Files.Read(configCopy));
             if (config.Engine != packet.Engine) Error("Analysis engine differs from archived configuration.");
             if (packet.Status is not ("passed" or "ready" or "rejected" or "incomplete")) Error("Unknown P outcome.");
+            if (Schema.Hash(packet.NativeMetrics) != Schema.Hash(PNativeOutput.FromPacket(packet, output)))
+                Error("P numeric metrics differ from archived native output.");
+            string metricLabel = packet.Engine == "pchecker" ? "p-check" : "p-external";
+            if (packet.NativeMetrics != null && (!packet.Artifacts.ContainsKey(metricLabel + ".stdout.log") ||
+                !packet.Artifacts.ContainsKey(metricLabel + ".stderr.log")))
+                Error("P numeric metrics require pinned native process logs.");
+            if (packet.Engine == "pobserve" && packet.NativeMetrics != null &&
+                File.Exists(Safe(output, Path.Combine("observations", "PObserveMetrics.txt"))) &&
+                !packet.Artifacts.ContainsKey(Path.Combine("observations", "PObserveMetrics.txt")))
+                Error("P observation metrics require their pinned native artifact.");
+            PProcessResult? verifier = packet.Engine == "pverifier"
+                ? packet.Processes.SingleOrDefault(p => p.Label == "p-compile") : null;
+            if (verifier != null && (!packet.Artifacts.ContainsKey("p-compile.stdout.log") ||
+                !packet.Artifacts.ContainsKey("p-compile.stderr.log")))
+                Error("P proof diagnostics require pinned native logs.");
+            PProofDiagnostics? proofDiagnostics = verifier == null ? null :
+                PProofOutput.Read(Files.Read(Safe(output, "p-compile.stdout.log")) + "\n" +
+                    Files.Read(Safe(output, "p-compile.stderr.log")));
+            if (Schema.Hash(packet.ProofDiagnostics) != Schema.Hash(proofDiagnostics))
+                Error("P proof diagnostics differ from archived native output.");
             if (packet.Status != "incomplete")
             {
                 if (packet.ProvenanceStatus != "consistent" || packet.Diagnostics.Any(i => i.Severity == "error") && packet.Status != "rejected")
@@ -184,6 +204,8 @@ public static class PEvidence
                         Option("--max-steps", config.MaxSteps.ToString(System.Globalization.CultureInfo.InvariantCulture));
                         Option("--seed", config.Seed.ToString(System.Globalization.CultureInfo.InvariantCulture));
                     }
+                    if (packet.Engine == "pobserve")
+                        ValidateObservationInvocation(config, packet, process, Error);
                     PAssessment assessment = packet.Engine == "pobserve"
                         ? PResults.Observe(process.ExitCode, process.TimedOut, Text(process),
                             Files.Read(Safe(output, Path.Combine("observations", "PObserveMetrics.txt"))),
@@ -202,6 +224,31 @@ public static class PEvidence
             Error("Invalid P evidence: " + error.Message);
         }
         return issues;
+    }
+
+    internal static void ValidateObservationInvocation(PAnalysis config, PPacket packet,
+        PProcessResult process, Action<string> error)
+    {
+        PObservation observe = config.Observation ??
+            throw new InputException(ErrorCode.InvalidPEvidence, "Missing observation configuration.");
+        if (observe.Logs.Count != 1)
+            throw new InputException(ErrorCode.InvalidPEvidence, "Observation evidence requires one selected log.");
+        ToolPin Resolve(ToolPin pin) => pin with { Path = ProjectInputs.Resolve(packet.Config, pin.Path) };
+        PObservation resolved = observe with {
+            RuntimeJar = Resolve(observe.RuntimeJar), MonitorJar = Resolve(observe.MonitorJar),
+            Logs = [ProjectInputs.Resolve(packet.Config, observe.Logs[0])]
+        };
+        ToolPin java = PInputs.RequiredExecutable(config.Dependencies.Select(Resolve), "java");
+        foreach (ToolPin pin in new[] { java, resolved.RuntimeJar, resolved.MonitorJar })
+            if (!packet.Fingerprints.TryGetValue(pin.Path, out string? hash) ||
+                !hash.Equals(pin.Sha256, StringComparison.OrdinalIgnoreCase))
+                error("Observation invocation lacks its approved tool pin: " + pin.Path);
+        if (!packet.Fingerprints.ContainsKey(resolved.Logs[0]))
+            error("Observation invocation lacks its selected log pin.");
+        if (!FilePaths.Comparer.Equals(process.Executable, java.Path) ||
+            !process.Arguments.SequenceEqual(PBackend.ObservationArguments(resolved,
+                Path.Combine(process.WorkingDirectory, "observations"))))
+            error("Observation invocation disagrees with its approved runtime, monitor, parser, log or options.");
     }
 
     private static string Safe(string root, string relative)

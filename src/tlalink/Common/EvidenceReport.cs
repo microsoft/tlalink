@@ -14,7 +14,15 @@ public sealed record ReportSourceDisposition(string File, string Profile, string
     List<string> Contracts, string Reason, string? SymbolPrefix = null);
 public sealed record EvidenceReportNode(string Id, string Kind, string Title, string Claim,
     string RecordedStatus, string? ExpectedStatus, List<string> DependsOn, List<string> Evidence,
-    List<string> Assumptions, List<string> Gaps);
+    List<string> Assumptions, List<string> Gaps, ReportCampaignStage? Stage = null);
+public sealed record ReportCampaignRequirement(string Id, string Expected, string Status, List<string> Missing);
+public sealed record ReportCampaignReview(string Id, string Status);
+public sealed record ReportMetric(string Name, string Value, string? Unit = null);
+public sealed record ReportCampaignStage(string Run, string Scenario, string Stage, string Backend, string ExecutionStatus,
+    double? DurationSeconds, bool Reused, List<ReportMetric> Metrics,
+    List<ReportCampaignRequirement> Requirements, List<ReportCampaignReview> Reviews,
+    List<string> IncompleteReasons, string ArchiveStatus, string CurrentApplicability, string AcceptanceStatus,
+    List<WorkflowNextStep> NextSteps);
 public sealed record EvidenceReportRegion(string File, int Line, int EndLine, string Symbol,
     string Profile, string Disposition, List<string> Contracts, string Reason);
 
@@ -113,11 +121,33 @@ public static partial class EvidenceReport
                 "Every node needs pinned evidence; an unpinned claim cannot be reported as evidence.");
             Require(node.DependsOn.Distinct(StringComparer.Ordinal).Count() == node.DependsOn.Count,
                 "Duplicate report dependency.");
+            if (node.Stage is { } stage)
+            {
+                Require(!string.IsNullOrWhiteSpace(stage.Run) && !string.IsNullOrWhiteSpace(stage.Scenario) && !string.IsNullOrWhiteSpace(stage.Stage) &&
+                    ProjectInputs.StageKinds.Contains(stage.Backend) && !string.IsNullOrWhiteSpace(stage.ExecutionStatus) &&
+                    (stage.DurationSeconds == null || double.IsFinite(stage.DurationSeconds.Value) && stage.DurationSeconds >= 0) &&
+                    !string.IsNullOrWhiteSpace(stage.ArchiveStatus) && !string.IsNullOrWhiteSpace(stage.CurrentApplicability) &&
+                    !string.IsNullOrWhiteSpace(stage.AcceptanceStatus), "Invalid campaign stage dimensions.");
+                Require(stage.Metrics.All(m => m != null && !string.IsNullOrWhiteSpace(m.Name) &&
+                    !string.IsNullOrWhiteSpace(m.Value) && (m.Unit == null || !string.IsNullOrWhiteSpace(m.Unit))) &&
+                    stage.Requirements.All(r => r != null && !string.IsNullOrWhiteSpace(r.Id) &&
+                        !string.IsNullOrWhiteSpace(r.Expected) && !string.IsNullOrWhiteSpace(r.Status)) &&
+                    stage.Reviews.All(r => r != null && !string.IsNullOrWhiteSpace(r.Id) &&
+                        !string.IsNullOrWhiteSpace(r.Status)) &&
+                    stage.NextSteps.All(s => s != null && !string.IsNullOrWhiteSpace(s.Kind) &&
+                        !string.IsNullOrWhiteSpace(s.Reason) && FilePaths.IsNativeAbsolute(s.WorkingDirectory)),
+                    "Invalid campaign stage details.");
+            }
         }
         foreach (EvidenceReportNode node in manifest.Nodes)
+        {
+            if (node.Stage is { } stage)
+                Require(manifest.Nodes.Any(n => n.Id == stage.Run && n.Kind == "milestone"),
+                    "Campaign stages require their explicit run milestone.");
             foreach (string dependency in node.DependsOn)
                 Require(dependency != node.Id && ids.Contains(dependency),
                     $"Missing/self report dependency: {node.Id} -> {dependency ?? "<null>"}.");
+        }
         Dictionary<string, int> indegree = manifest.Nodes.ToDictionary(n => n.Id, n => n.DependsOn.Count, StringComparer.Ordinal);
         Dictionary<string, List<string>> dependents = ids.ToDictionary(id => id, _ => new List<string>(), StringComparer.Ordinal);
         foreach (EvidenceReportNode node in manifest.Nodes)
@@ -174,6 +204,42 @@ public static partial class EvidenceReport
         Line();
         Line("Manifest: " + Reference(manifestPath) + ". Generated with TlaLink schema " + Schema.Version + ".");
         Line();
+        List<EvidenceReportNode> campaign = manifest.Nodes.Where(n => n.Stage != null).ToList();
+        if (campaign.Count > 0)
+        {
+            Line("## Campaign comparison");
+            Line();
+            Line("Each row is one explicitly selected run/stage, not equivalent claims across engines. Missing metrics are not zero. Elapsed time is stage wall time; a reused TLC result is not a fresh native search. Requirements include named controls without inferring their role from filenames.");
+            Line();
+            Line("| Run / scenario / stage | Backend | Expected / observed / requirement | Seconds / reuse | Native metrics | Incomplete reasons | Reviews | Archive / applicability / acceptance | Evidence |");
+            Line("|---|---|---|---|---|---|---|---|---|");
+            foreach (EvidenceReportNode node in campaign)
+            {
+                ReportCampaignStage stage = node.Stage!;
+                string expected = stage.Requirements.Count == 0 ? "not asserted" : string.Join("; ",
+                    stage.Requirements.Select(r => r.Id + ": " + r.Expected + " / " + node.RecordedStatus + " / " + r.Status +
+                        (r.Missing.Count == 0 ? "" : " (missing: " + string.Join(", ", r.Missing) + ")")));
+                string duration = stage.DurationSeconds?.ToString("0.###", CultureInfo.InvariantCulture) ?? "not recorded";
+                Line($"| {Md(node.Id + " / " + stage.Scenario + " / " + stage.Stage)} | {Md(stage.Backend)} | {Md(expected)} | {duration} / {(stage.Reused ? "reused" : "not reused")} | {Md(string.Join("; ", stage.Metrics.Select(m => m.Name + ": " + m.Value + (m.Unit == null ? "" : " " + m.Unit))))} | {Md(string.Join("; ", stage.IncompleteReasons))} | {Md(string.Join("; ", stage.Reviews.Select(r => r.Id + ": " + r.Status)))} | {Md(stage.ArchiveStatus + " / " + stage.CurrentApplicability + " / " + stage.AcceptanceStatus)} | {string.Join(", ", node.Evidence.Select(p => Reference(p)))} |");
+            }
+            Line();
+            Line("### Selective next steps");
+            Line();
+            Line("Guidance is read-only. Argument vectors belong to TlaLink's existing CLI; prepend your usual launcher and use the stated working directory. No historical run is repaired, no stage-level impact is inferred, and no approval is carried forward.");
+            Line();
+            foreach (var scenario in campaign.GroupBy(n => n.Stage!.Run, StringComparer.Ordinal))
+            {
+                Line("**" + Md(scenario.Key) + "**");
+                foreach (WorkflowNextStep step in scenario.First().Stage!.NextSteps)
+                {
+                    Line("- " + Md(step.Kind + (step.Stage == null ? "" : " (" + step.Stage + ")") + ": " + step.Reason));
+                    if (step.Arguments.Count > 0)
+                        Line("  - Working directory: " + Md(step.WorkingDirectory) + "; arguments: " +
+                            Md(JsonSerializer.Serialize(step.Arguments)) + ".");
+                }
+                Line();
+            }
+        }
         Line("## Reading the diagrams");
         Line();
         Line("- Arrows show declared prerequisites, not automatic cross-language refinement.");

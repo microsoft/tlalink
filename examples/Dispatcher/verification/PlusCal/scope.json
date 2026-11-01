@@ -1,0 +1,13 @@
+{
+  "schema_version": 4,
+  "kind": "correspondence-scope",
+  "annotation_version": 4,
+  "targets": [{
+    "id": "dispatcher-pluscal", "language": "tla", "inputs": ["DispatcherAlgorithm.tla"],
+    "required_bindings": [
+      "dispatcher-pluscal::admit", "dispatcher-pluscal::start", "dispatcher-pluscal::complete",
+      "dispatcher-pluscal::cancel", "dispatcher-pluscal::close"
+    ]
+  }],
+  "omissions": []
+}

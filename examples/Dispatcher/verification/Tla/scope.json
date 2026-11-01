@@ -1,0 +1,13 @@
+{
+  "schema_version": 4,
+  "kind": "correspondence-scope",
+  "annotation_version": 4,
+  "targets": [{
+    "id": "dispatcher-tla", "language": "tla", "inputs": ["Dispatcher.tla"],
+    "required_bindings": [
+      "dispatcher-tla::admit", "dispatcher-tla::start", "dispatcher-tla::complete",
+      "dispatcher-tla::cancel", "dispatcher-tla::close"
+    ]
+  }],
+  "omissions": []
+}
