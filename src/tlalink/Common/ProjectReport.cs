@@ -152,7 +152,9 @@ public static class ProjectReport
             nodes.Add(new(prefix, "milestone", scenario.Id,
                 "Independent acceptance of this explicit run. Archive: " + evaluation.Report.ArchiveStatus +
                 "; current applicability: " + evaluation.Report.CurrentApplicability +
-                "; execution: " + run.ExecutionStatus + ".",
+                "; execution: " + run.ExecutionStatus +
+                "; review-only input changes: " + evaluation.Report.ChangedReviewInputs.Count +
+                "; policy reassessment: " + evaluation.Report.PolicyReassessment?.Status + ".",
                 evaluation.Report.AcceptanceStatus, "accepted", requirementIds,
                 [runPath, evaluations[i], path], [], missing));
         }

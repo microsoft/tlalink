@@ -24,6 +24,7 @@ public static class ObservedExecution
         string binaries = Path.Combine(output, "binary.txt"), context = Path.Combine(output, "context.txt");
         string inputs = Path.Combine(output, "build-inputs.txt");
         string missing = Path.Combine(output, "missing-build-inputs.txt");
+        string sdk = Path.Combine(output, "sdk.log");
         string Escape(string value) => System.Security.SecurityElement.Escape(value);
         File.WriteAllText(target, $"""
             <Project>
@@ -42,6 +43,7 @@ public static class ObservedExecution
                 <WriteLinesToFile File="{Escape(references)}" Lines="@(_TlaRefs->'%(FullPath)|%(FileHash)')" Overwrite="true" />
                 <WriteLinesToFile File="{Escape(inputs)}" Lines="@(_TlaBuildHashes->'%(FullPath)|%(FileHash)')" Overwrite="true" />
                 <WriteLinesToFile File="{Escape(missing)}" Lines="@(_TlaMissingConfigs->'%(FullPath)')" Overwrite="true" />
+                <WriteLinesToFile File="{Escape(sdk)}" Lines="$(NETCoreSdkVersion)" Overwrite="true" />
                 <WriteLinesToFile File="{Escape(context)}" Lines="Configuration|$(Configuration);TargetFramework|$(TargetFramework);LangVersion|$(LangVersion);Nullable|$(Nullable);AllowUnsafeBlocks|$(AllowUnsafeBlocks);CheckForOverflowUnderflow|$(CheckForOverflowUnderflow);Defines|$([System.String]::Copy('$(DefineConstants)').Replace(';', ','));GeneratedAssemblyInfoFile|$(GeneratedAssemblyInfoFile);TargetFrameworkMonikerAssemblyAttributesPath|$(TargetFrameworkMonikerAssemblyAttributesPath);GeneratedGlobalUsingsFile|$(GeneratedGlobalUsingsFile)" Overwrite="true" />
               </Target>
               <Target Name="TlaLinkCaptureBinary" AfterTargets="Build" Condition="'$(MSBuildProjectFullPath)' == '{Escape(project)}'">
@@ -50,8 +52,6 @@ public static class ObservedExecution
               </Target>
             </Project>
             """);
-        ObservedProcess sdkProcess = Invoke(["--version"], output, timeout, "sdk");
-        RequireSuccess(sdkProcess);
         List<string> arguments = BuildArguments(project, output, configuration);
         RequireSuccess(Invoke(arguments, output, timeout, "build"));
         Dictionary<string, string> compiled = ReadHashes(sources), refs = ReadHashes(references), binary = ReadHashes(binaries);
@@ -61,8 +61,11 @@ public static class ObservedExecution
         if (binary.Count != 1)
             throw new InputException(ErrorCode.InvalidExecution, "Expected exactly one target binary; multi-target projects are not supported.");
         Dictionary<string, string> settings = ReadContext(context);
+        string sdkVersion = Files.Read(sdk).Trim();
+        if (string.IsNullOrWhiteSpace(sdkVersion))
+            throw new InputException(ErrorCode.InvalidExecution, "Build did not report its selected .NET SDK version.");
         ObservedBuild result = new(project, compiled, refs, buildInputs, binary.Single().Key, binary.Single().Value,
-            Files.Read(sdkProcess.Log).Trim(), settings, arguments,
+            sdkVersion, settings, arguments,
             File.ReadAllLines(missing).Select(p => FilePaths.Full(p)).Distinct(FilePaths.Comparer).ToList());
         Check(result);
         return result;

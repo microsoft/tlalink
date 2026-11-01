@@ -19,13 +19,13 @@ public static class Program
         }
         string root = FilePaths.Full(args.FirstOrDefault() ?? Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\.."));
         string[] testArguments = args.Skip(1).ToArray();
-        string[] selections = ["--core", "--trace", "--apalache", "--p", "--diagnostics", "--integrated", "--workflow", "--evidence", "--summaries", "--symbols", "--links"];
+        string[] selections = ["--core", "--trace", "--apalache", "--p", "--diagnostics", "--integrated", "--workflow", "--evidence", "--summaries", "--symbols", "--links", "--frontend"];
         if (testArguments.Length > 2 ||
             testArguments.Count(a => a.StartsWith("--", StringComparison.Ordinal)) > 1 ||
             testArguments.Count(a => !a.StartsWith("--", StringComparison.Ordinal)) > 1 ||
             testArguments.Any(a => a.StartsWith("--", StringComparison.Ordinal) && !selections.Contains(a)))
         {
-            Console.Error.WriteLine("Usage: TlaLink.Tests [root [report.json] [--core|--trace|--apalache|--p|--diagnostics|--integrated|--workflow|--evidence|--summaries|--symbols|--links]]");
+            Console.Error.WriteLine("Usage: TlaLink.Tests [root [report.json] [--core|--trace|--apalache|--p|--diagnostics|--integrated|--workflow|--evidence|--summaries|--symbols|--links|--frontend]]");
             return 2;
         }
         string? selection = testArguments.SingleOrDefault(a => a.StartsWith("--", StringComparison.Ordinal));
@@ -64,6 +64,14 @@ public static class Program
             ToolHashTests.Register(Test, work);
             if (selection is null or "--core" or "--apalache") ApalacheTests.RegisterExample(Test, root);
             DiagnosticTests.Register(Test);
+            if (selection == "--frontend")
+            {
+                Suite("tla-only-inspection", directory => IntegratedTlaOnlyTests.Register(Test, root, directory));
+                Test("Java/SANY/PlusCal backend parity controls", () =>
+                    TlaBackendTests.Run(TestTools.Jar(root),
+                        (condition, message) => { if (!condition) throw new InvalidOperationException(message); }));
+                return Finish();
+            }
             if (selection is null or "--core")
             {
                 Suite("native-contracts", directory => NativeContractTests.Register(Test, directory));
@@ -157,6 +165,7 @@ public static class Program
             Suite("java-native", directory => JavaToolchainTests.RegisterNative(Test, directory));
             Suite("p", directory => PTests.Register(Test, root, directory));
             Suite("integration", directory => IntegrationTests.Register(Test, root, directory));
+            Suite("tla-only-inspection", directory => IntegratedTlaOnlyTests.Register(Test, root, directory));
             Suite("integrated", directory => IntegratedTests.Register(Test, root, directory));
             Suite("workflow", directory => ProjectWorkflowTests.Register(Test, root, directory));
             Suite("tlc-store", directory => TlcResultStoreTests.RegisterNative(Test, root, directory));

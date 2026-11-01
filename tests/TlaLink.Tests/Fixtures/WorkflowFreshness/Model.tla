@@ -1,0 +1,3 @@
+---- MODULE Model ----
+Init == TRUE
+====

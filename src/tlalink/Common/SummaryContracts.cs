@@ -47,6 +47,8 @@ public sealed record AcceptanceSummary(string Project, string Scenario, string E
     public Dictionary<string, int>? Counts { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, int>? Omitted { get; init; }
+    public List<string> ChangedReviewInputs { get; init; } = [];
+    public WorkflowPolicyReassessment? PolicyReassessment { get; init; }
 }
 public sealed record WorkflowStageSummary(string Id, string Kind, string ExecutionStatus, string Outcome,
     double DurationSeconds, string Evidence, List<string> Diagnostics, TlcStatistics? Statistics,
@@ -58,7 +60,7 @@ public sealed record WorkflowRunSummary(string Project, string Scenario, string 
 public sealed record ResolvedMethodSummaryView(string Scope, MethodSummary Summary, string Method,
     EndpointSummary? Precondition);
 public sealed record PlannedMethodSummaryView(string Scope, MethodSummary Summary, string Method,
-    string InspectionStatus, ReviewOrigin InspectionOrigin, string Boundary);
+    string InspectionStatus, ReviewOrigin InspectionOrigin, string Boundary, EndpointSummary? Precondition);
 public sealed record PlannedStageSummary(string Id, string Kind, List<string> DependsOn,
     TlcResources? RequestedResources, TlcResources? Resources, int? Fingerprint,
     List<StoredOutcome>? Stored, List<MethodSummaryUse>? MethodSummaries);

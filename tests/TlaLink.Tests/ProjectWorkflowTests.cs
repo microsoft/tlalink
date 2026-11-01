@@ -95,6 +95,36 @@ public static class ProjectWorkflowTests
             CoreTests.Equal(0, text.Code);
             CoreTests.True(text.Json.Length < 4000 && text.Json.Contains("project-preflight", StringComparison.Ordinal));
         });
+        test("workflow execution does not pin review-only context as native input", () =>
+        {
+            string review = Path.Combine(example, "review-context.md");
+            File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "WorkflowFreshness", "review.md"), review);
+            string variantPath = Path.Combine(example, "review-project.json");
+            string variantPolicy = Path.Combine(example, "review-requirements.json");
+            List<string> models = original.Scenarios.Single(s => s.Id == "lanes").Stages
+                .SelectMany(s => s.Models ?? []).Distinct().ToList();
+            AnalysisProject variant = original with {
+                Id = "review-inputs", Requirements = Path.GetFileName(variantPolicy),
+                Scenarios = [new("scope", [new("model-inputs", "inputs", [], 30, Models: models)])],
+                Obligations = [new("inspection", "Synthetic native input review.", [], ["review-context.md"])],
+                CheckObligations = []
+            };
+            Save(variantPath, variant);
+            Save(variantPolicy, new AcceptancePolicy(Schema.Version, "acceptance-policy", variant.Id,
+                [new("input-check", "scope", "model-inputs", "passed", Reviews: ["inspection"])]));
+            string output = Path.Combine(work, "review-input-run");
+            var execution = TestCli.Run(["run", "--project", variantPath, "--scenario", "scope", "--output", output]);
+            if (execution.Code != 0) throw new InvalidOperationException(execution.Json);
+            WorkflowRun run = ProjectInputs.Read<WorkflowRun>(Path.Combine(output, "run.json"));
+            CoreTests.True(!run.Fingerprints.ContainsKey(review));
+            File.AppendAllText(review, "\nChanged review context after execution.\n");
+            var response = TestCli.Run(["accept", "--project", variantPath, "--run", output]);
+            CoreTests.Equal(1, response.Code);
+            AcceptanceResult accepted = JsonSerializer.Deserialize<AcceptanceResult>(response.Json, Files.Json)!;
+            CoreTests.Equal("consistent", accepted.ArchiveStatus);
+            CoreTests.Equal("current", accepted.CurrentApplicability);
+            CoreTests.Equal("not-accepted", accepted.AcceptanceStatus);
+        });
         test("project rejects obsolete schema unknown fields invalid compiler and cyclic dependencies", () =>
         {
             try

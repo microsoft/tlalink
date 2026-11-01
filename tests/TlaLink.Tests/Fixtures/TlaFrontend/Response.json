@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {"kind": "operator", "name": "Apply", "scope": "Sample", "line": 3, "column": 1, "endLine": 3, "endColumn": 25},
+    {"kind": "variable", "name": "state", "scope": "Sample", "line": 2, "column": 10, "endLine": 2, "endColumn": 14}
+  ],
+  "metadata": {
+    "module": "Sample",
+    "variables": ["state"],
+    "arities": {"Apply": 2}
+  }
+}

@@ -9,7 +9,13 @@ namespace TlaLink;
 
 public sealed record InspectionQuery(List<string> Bindings, List<string> Endpoints, List<string> Symbols, List<string> SyntaxKinds,
     List<string> SourceFiles, List<string> Kinds, List<string> Statuses, List<string> CapturePoints,
-    string? Search, List<string> Sections, int Offset, int? Limit);
+    string? Search, List<string> Sections, int Offset, int? Limit)
+{
+    public string GroupBy { get; init; } = "endpoint";
+    public bool CalleeSource { get; init; }
+    public int CalleeLimit { get; init; } = 10;
+    public int CalleeMaxLines { get; init; } = 80;
+}
 
 internal static class InspectionFiltering
 {
@@ -45,15 +51,30 @@ internal static class InspectionFiltering
             throw Invalid("--syntax requires a Roslyn SyntaxKind name.");
         string? search = options.Optional("search");
         if (search != null && string.IsNullOrWhiteSpace(search)) throw Invalid("--search must be nonempty.");
+        string groupBy = options.Get("group-by", "endpoint");
+        if (groupBy is not ("endpoint" or "member")) throw Invalid("--group-by must be endpoint or member.");
+        string calleeSource = options.Get("callee-source", "false");
+        if (calleeSource is not ("true" or "false")) throw Invalid("--callee-source must be true or false.");
+        if (calleeSource == "true" && (options.Get("calls", "true") == "false" || !sections.Contains("calls")))
+            throw Invalid("--callee-source true requires the calls section and cannot be combined with --calls false.");
+        if (calleeSource == "false" && new[] { "callee-limit", "callee-max-lines" }.Any(options.Has))
+            throw Invalid("Callee budgets require --callee-source true.");
+        int calleeLimit = Number("callee-limit", 10, 1), calleeMaxLines = Number("callee-max-lines", 80, 1);
+        if (calleeLimit > 100 || calleeMaxLines > 500)
+            throw Invalid("--callee-limit must be 1..100 and --callee-max-lines must be 1..500.");
         return new(Values("binding"), Values("endpoint"), symbols, syntax,
             Values("source-file").Select(FilePaths.Full).Distinct(FilePaths.Comparer).ToList(), Values("kind"),
             Values("status", ["linked", "unlinked", "declared-hidden", "unresolved"]),
             Values("capture-point", ["invoke", "commit", "complete", "fault", "cleanup", "none"]),
-            search, sections, Number("offset", 0, 0), options.Has("limit") ? Number("limit", 1, 1) : null);
+            search, sections, Number("offset", 0, 0), options.Has("limit") ? Number("limit", 1, 1) : null)
+        {
+            GroupBy = groupBy, CalleeSource = calleeSource == "true",
+            CalleeLimit = calleeLimit, CalleeMaxLines = calleeMaxLines
+        };
     }
 
     internal static bool IncludeCalls(CliOptions options, InspectionQuery query) =>
-        options.Get("calls", "false") == "true" || options.Has("section") && query.Sections.Contains("calls");
+        query.CalleeSource || options.Get("calls", "false") == "true" || options.Has("section") && query.Sections.Contains("calls");
 
     internal static string? SourceSymbol(SourceBinding binding)
     {
@@ -119,8 +140,16 @@ internal static class InspectionFiltering
                 Section("source", nameof(InspectionSource.SelectedText));
                 Section("context", nameof(InspectionSource.Lines), nameof(InspectionSource.Context),
                     nameof(InspectionSource.Boundaries), nameof(InspectionSource.Locks));
+                if (result.Query?.GroupBy == "member")
+                    foreach (JsonPropertyInfo property in type.Properties.Where(p =>
+                        p.Name == Files.Json.PropertyNamingPolicy!.ConvertName(nameof(InspectionSource.Lines))))
+                        property.ShouldSerialize = (_, _) => false;
                 Section("calls", nameof(InspectionSource.Calls));
             }
+            else if (type.Type == typeof(InspectionMemberGroup))
+                Section("context", nameof(InspectionMemberGroup.Lines));
+            else if (type.Type == typeof(LinkInspectionResult))
+                Section("calls", nameof(LinkInspectionResult.CalleeSources));
         });
         return JsonSerializer.Serialize(result, new JsonSerializerOptions(Files.Json) { TypeInfoResolver = resolver });
     }

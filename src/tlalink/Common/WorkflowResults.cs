@@ -23,7 +23,11 @@ public sealed record AcceptanceResult(int SchemaVersion, string Kind, string Pro
     string Run, string RunSha256, string ExecutionStatus, string ArchiveStatus, string CurrentApplicability,
     string AcceptanceStatus, List<RequirementResult> Requirements, List<Issue> Diagnostics,
     List<CheckCoverage> CheckCoverage, List<AcceptanceMethodSummary> MethodSummaries,
-    List<ReviewResult> Reviews, List<string> NextActions, string Boundary);
+    List<ReviewResult> Reviews, List<string> NextActions, string Boundary)
+{
+    public List<string> ChangedReviewInputs { get; init; } = [];
+    public WorkflowPolicyReassessment? PolicyReassessment { get; init; }
+}
 public sealed record PlannedMethodSummary(string Scope, MethodSummary Summary, string Method,
     Endpoint Implementation, Endpoint Specification, Endpoint? Precondition, string InspectionStatus,
     ReviewOrigin InspectionOrigin, string Boundary);

@@ -163,6 +163,29 @@ public static class NativeContractTests
                 CoreTests.ThrowsAny<JsonException>(() =>
                     JsonSerializer.Deserialize<TlaNativeMetadata>(json, TlaNativeJson.Options));
         });
+        test("one SANY response binds endpoint rows and native metadata without a second parse", () =>
+        {
+            string json = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "TlaFrontend", "Response.json"));
+            TlaNativeParse parsed = TlaNativeJson.ReadParse(json);
+            CoreTests.Equal(2, parsed.Entries.Count);
+            CoreTests.Equal("Sample", parsed.Metadata.Module);
+            CoreTests.Equal("state", parsed.Metadata.Variables.Single());
+            CoreTests.Equal(2, parsed.Metadata.Arities["Apply"]);
+            foreach (string field in new[] { "entries", "metadata" })
+            {
+                System.Text.Json.Nodes.JsonObject missing = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+                missing.Remove(field);
+                CoreTests.ThrowsAny<JsonException>(() => TlaNativeJson.ReadParse(missing.ToJsonString()));
+                System.Text.Json.Nodes.JsonObject nulled = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+                nulled[field] = null;
+                CoreTests.ThrowsAny<JsonException>(() => TlaNativeJson.ReadParse(nulled.ToJsonString()));
+            }
+            foreach (string invalid in new[] { "null", "[]",
+                """{"entries":[null],"metadata":{"module":"Sample","variables":[],"arities":{}}}""",
+                """{"entries":[],"metadata":{"module":"Sample","variables":[null],"arities":{}}}""",
+                """{"entries":[],"metadata":{"module":"Sample","variables":[],"arities":{"Apply":-1}}}""" })
+                CoreTests.ThrowsAny<JsonException>(() => TlaNativeJson.ReadParse(invalid));
+        });
         test("native P and reused Dafny frontend contracts require typed envelope collections", () =>
         {
             string path = JsonSerializer.Serialize(Path.Combine(work, "Demo.p"));

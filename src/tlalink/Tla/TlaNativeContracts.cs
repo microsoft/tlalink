@@ -25,6 +25,25 @@ internal static class TlaNativeJson
         {
             throw new JsonException("Invalid TLA parser entry kind.", error);
         }
+
+    }
+
+    internal static TlaNativeParse ReadParse(string json)
+    {
+        try
+        {
+            TlaNativeParse parsed = JsonSerializer.Deserialize<TlaNativeParse>(json, Options)
+                ?? throw new JsonException("Invalid TLA parser response: expected an object.");
+            if (parsed.Entries.Any(row => row is null) || parsed.Metadata.Variables.Any(v => v is null) ||
+                string.IsNullOrWhiteSpace(parsed.Metadata.Module) ||
+                parsed.Metadata.Arities.Any(p => string.IsNullOrWhiteSpace(p.Key) || p.Value < 0))
+                throw new JsonException("Invalid TLA parser entries or metadata.");
+            return parsed;
+        }
+        catch (NotSupportedException error)
+        {
+            throw new JsonException("Invalid TLA parser entry kind.", error);
+        }
     }
 }
 
@@ -64,3 +83,5 @@ internal sealed record TlaNativeTranslation(string State, string Detail, int Lin
 internal sealed record TlaNativeAssumptions(string Module, int Count) : TlaNativeRow;
 internal sealed record TlaNativeOperatorLevel(string Name, int Level) : TlaNativeRow;
 internal sealed record TlaNativeMetadata(string Module, List<string> Variables, Dictionary<string, int> Arities);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record TlaNativeParse(List<TlaNativeRow> Entries, TlaNativeMetadata Metadata);

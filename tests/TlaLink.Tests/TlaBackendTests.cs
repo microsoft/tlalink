@@ -125,6 +125,15 @@ public static class TlaBackendTests
 
     private static void MetadataAndOffsets(Fixture fixture)
     {
+        string imported = fixture.Sample("MetadataBase");
+        TlaDocument composed = fixture.Parse(fixture.Sample("MetadataRoot"));
+        fixture.Check(composed.Module == "MetadataRoot", "Combined response root module");
+        fixture.Check(composed.Variables.Order(StringComparer.Ordinal).SequenceEqual(new[] { "inherited", "own" }),
+            "Same-pass metadata retains imported state variables");
+        fixture.Check(composed.Endpoints.Single(e => e.Kind == "operator").Name == "RootApply" &&
+            composed.Endpoints.Single(e => e.Kind == "operator").Arity == 2,
+            "Same-pass metadata retains root higher-order arity without importing endpoints");
+        fixture.Check(composed.DependencyFingerprints.ContainsKey(imported), "Same-pass metadata retains dependency pins");
         var parsed = fixture.Parse(fixture.Write("Arity",
             "VARIABLE x\nApply(F(_), arg) == F(arg)\nPair(a,b) == <<a,b>>"));
         fixture.Check(parsed.Variables.SequenceEqual(new[] { "x" }), "Declared state variable");
@@ -163,6 +172,12 @@ public static class TlaBackendTests
     {
         public string Jar => jar;
         public void Check(bool condition, string message) => check(condition, message);
+        public string Sample(string module)
+        {
+            string path = Path.Combine(directory, module + ".tla");
+            File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "TlaFrontend", module + ".tla"), path);
+            return path;
+        }
         public string Write(string module, string body)
         {
             string path = Path.Combine(directory, module + ".tla");

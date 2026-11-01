@@ -13,6 +13,7 @@ public static class CoreTests
         SourcePreparationTests.Register(test, work);
         ActionArgumentTests.Register(test, work);
         AcceptanceSummaryTests.Register(test, work);
+        WorkflowFreshnessTests.Register(test, work);
         SourceInventoryTests.Register(test, work);
         SourceSymbolTests.Register(test, work);
         SourceObligationTests.Register(test, work);

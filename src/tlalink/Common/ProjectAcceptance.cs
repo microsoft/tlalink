@@ -26,10 +26,25 @@ public static class ProjectAcceptance
             issues.Add(issue);
             if (grouped) groupedDiagnostics.Add(issue);
         }
-        if (run.Project != project.Id || run.ProjectSha256 != Files.Hash(path) ||
-            run.RequirementsSha256 != Files.Hash(ProjectInputs.Resolve(path, project.Requirements)))
-            Error(ErrorCode.WorkflowProjectChanged, "Project or acceptance requirements differ from the run.");
-        issues.AddRange(ProjectComposition.ValidateArchive(path, project, run, directory));
+        Dictionary<string, string> recordedPaths = new(FilePaths.Comparer);
+        foreach (var pin in run.Fingerprints.Where(p => FilePaths.IsAbsolute(p.Key)))
+            if (!recordedPaths.TryAdd(pin.Key, pin.Value))
+                Error(ErrorCode.WorkflowProvenanceInconsistent, "Run contains aliased input paths: " + pin.Key);
+        issues.AddRange(ProjectComposition.ValidateArchive(path, project, run, directory, out AnalysisProject? archivedProject));
+        WorkflowPolicyComparison.Result comparison;
+        try { comparison = WorkflowPolicyComparison.Compare(path, project, policy, run, directory, archivedProject); }
+        catch (Exception error) when (error is InputException or IOException or UnauthorizedAccessException or JsonException)
+        {
+            Error(error is InputException { Code: ErrorCode.WorkflowEvidenceStale }
+                ? ErrorCode.WorkflowEvidenceStale : ErrorCode.WorkflowProvenanceInconsistent,
+                "Policy comparison: " + error.Message);
+            comparison = new(new("unavailable", new(run.ProjectSha256, run.RequirementsSha256, null),
+                new(project.Authoring!.Fingerprints[path], null, null),
+                null, null, ["archive-validation"], "Policy comparison did not complete."), new(FilePaths.Comparer));
+        }
+        if (comparison.Report.Status is "incompatible" or "unavailable")
+            Error(ErrorCode.WorkflowProjectChanged, "Execution/policy reassessment blocked: " +
+                string.Join(", ", comparison.Report.ChangedAreas) + ".");
         AnalysisScenario? scenario = project.Scenarios.SingleOrDefault(s => s.Id == run.Scenario);
         if (scenario == null) throw new InputException(ErrorCode.WorkflowProjectChanged, "Run scenario does not exist in this project.");
         List<SelectedMethodSummary> selectedSummaries = MethodSummaries.Select(path, project, scenario.Stages);
@@ -46,7 +61,7 @@ public static class ProjectAcceptance
             FormalTarget target = CorrespondenceInputs.Target(summary.Configuration, Markup.Name(summary.Summary.Binding).Alias, "tla");
             foreach (string input in summary.Summary.Sources.Select(p => ProjectInputs.Resolve(summary.Scope, p))
                 .Concat(target.Inputs).Append(summary.Scope))
-                if (!run.Fingerprints.ContainsKey(RecordedSummaryPath(input)))
+                if (!recordedPaths.ContainsKey(RecordedSummaryPath(input)))
                     Error(ErrorCode.WorkflowProvenanceInconsistent, "Run is missing a method-summary input pin: " + input);
         }
         AcceptanceWorklist worklist = new(run, scenario, policy.Requirements.Where(r => r.Scenario == run.Scenario).ToList(), issues, groupedDiagnostics);
@@ -64,17 +79,6 @@ public static class ProjectAcceptance
             string archived = SafePath(directory, Path.Combine("inputs", pin.Value));
             if (!File.Exists(archived) || Files.Hash(archived) != pin.Value)
                 Error(ErrorCode.WorkflowProvenanceInconsistent, "Missing/changed archived input: " + pin.Key);
-            if (!FilePaths.IsNativeAbsolute(pin.Key))
-            {
-                Error(ErrorCode.WorkflowEvidenceStale, "Input uses a foreign filesystem root: " + pin.Key);
-                continue;
-            }
-            string current = pin.Key;
-            string relative = Path.GetRelativePath(run.ProjectDirectory, pin.Key);
-            if (!Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-                current = ProjectInputs.Resolve(path, relative);
-            if (!File.Exists(current) || Files.Hash(current) != pin.Value)
-                Error(ErrorCode.WorkflowEvidenceStale, "Stale current input: " + current);
         }
         foreach (var artifact in run.Artifacts)
         {
@@ -165,6 +169,32 @@ public static class ProjectAcceptance
             }
             evidence[stage.Id] = result;
         }
+        HashSet<string> reviewOnly = issues.Count == 0
+            ? WorkflowInputRoles.ReviewOnly(path, project, policy, run, directory, evidence, selectedSummaries,
+                comparison.ReviewInputs)
+            : new(FilePaths.Comparer);
+        List<string> changedReviewInputs = [];
+        foreach (var pin in run.Fingerprints.Where(p => FilePaths.IsAbsolute(p.Key)))
+        {
+            if (!FilePaths.IsNativeAbsolute(pin.Key))
+            {
+                Error(ErrorCode.WorkflowEvidenceStale, "Input uses a foreign filesystem root: " + pin.Key);
+                continue;
+            }
+            string current = WorkflowInputRoles.CurrentInput(path, run, pin.Key);
+            if (!File.Exists(current) || Files.Hash(current) != pin.Value)
+            {
+                if (reviewOnly.Contains(current)) changedReviewInputs.Add(current);
+                else Error(ErrorCode.WorkflowEvidenceStale, "Stale current input: " + current);
+            }
+        }
+        foreach (var pin in project.Authoring!.Fingerprints)
+            if (!File.Exists(pin.Key) || Files.Hash(pin.Key) != pin.Value)
+                Error(ErrorCode.WorkflowEvidenceStale, "Current project authoring changed during reassessment: " + pin.Key);
+        string currentPolicy = ProjectInputs.Resolve(path, project.Requirements);
+        if (comparison.Report.Current.RequirementsSha256 is string currentPolicyHash &&
+            (!File.Exists(currentPolicy) || Files.Hash(currentPolicy) != currentPolicyHash))
+            Error(ErrorCode.WorkflowEvidenceStale, "Current acceptance policy changed during reassessment: " + currentPolicy);
         List<RequirementResult> requirements = [];
         foreach (AnalysisRequirement requirement in policy.Requirements.Where(r => r.Scenario == run.Scenario))
         {
@@ -180,7 +210,7 @@ public static class ProjectAcceptance
             if (selected.Config != null)
             {
                 string recordedConfig = FilePaths.Full(selected.Config, run.ProjectDirectory);
-                if (!run.Fingerprints.TryGetValue(recordedConfig, out string? hash) ||
+                if (!recordedPaths.TryGetValue(recordedConfig, out string? hash) ||
                     !hash.Equals(requirement.ConfigSha256, StringComparison.OrdinalIgnoreCase))
                     Missing("independently approved configuration bounds/properties");
             }
@@ -263,7 +293,8 @@ public static class ProjectAcceptance
                 .Distinct().Select(id => new ReviewResult(id, ReviewStatus(path, project, id),
                     LatestReview(path, project, id))).ToList(),
             issues.Select(i => i.Message).Distinct().ToList(),
-            "Acceptance of declared bounded evidence and explicit reviews, not general C# refinement or host authentication.");
+            "Acceptance of declared bounded evidence and explicit reviews, not general C# refinement or host authentication.")
+            { ChangedReviewInputs = changedReviewInputs, PolicyReassessment = comparison.Report };
         return (report,
             accepted ? 0 : issues.Any(i => i.Is(ErrorCode.WorkflowProjectChanged, ErrorCode.WorkflowExecutionIncomplete, ErrorCode.WorkflowEvidenceStale)) ? 2 : 1,
             worklist);

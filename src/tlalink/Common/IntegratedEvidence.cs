@@ -282,6 +282,9 @@ public static class IntegratedEvidence
                     if (hasTla != (policy.TlaTargets.Count > 0) || hasTla &&
                         !result.Tla!.SelectedTargets.ToHashSet(StringComparer.Ordinal).SetEquals(policy.TlaTargets))
                         Error("Recorded TLA+ selection differs from the pinned binding manifest.");
+                    if (hasTla)
+                        IntegratedTlaEvidence.ValidateArchive(result.Tla!, policy, manifestPath, scope,
+                            recordedPins, archiveDirectory);
                     foreach (DafnyLink link in links)
                     {
                         string id = link?.Id ?? "";
@@ -309,7 +312,15 @@ public static class IntegratedEvidence
         foreach (DafnyLink link in links)
             if (string.IsNullOrWhiteSpace(link?.Id) || !linked.Add(link.Id))
                 Error("Link identifiers must be nonempty and unique.");
-        if (linksStatus == "passed" && linked.Count == 0) Error("Passed links require resolved bindings.");
+        bool tlaOnly = linked.Count == 0 && result.Tla is { LinksStatus: "passed", Links.Length: > 0 };
+        if (tlaOnly && (result.Tla!.SchemaVersion != Schema.Version || result.Tla.Kind != "source-review" ||
+            result.Tla.Inventory.Length == 0 || result.Tla.SelectedTargets.Length == 0 ||
+            result.Tla.ConformanceStatus != "not-run" || result.Tla.Diagnostics.Any(d => d.Severity == "error")))
+            Error("TLA+-only results require native inventory, selected targets and ready structural links.");
+        if (linksStatus == "passed" && linked.Count == 0 && !tlaOnly) Error("Passed links require resolved bindings.");
+        if (tlaOnly && (command != "inspect-integrated" || result.Inventory.Length != 0 || stages.Count != 0 ||
+            proof != "not-run" || audit != "not-run" || conformance != "not-run"))
+            Error("TLA+-only results must be inspection-only without Dafny or execution stages.");
         if (correspondence != (claims.Length == 0 ? "not-specified" : "requires-review"))
             Error("Correspondence status disagrees with recorded claims.");
         HashSet<string> ids = [];
@@ -354,7 +365,7 @@ public static class IntegratedEvidence
                 NeedArtifact(entry.Key + ".invocation.json");
             }
         }
-        if (linksStatus == "passed")
+        if (linksStatus == "passed" && linked.Count > 0)
         {
             foreach (string name in new[] { "dafny-version", "dafny-bridge", "dafny-discover", "dafny-resolve" }) NeedStage(name);
             NeedArtifact("dafny-discover.json");

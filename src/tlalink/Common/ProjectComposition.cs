@@ -69,8 +69,10 @@ public static class ProjectComposition
         new(Schema.Version, "project-expansion", project.Id, Path.GetDirectoryName(path)!, project,
             new(project.Authoring!.Fingerprints, FilePaths.Comparer));
 
-    internal static List<Issue> ValidateArchive(string path, AnalysisProject project, WorkflowRun run, string directory)
+    internal static List<Issue> ValidateArchive(string path, AnalysisProject project, WorkflowRun run, string directory,
+        out AnalysisProject? archivedProject)
     {
+        archivedProject = null;
         const string snapshot = "expanded-project.json";
         if (!run.Artifacts.ContainsKey(snapshot))
             return project.Authoring?.Composed == true
@@ -95,12 +97,9 @@ public static class ProjectComposition
                 saved.Fingerprints.Count != archived.Authoring!.Fingerprints.Count ||
                 saved.Fingerprints.Any(p => !archived.Authoring.Fingerprints.TryGetValue(p.Key, out string? hash) || hash != p.Value))
                 throw new InputException("Expanded project does not match its archived authoring files.");
-            foreach (var pin in project.Authoring!.Fingerprints)
-            {
-                string recorded = FilePaths.Full(Path.GetRelativePath(Path.GetDirectoryName(path)!, pin.Key), run.ProjectDirectory);
-                if (!run.Fingerprints.TryGetValue(recorded, out string? hash) || hash != pin.Value)
-                    return [new(ErrorCode.WorkflowProjectChanged, "Project composition differs from the run: " + pin.Key)];
-            }
+            if (!run.Fingerprints.TryGetValue(recordedRoot, out string? rootHash) || rootHash != run.ProjectSha256)
+                throw new InputException("Archived project root contradicts its recorded hash.");
+            archivedProject = archived;
             return [];
         }
         catch (Exception error) when (error is InputException or IOException or UnauthorizedAccessException or JsonException)

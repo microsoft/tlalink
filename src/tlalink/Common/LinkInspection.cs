@@ -10,8 +10,16 @@ namespace TlaLink;
 public sealed record InspectionLine(int Number, string Text, bool Selected);
 public sealed record InspectionSource(Place Location, string SelectedText, List<InspectionLine> Lines,
     List<Boundary> Context, List<Boundary> Boundaries, List<string> Locks, bool InNestedFunction,
-    List<InspectionCall>? Calls);
-public sealed record InspectionCall(SourceCallSite Site, List<Place> SourceDeclarations);
+    List<InspectionCall>? Calls)
+{
+    public InspectionMember? Member { get; init; }
+}
+public sealed record InspectionMember(string? Symbol, Place Location);
+public sealed record InspectionCall(SourceCallSite Site, List<Place> SourceDeclarations)
+{
+    public string ExpansionStatus { get; init; } = "not-requested";
+    public List<string> CalleeKeys { get; init; } = [];
+}
 public sealed record InspectionObservation(string Binding, string Status, string? Expression, Place? Location,
     string? Guard, CapturedType? Type);
 public sealed record InspectedLink(string Binding, string? Reason, PreparationTarget? Selector,
@@ -39,13 +47,21 @@ public sealed record LinkInspectionResult(int SchemaVersion, string Kind, string
     public int MatchedLinks { get; init; }
     public int ReturnedLinks => Endpoints.Sum(e => e.Links.Count);
     public int? NextOffset { get; init; }
+    public List<InspectionMemberGroup> MemberGroups { get; init; } = [];
+    public List<InspectionCalleeSource> CalleeSources { get; init; } = [];
 }
 
 public sealed record LinkInspectionSummary(int SchemaVersion, string Kind, string Status, string Target,
     int Endpoints, int Links, int UnlinkedEndpoints, int OmittedUnlinkedEndpoints, string View,
     bool CallsIncluded, int InputPinCount, InspectionQuery? Query, int CandidateEndpoints,
     int MatchedEndpoints, int? NextOffset, int CandidateLinks, int MatchedLinks, int ReturnedLinks,
-    List<Issue> Diagnostics, string Boundary);
+    List<Issue> Diagnostics, string Boundary)
+{
+    public int MemberGroups { get; init; }
+    public int CalleeSources { get; init; }
+    public int OmittedCalleeDeclarations { get; init; }
+    public int TruncatedCalleeSources { get; init; }
+}
 
 internal static class LinkInspection
 {
@@ -169,9 +185,13 @@ internal static class LinkInspection
             entries.RemoveAll(e => e.Status is "unlinked" or "declared-hidden");
         }
         entries = InspectionFiltering.Apply(entries, query);
+        List<InspectedEndpoint> matchingEntries = entries;
         int matched = entries.Count;
         int matchedLinks = entries.Sum(e => e.Links.Count);
         entries = entries.Skip(query.Offset).Take(query.Limit ?? int.MaxValue).ToList();
+        List<InspectionCalleeSource> callees = query.CalleeSource ? InspectionReviewContext.ExpandCallees(source, entries, query) : [];
+        List<InspectionMemberGroup> groups = query.GroupBy == "member" ?
+            InspectionReviewContext.GroupMembers(entries, matchingEntries) : [];
         return new(Schema.Version, "link-inspection", diagnostics.Any(d => d.Severity == "error") ? "failed" : "ready",
             target.Id, target.Language, options.Get("context", "3"), entries, diagnostics,
             options.Get("view", "compact") == "full" ? pins : null, BoundaryText)
@@ -180,6 +200,7 @@ internal static class LinkInspection
             OmittedUnlinkedEndpoints = omitted, InputPinCount = pins.Count, Compiler = compiler,
             Query = query, CandidateEndpoints = candidates, MatchedEndpoints = matched,
             CandidateLinks = candidateLinks, MatchedLinks = matchedLinks,
+            MemberGroups = groups, CalleeSources = callees,
             NextOffset = query.Offset < matched && entries.Count < matched - query.Offset ? query.Offset + entries.Count : null
         };
     }
@@ -248,7 +269,11 @@ internal static class LinkInspection
             .OfType<LockStatementSyntax>().Where(l => l.Statement.Span.Contains(node.Span))
             .Reverse().Select(l => l.Expression.ToString()).ToList();
         return new(binding.Endpoint.Location, binding.Endpoint.Source, excerpt, frames, CSharpScope.Boundaries(binding),
-            locks, SourceQueries.Nested(node, member), callSites);
+            locks, SourceQueries.Nested(node, member), callSites)
+        {
+            Member = new(InspectionReviewContext.MemberSymbol(binding, member),
+                Files.At(binding.Path, binding.Text, member.SpanStart, member.Span.End))
+        };
     }
 
     internal static void Render(LinkInspectionResult result, CliOptions options)
@@ -264,7 +289,12 @@ internal static class LinkInspection
                 result.OmittedUnlinkedEndpoints, result.View, result.CallsIncluded, result.InputPinCount,
                 result.Query, result.CandidateEndpoints, result.MatchedEndpoints, result.NextOffset,
                 result.CandidateLinks, result.MatchedLinks, result.ReturnedLinks,
-                result.Diagnostics, result.Boundary), Files.Json),
+                result.Diagnostics, result.Boundary)
+            {
+                MemberGroups = result.MemberGroups.Count, CalleeSources = result.CalleeSources.Count,
+                OmittedCalleeDeclarations = result.CalleeSources.Count(c => c.Status == "budget-omitted"),
+                TruncatedCalleeSources = result.CalleeSources.Count(c => c.OmittedLines > 0 && c.Status != "budget-omitted")
+            }, Files.Json),
             _ => InspectionFiltering.Json(result)
         };
         if (options.Optional("output") is string output)
@@ -307,6 +337,25 @@ internal static class LinkInspection
         if (result.Compiler is SourceCompilerContext compiler)
             text.AppendLine($"Compiler: C# {compiler.LanguageVersion}, nullable={compiler.Nullable}, target={compiler.TargetFramework ?? "explicit compilation"}" +
                 (compiler.RegressionResult == null ? "" : "; recorded context: " + compiler.RegressionResult));
+        if (result.Query?.GroupBy == "member")
+        {
+            text.AppendLine("Member groups contain only returned attachments in source order, not execution order or complete member coverage.");
+            foreach (InspectionMemberGroup group in result.MemberGroups)
+            {
+                Heading(2, "C# member: " + (group.Member.Symbol ?? "unnamed declaration"));
+                text.AppendLine(Location(group.Member.Location) +
+                    $"; attachments: {group.Attachments.Count} returned / {group.MatchingAttachments} matching (before paging).");
+                foreach (InspectionMemberAttachment attachment in group.Attachments)
+                    text.AppendLine($"  {attachment.Location.Line}:{attachment.Location.Column} {attachment.Binding} -> {attachment.Endpoint}" +
+                        " [" + string.Join(", ", attachment.CapturePoints) + "]");
+                if (Includes("context"))
+                {
+                    text.AppendLine("Shared context (gaps are omitted physical lines; >>> intersects a returned attachment):");
+                    Code("text", string.Join("\n", group.Lines.Select(l =>
+                        $"{(l.Selected ? ">>>" : "   ")} {l.Number,5} | {l.Text}")));
+                }
+            }
+        }
         foreach (InspectedEndpoint endpoint in result.Endpoints)
         {
             text.AppendLine();
@@ -336,8 +385,11 @@ internal static class LinkInspection
                     }
                     if (Includes("context"))
                     {
-                        text.AppendLine("Context (>>> marks lines intersecting the selection):");
-                        Code("text", string.Join("\n", source.Lines.Select(l => $"{(l.Selected ? ">>>" : "   ")} {l.Number,5} | {l.Text}")));
+                        if (result.Query?.GroupBy != "member")
+                        {
+                            text.AppendLine("Context (>>> marks lines intersecting the selection):");
+                            Code("text", string.Join("\n", source.Lines.Select(l => $"{(l.Selected ? ">>>" : "   ")} {l.Number,5} | {l.Text}")));
+                        }
                         foreach (Boundary frame in source.Context)
                             text.AppendLine("Enclosing: " + frame.Text + " at " + Location(frame.Location));
                         text.AppendLine("Enclosing source locks: " + (source.Locks.Count == 0 ? "none" : string.Join(", ", source.Locks)));
@@ -354,6 +406,9 @@ internal static class LinkInspection
                                 " at " + string.Join(", ", call.SourceDeclarations.Select(Location))));
                         if (call.Site.InNestedFunction)
                             text.AppendLine("Call is in a nested function; its execution is not established by the enclosing member.");
+                        if (result.Query?.CalleeSource == true)
+                            text.AppendLine("Callee expansion: " + call.ExpansionStatus +
+                                (call.CalleeKeys.Count == 0 ? "" : " -> " + string.Join(", ", call.CalleeKeys)));
                     }
                 }
                 if (Includes("captures") && link.Captures.Count == 0) text.AppendLine("Capture: none (review-only attachment).");
@@ -367,6 +422,18 @@ internal static class LinkInspection
                     text.AppendLine($"Observes: {observation.Binding} [{observation.Status}] -> {observation.Expression}" +
                         $" (declared guard: {observation.Guard ?? "none"}; type: {observation.Type?.ToString() ?? "unspecified"})" +
                         (observation.Location == null ? "" : " at " + Location(observation.Location)));
+            }
+        }
+        if (result.Query?.CalleeSource == true && Includes("calls"))
+        {
+            Heading(2, "Selected-source callees (one level, deduplicated)");
+            text.AppendLine("Declared targets only; bodies are not a runtime dispatch, transitive effect, nonthrowing or ownership proof.");
+            foreach (InspectionCalleeSource callee in result.CalleeSources)
+            {
+                Heading(3, callee.Key + " [" + callee.Status + "]");
+                text.AppendLine(callee.Symbol + " at " + Location(callee.Location) +
+                    $"; {callee.Lines.Count}/{callee.TotalLines} lines; omitted: {callee.OmittedLines}.");
+                if (callee.Lines.Count > 0) Code("csharp", string.Join("\n", callee.Lines.Select(l => $"{l.Number,5} | {l.Text}")));
             }
         }
         if (result.Diagnostics.Count > 0) Heading(2, "Diagnostics");

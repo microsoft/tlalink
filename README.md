@@ -35,6 +35,12 @@ checkable:
   earlier results no longer apply. The agent then updates the model and
   reruns the affected checks.
 
+Before rerunning, the agent can reassess an existing run. Changes confined to
+review policy or review context do not replay unchanged execution: TlaLink
+checks the archived execution and checker requirements, then evaluates the
+current reviews separately. New or changed reviews are never approved merely
+because the execution still applies.
+
 The goal is to move from **"the agent says this looks correct"** to **"here is
 the evidence, its scope and what remains unproven."** You do not need to read
 or write TLA+, Dafny or P yourself.
@@ -124,6 +130,9 @@ declaration alongside its selected C# code, surrounding control/lock context
 and observation metadata, without changing either source. Filter by source
 member, attachment status or capture point, and request only the sections
 needed for the review.
+Group related attachments by C# member and optionally inline bounded,
+one-level selected-source callee excerpts to review multi-step cleanup paths
+without repeatedly fetching the same code.
 Agents can load the focused [workspace CLI skills](AGENTS.md#agent-cli-skills)
 for source navigation, correspondence inspection and deliberate link maintenance.
 
@@ -160,6 +169,8 @@ TlaLink does not model a whole program at once. For a larger system:
   TLC searches are reused while their models and configurations are unchanged,
   like an incremental build. Expensive searches can run once, separately,
   with a larger budget. See [reusing results](REFERENCE.md#reusing-completed-tlc-results).
+  Reassess existing runs with `accept` before executing again: review-only
+  document changes require fresh reviews, not fresh native execution.
 
 Combining checks in one project is for organization and repeatability. It
 does not prove that the separate results add up to a system-wide guarantee.
@@ -229,11 +240,14 @@ need the ones your chosen checks use.
 | [Roslyn](https://github.com/dotnet/roslyn) | Resolving the C# side of the links. |
 | [TLA+ tools](https://github.com/tlaplus/tlaplus) (SANY, PlusCal, TLC) | Parsing TLA+ models, exploring their states and checking recorded executions. |
 | [Apalache](https://apalache-mc.org/) | Symbolic checking of TLA+ safety properties. |
-| [Dafny](https://dafny.org/) | Verifying algorithms and comparing selected C# calls with verified results. |
+| [Dafny](https://dafny.org/) | Proving algorithmic contracts and modeled safety invariants, including arbitrary finite histories; comparing selected C# calls with verified results. |
 | [P](https://p-org.github.io/P/) | Checking asynchronous state-machine models and logs. |
 
-Each checker gives a different kind of guarantee; the
-[selection guide](REFERENCE.md#choosing-tools-and-checkers) compares them.
+Choose by the question, not a fixed language ranking. General safety proofs,
+interleaving exploration and eventual-progress checks need different evidence;
+none automatically proves the linked C#. The
+[selection guide](REFERENCE.md#choosing-tools-and-checkers) compares modeling
+fit, checker guarantees and current integration limits.
 
 ## Limitations
 

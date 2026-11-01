@@ -12,7 +12,7 @@ public static class TestTools
             "--core" or "--diagnostics" or "--symbols" => [],
             "--apalache" => [Jar(root), Apalache(root)],
             "--p" => [PCompiler(root)],
-            "--trace" or "--summaries" or "--links" => [Jar(root)],
+            "--trace" or "--summaries" or "--links" or "--frontend" => [Jar(root)],
             "--integrated" or "--workflow" or "--evidence" => [Jar(root), Dafny(root)],
             null => [Jar(root), Apalache(root), Dafny(root), PCompiler(root)],
             _ => throw new ArgumentException("Unknown test selection: " + selection)

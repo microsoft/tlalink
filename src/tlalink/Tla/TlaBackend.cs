@@ -67,13 +67,12 @@ public static partial class TlaBackend
             work = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(adapter)!,
                 ".tlalink-backend-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(work);
-            string metadata = System.IO.Path.Combine(work, "TlaMetadata.java");
-            File.WriteAllText(metadata, MetadataSource, new UTF8Encoding(false));
             Run("javac", ["-J-Djava.io.tmpdir=" + work, "-encoding", "UTF-8",
-                "-cp", jar, "-d", work, adapter, metadata], work, timeoutSeconds);
-            index = Index(path, text, jar, work, timeoutSeconds);
+                "-cp", jar, "-d", work, adapter], work, timeoutSeconds);
+            TlaNativeParse parsed = Index(path, text, jar, work, timeoutSeconds);
+            index = parsed.Entries.AsReadOnly();
             AddIndex(index, path, text, true, endpoints, diagnostics, dependencies);
-            (module, stateVariables) = AddMetadata(path, jar, work, timeoutSeconds, endpoints);
+            (module, stateVariables) = AddMetadata(parsed.Metadata, endpoints);
             CheckImports(path, jar, work, timeoutSeconds, endpoints, diagnostics, dependencies);
             foreach (var pin in java.Fingerprints) Files.Pin(dependencies, pin.Key, pin.Value);
             CheckFingerprints(dependencies);
@@ -104,14 +103,9 @@ public static partial class TlaBackend
             { Module = module, StateVariables = stateVariables, NativeIndex = index };
     }
 
-    private static (string Module, IReadOnlyList<string> Variables) AddMetadata(string path, string jar, string work,
-        int timeout, List<TlaEndpoint> endpoints)
+    private static (string Module, IReadOnlyList<string> Variables) AddMetadata(TlaNativeMetadata metadata,
+        List<TlaEndpoint> endpoints)
     {
-        string json = Run("java", ["-Dfile.encoding=UTF-8", "-Djava.io.tmpdir=" + work,
-            "-cp", work + System.IO.Path.PathSeparator + jar, "pcal.TlaMetadata", path],
-            System.IO.Path.GetDirectoryName(path)!, timeout);
-        TlaNativeMetadata metadata = JsonSerializer.Deserialize<TlaNativeMetadata>(json, TlaNativeJson.Options)
-            ?? throw new BackendFailure("Invalid TLA parser metadata.");
         for (int i = 0; i < endpoints.Count; i++)
             if (endpoints[i].Kind == "operator")
                 endpoints[i] = endpoints[i] with
@@ -139,7 +133,7 @@ public static partial class TlaBackend
             if (hash != dependencies[path])
                 throw new BackendFailure($"Dependency changed while parsing: {path}");
             if (AlgorithmArguments(text).Length > 0)
-                AddIndex(Index(path, text, jar, work, timeout), path, text, false,
+                AddIndex(Index(path, text, jar, work, timeout).Entries, path, text, false,
                     endpoints, diagnostics, dependencies);
         }
     }
@@ -151,13 +145,13 @@ public static partial class TlaBackend
                 throw new BackendFailure($"Dependency changed while parsing: {path}");
     }
 
-    private static IReadOnlyList<TlaNativeRow> Index(string path, string text, string jar, string work, int timeout)
+    private static TlaNativeParse Index(string path, string text, string jar, string work, int timeout)
     {
         string[] arguments = ["-Dfile.encoding=UTF-8", "-Djava.io.tmpdir=" + work,
             "-cp", work + System.IO.Path.PathSeparator + jar, "pcal.TlaIndex", path,
             .. AlgorithmArguments(text)];
         string json = Run("java", arguments, System.IO.Path.GetDirectoryName(path)!, timeout);
-        return TlaNativeJson.ReadIndex(json).AsReadOnly();
+        return TlaNativeJson.ReadParse(json);
     }
 
     private static string Run(string executable, string[] arguments, string directory, int timeout)
@@ -255,6 +249,12 @@ public static partial class TlaBackend
             start, end, line, column, endLine, endColumn);
     }
 
+    internal static int ArchivedOffset(string text, int line, int column)
+    {
+        try { return Offset(text, line, column); }
+        catch (BackendFailure error) { throw new InputException(ErrorCode.InvalidModelBinding, error.Message); }
+    }
+
     private static int Offset(string text, int line, int column)
     {
         if (line < 1 || column < 1)
@@ -320,54 +320,4 @@ public static partial class TlaBackend
 
     private sealed class BackendFailure(string message) : Exception(message);
 
-    // A separate companion keeps the archived adapter byte-identical on case-insensitive Windows.
-    private const string MetadataSource = """
-        package pcal;
-        import java.io.*;
-        import java.util.*;
-        import tla2sany.drivers.SANY;
-        import tla2sany.modanalyzer.SpecObj;
-        import tla2sany.semantic.*;
-        import util.SimpleFilenameToStream;
-        public final class TlaMetadata {
-            public static void main(String[] args) throws Exception {
-                PrintStream output = System.out;
-                ByteArrayOutputStream messages = new ByteArrayOutputStream();
-                try (PrintStream capture = new PrintStream(messages, true, "UTF-8")) {
-                    System.setOut(capture);
-                    try {
-                        SpecObj spec = new SpecObj(args[0], new SimpleFilenameToStream());
-                        int status = SANY.frontEndMain(spec, args[0], capture);
-                        if (status != 0 || spec.getErrorLevel() != 0 || spec.getRootModule() == null)
-                            throw new IllegalArgumentException("SANY rejected " + args[0]);
-                        ModuleNode root = spec.getRootModule();
-                        List<String> variables = new ArrayList<>();
-                        for (OpDeclNode variable : root.getVariableDecls())
-                            variables.add(quote(variable.getName().toString()));
-                        List<String> arities = new ArrayList<>();
-                        for (OpDefNode operator : root.getOpDefs()) {
-                            if (operator.getLocation().source().equals(root.getName().toString()))
-                                arities.add(quote(operator.getName().toString()) + ":" + operator.getArity());
-                        }
-                        output.println("{\"module\":" + quote(root.getName().toString())
-                            + ",\"variables\":[" + String.join(",", variables)
-                            + "],\"arities\":{" + String.join(",", arities) + "}}");
-                    } catch (Exception error) {
-                        System.err.println(messages.toString("UTF-8"));
-                        System.err.println(error.toString());
-                        System.exit(1);
-                    } finally { System.setOut(output); }
-                }
-            }
-            private static String quote(String value) {
-                StringBuilder result = new StringBuilder("\"");
-                for (char character : value.toCharArray()) {
-                    if (character == '\\' || character == '"') result.append('\\');
-                    if (character < 32) result.append(String.format("\\u%04x", (int) character));
-                    else result.append(character);
-                }
-                return result.append('"').toString();
-            }
-        }
-        """;
 }
