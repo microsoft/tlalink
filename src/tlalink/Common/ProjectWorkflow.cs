@@ -176,7 +176,7 @@ public static partial class ProjectWorkflow
             if (stage.Bindings != null)
             {
                 IntegratedManifest manifest = IntegratedInputs.Load(ProjectInputs.Resolve(path, stage.Bindings), pins);
-                needDafny = true;
+                needDafny |= manifest.Bindings.Count > 0;
                 needJar |= manifest.Models.Count > 0;
                 foreach (string file in manifest.Sources.Concat(manifest.Proofs).Concat(manifest.Models)) Pin(file);
                 if (manifest.Models.Count > 0 && project.Tools.Jar == null)
@@ -200,11 +200,6 @@ public static partial class ProjectWorkflow
                         throw new InputException(ErrorCode.WorkflowInputChanged, "Configuration differs from the independently approved bounds/properties: " + config);
             }
         }
-        HashSet<string> requiredReviews = policy.Requirements.Where(r => scenarios.Any(s => s.Id == r.Scenario))
-            .SelectMany(r => r.Reviews ?? []).ToHashSet(StringComparer.Ordinal);
-        requiredReviews.UnionWith(selectedSummaries.Select(s => s.Summary.Inspection));
-        foreach (ReviewObligation obligation in project.Obligations.Where(o => requiredReviews.Contains(o.Id)))
-            foreach (string file in obligation.Inputs) Pin(ProjectInputs.Resolve(path, file));
         foreach (ToolPin tool in new[] { needDafny ? project.Tools.Dafny : null, needJar ? project.Tools.Jar : null,
             needP ? project.Tools.P : null, needApalache ? project.Tools.Apalache : null }.OfType<ToolPin>())
         {
@@ -306,8 +301,11 @@ public static partial class ProjectWorkflow
         else if (stage.Kind is "inspect" or "verify" or "oracle")
         {
             arguments.Add(stage.Kind switch { "inspect" => "inspect-integrated", "verify" => "verify-integrated", _ => "test-integrated" });
-            arguments.AddRange(["--bindings", ProjectInputs.Resolve(path, stage.Bindings!), "--dafny",
-                ProjectInputs.Resolve(path, project.Tools.Dafny!.Path), "--output", Path.Combine(output, "engine")]);
+            string bindings = ProjectInputs.Resolve(path, stage.Bindings!);
+            IntegratedManifest manifest = IntegratedInputs.Load(bindings, pins);
+            arguments.AddRange(["--bindings", bindings, "--output", Path.Combine(output, "engine")]);
+            if (manifest.Bindings.Count > 0)
+                arguments.AddRange(["--dafny", ProjectInputs.Resolve(path, project.Tools.Dafny!.Path)]);
             if (project.Tools.Jar != null) Jar();
             Compiler();
         }
@@ -514,6 +512,7 @@ public static partial class ProjectWorkflow
                     Field("project", acceptance.Project); Field("scenario", acceptance.Scenario);
                     Field("execution_status", acceptance.ExecutionStatus); Field("archive_status", acceptance.ArchiveStatus);
                     Field("current_applicability", acceptance.CurrentApplicability); Field("acceptance_status", acceptance.AcceptanceStatus);
+                    Field("changed_review_inputs", acceptance.ChangedReviewInputs.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
                     foreach (RequirementSummary requirement in acceptance.Requirements)
                         Console.WriteLine($"requirement {requirement.Id}: {requirement.Status}");
                     break;

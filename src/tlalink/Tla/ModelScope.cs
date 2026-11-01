@@ -23,11 +23,7 @@ public sealed class ModelScope
             result.Diagnostics.AddRange(document.Diagnostics.Select(d => new Issue(d.Code, d.Severity, d.Message,
                 d.Path is null ? null : new Place(d.Path, d.Line ?? 1, d.Line ?? 1))));
             if (!annotations) continue;
-            List<(int Start, int End, string Content)> comments = Markup.TlaComments(document.Text);
-            foreach (var algorithm in comments.Where(c => c.Content.TrimStart().StartsWith("--algorithm", StringComparison.Ordinal) ||
-                c.Content.TrimStart().StartsWith("--fair algorithm", StringComparison.Ordinal)).ToList())
-                comments.AddRange(Markup.TlaComments(algorithm.Content).Select(c =>
-                    (c.Start + algorithm.Start + 2, c.End + algorithm.Start + 2, c.Content)));
+            List<(int Start, int End, string Content)> comments = FormalComments(document.Text);
             try
             {
                 result.Declarations.AddRange(FormalCorrespondence.Attach(path, document.Text,
@@ -39,6 +35,16 @@ public sealed class ModelScope
             catch (InputException error) { result.Diagnostics.Add(new(error.Code ?? ErrorCode.InvalidModelBinding, error.Message)); }
         }
         return result;
+    }
+
+    internal static List<(int Start, int End, string Content)> FormalComments(string text)
+    {
+        List<(int Start, int End, string Content)> comments = Markup.TlaComments(text);
+        foreach (var algorithm in comments.Where(c => c.Content.TrimStart().StartsWith("--algorithm", StringComparison.Ordinal) ||
+            c.Content.TrimStart().StartsWith("--fair algorithm", StringComparison.Ordinal)).ToList())
+            comments.AddRange(Markup.TlaComments(algorithm.Content).Select(c =>
+                (c.Start + algorithm.Start + 2, c.End + algorithm.Start + 2, c.Content)));
+        return comments;
     }
 
     public void BindSources(CSharpScope source, CorrespondenceConfiguration config, string? selected = null)

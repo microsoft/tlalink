@@ -31,6 +31,7 @@ import util.FilenameToStream.TLAFile;
 
 public final class TlaIndex {
     private final List<String> entries = new ArrayList<>();
+    private String metadata;
     private final IdentityHashMap<AST, Boolean> visited = new IdentityHashMap<>();
 
     public static void main(String[] args) throws Exception {
@@ -41,7 +42,8 @@ public final class TlaIndex {
             try {
                 TlaIndex index = new TlaIndex();
                 index.parse(Path.of(args[0]), args);
-                output.println("[" + String.join(",", index.entries) + "]");
+                output.println("{\"entries\":[" + String.join(",", index.entries)
+                    + "],\"metadata\":" + index.metadata + "}");
             } catch (Exception error) {
                 System.err.println(messages.toString("UTF-8"));
                 System.err.println(error.getClass().getSimpleName() + ": " + error.getMessage());
@@ -61,6 +63,11 @@ public final class TlaIndex {
             throw new IllegalArgumentException("SANY rejected " + path);
         }
         String module = specification.getRootModule().getName().toString();
+        List<String> variables = new ArrayList<>();
+        for (tla2sany.semantic.OpDeclNode variable : specification.getRootModule().getVariableDecls()) {
+            variables.add(quote(variable.getName().toString()));
+        }
+        List<String> arities = new ArrayList<>();
         for (tla2sany.semantic.ModuleNode loaded : specification.getExternalModuleTable().getModuleNodes()) {
             if (loaded.getAssumptions().length > 0) {
                 entries.add("{\"kind\":\"assumptions\",\"module\":" + quote(loaded.getName().toString())
@@ -74,6 +81,7 @@ public final class TlaIndex {
             }
             entries.add(entry("operator", operator.getName().toString(), module,
                 place.beginLine(), place.beginColumn(), place.endLine(), place.endColumn()));
+            arities.add(quote(operator.getName().toString()) + ":" + operator.getArity());
             entries.add("{\"kind\":\"operator-level\",\"name\":" + quote(operator.getName().toString())
                 + ",\"level\":" + operator.getLevel() + "}");
         }
@@ -85,6 +93,8 @@ public final class TlaIndex {
             entries.add(entry("variable", variable.getName().toString(), module,
                 place.beginLine(), place.beginColumn(), place.endLine(), place.endColumn()));
         }
+        metadata = "{\"module\":" + quote(module) + ",\"variables\":["
+            + String.join(",", variables) + "],\"arities\":{" + String.join(",", arities) + "}}";
         if (args.length > 1) {
             parsePlusCal(path, args, module);
         }

@@ -184,10 +184,16 @@ public static class ProjectInputs
                     }
                     else if (stage.Kind is "inspect" or "verify" or "oracle")
                     {
-                        if (stage.Bindings == null || project.Tools.Dafny == null)
-                            throw new InputException(ErrorCode.InvalidWorkflowInput, "Integrated stages require bindings and pinned Dafny.");
+                        if (stage.Bindings == null)
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "Integrated stages require a binding manifest.");
                         if (stage.Sources != null || stage.Models != null || stage.Config != null || stage.Arguments != null)
                             throw new InputException(ErrorCode.InvalidWorkflowInput, "Integrated stages take source/model scope only from their binding manifest.");
+                        IntegratedManifest manifest = IntegratedInputs.Load(Resolve(path, stage.Bindings), new(FilePaths.Comparer));
+                        if (manifest.Bindings.Count > 0 && project.Tools.Dafny == null ||
+                            stage.Kind != "inspect" && manifest.Bindings.Count == 0)
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "Dafny binding stages require pinned Dafny; verify/oracle stages require selected Dafny bindings.");
+                        if (manifest.Models.Count > 0 && project.Tools.Jar == null)
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "Selected TLA+ targets require a pinned JAR.");
                     }
                     else if (stage.Models is not { Count: > 0 } || project.Tools.Jar == null)
                         throw new InputException(ErrorCode.InvalidWorkflowInput, "TLA stages require explicit models and a pinned JAR.");

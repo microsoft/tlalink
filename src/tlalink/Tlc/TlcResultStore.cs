@@ -150,6 +150,10 @@ public static class TlcResultStore
         evidenceStage = declared;
         List<Issue> issues = [];
         void Bad(string message) => issues.Add(new(ErrorCode.WorkflowStageInconsistent, "TLC stage " + stage.Id + ": " + message));
+        Dictionary<string, string> paths = new(FilePaths.Comparer), metadata = new(StringComparer.Ordinal);
+        foreach (var pin in fingerprints)
+            if (!(FilePaths.IsAbsolute(pin.Key) ? paths : metadata).TryAdd(pin.Key, pin.Value))
+                Bad("recorded inputs contain aliased keys: " + pin.Key);
         string outcome = ProjectWorkflow.Outcome("tlc", result);
         int fingerprint = result.Fingerprint;
         List<StoredStageResult> stored = stage.StoredResults ?? [];
@@ -186,7 +190,7 @@ public static class TlcResultStore
                 !material.Options.SequenceEqual(Options))
                 Bad("stored result does not describe the declared stage");
             foreach (TlcKeyInput input in material.Inputs)
-                if (!fingerprints.TryGetValue(input.Path, out string? hash) || hash != input.Sha256)
+                if (!(FilePaths.IsAbsolute(input.Path) ? paths : metadata).TryGetValue(input.Path, out string? hash) || hash != input.Sha256)
                     Bad("stored result input differs from the run's recorded inputs: " + input.Path);
             if (reference.Primary)
             {

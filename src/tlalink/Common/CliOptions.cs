@@ -30,7 +30,7 @@ public sealed class CliOptions
                 "regression-result", "jar", "dafny", "p", "binding", "endpoint", "symbol", "syntax", "tokens",
                 "match", "expected-matches", "capture", "clear-capture", "reason", "output", "timeout", "format", "apply", "strip-source", "reason-policy",
                 "context", "view", "include-unlinked", "calls", "source-file", "kind", "status", "capture-point",
-                "search", "section", "offset", "limit"],
+                "search", "section", "offset", "limit", "group-by", "callee-source", "callee-limit", "callee-max-lines"],
             ["check-dafny"] = ["config", "dafny", "output", "timeout", "format"],
             ["read-dafny"] = ["result", "current", "format"],
             ["check-regression"] = ["config", "output", "timeout", "format"],
@@ -88,7 +88,8 @@ public sealed class CliOptions
             !(Command == "links" && Action == "inspect" && Get("format", "json") == "markdown"))
             throw new InputException("Format must be json, text or summary; links inspect also accepts markdown.");
         if (Command == "links" && Action != "inspect" && new[] { "context", "view", "include-unlinked", "calls",
-            "source-file", "kind", "status", "capture-point", "search", "section", "offset", "limit" }.Any(Has))
+            "source-file", "kind", "status", "capture-point", "search", "section", "offset", "limit",
+            "group-by", "callee-source", "callee-limit", "callee-max-lines" }.Any(Has))
             throw new InputException(ErrorCode.InvalidAnnotation, "Inspection filters and presentation options require links inspect.");
         int maximum = Command == "check-stage" ? 172800 : 7200;
         if (!int.TryParse(Get("timeout", "30"), out int timeout) || timeout < 1 || timeout > maximum) throw new InputException($"Timeout must be 1..{maximum} seconds.");

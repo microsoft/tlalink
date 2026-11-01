@@ -76,6 +76,13 @@ only when the complete pinned result is needed. Symbol commands do not need
 - Follow emitted call targets with `show`/`describe` when a selected source body
   exists. `references`/`callers` can also target metadata IDs but still search
   only selected source; they do not scan framework bodies.
+- When already inspecting model/C# pairs, avoid a second lookup for every helper:
+  use `links inspect --section calls --callee-source true --callee-limit 5
+  --callee-max-lines 80` with that inspection's explicit context. Review
+  page-local callee references, dispatch and omitted/truncated status first.
+  Expand only a justified next source member with `symbols describe`.
+  One-level callee excerpts are not recursive call/effect analysis and do not
+  authorize crossing a declared interface boundary.
 - Use [source inventory](../../../REFERENCE.md#current-c-source-inventory)
   when the question needs member-wide access/await/cleanup facts or CFG flow,
   rather than replacing Roslyn analysis with regexes.

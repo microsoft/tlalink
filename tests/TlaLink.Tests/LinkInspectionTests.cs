@@ -7,6 +7,7 @@ public static class LinkInspectionTests
 {
     public static void Register(Action<string, Action> test, string work)
     {
+        InspectionReviewContextTests.Register(test, work);
         test("inspection inlines native and exact source syntax with lexical guards and observations", () =>
         {
             var fixture = Fixture(work, "context");

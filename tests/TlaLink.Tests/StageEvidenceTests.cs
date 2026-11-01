@@ -62,6 +62,10 @@ public static class StageEvidenceTests
             if (execution.Code != 0) throw new InvalidOperationException(execution.Json);
             string resultPath = Path.Combine(output, "result.json");
             CoreTests.Equal(0, TestCli.Run(["read-regression", "--result", resultPath, "--current", "true"]).Code);
+            CSharpRegressionResult observed = ProjectInputs.Read<CSharpRegressionResult>(resultPath);
+            CoreTests.True(!string.IsNullOrWhiteSpace(observed.Build!.Sdk));
+            CoreTests.Equal(observed.Build.Sdk, Files.Read(Path.Combine(output, "build", "sdk.log")).Trim());
+            CoreTests.True(!File.Exists(Path.Combine(output, "build", "sdk.invocation.json")));
             CoreTests.Equal(0, TestCli.Run(["inspect-source", "--annotation-version", "4", "--source",
                 Path.Combine(directory, "Increment.cs"), "--regression-result", resultPath,
                 "--output", Path.Combine(directory, "inventory.json")]).Code);

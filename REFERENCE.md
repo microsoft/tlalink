@@ -456,7 +456,7 @@ capability:
 | Apalache typechecking | Catch inconsistent model data types before behavioral analysis | Requires native type annotations where inference is insufficient. Successful typing is not safety. |
 | Apalache bounded safety | Search typed TLA+ safety models through an explicit transition bound, without enumerating every concrete state | SMT encodings can help with data combinations but solver cost is model-dependent. A pass is only bounded safety; this integration excludes temporal checking, simulation and trace matching. |
 | Apalache induction | Establish initiation, preservation and safety implication for a supplied invariant | Can establish safety beyond a search bound, but requires a sufficiently strong typed/domain-constrained invariant and all three feasible obligations. Limited to the selected constants and supported profile, not arbitrary parameters or C# refinement. |
-| Dafny verification / assumption audit | Verify supplied algorithmic contracts, loop invariants and lemmas, and inspect trusted assumptions | Deductive reasoning can avoid state enumeration but needs proof annotations and solver support. Verification establishes the scoped Dafny program under its assumptions, not linked C#. |
+| Dafny verification / assumption audit | Verify algorithmic contracts, data/resource invariants and inductive safety arguments over arbitrary legal finite histories; inspect trusted assumptions | Deductive reasoning can avoid state enumeration but needs proof annotations and solver support. History proofs establish properties of the modeled transitions, not that linked C# generates only legal transitions or eventually completes. |
 | Dafny executable oracle comparisons | Compare concrete C# adapter calls with upstream-compiled, verified Dafny behavior | Useful executable examples, but only for selected cases and supported synchronous int/bool adapters. Passing comparisons are not C# verification or exhaustive testing. |
 | P frontend | Resolve state machines, events and qualified P/C# correspondence bindings | Native declarations and structural links only; no schedule exploration or automatic execution of the linked C#. |
 | PChecker | Explore explicitly budgeted schedules of an asynchronous P model, with reproducible seeds | Often useful for finding interleaving bugs. Schedule sampling is not finite exhaustion; step limits and deadlines leave checks incomplete. |
@@ -476,6 +476,76 @@ than one checker fits. Typechecking, sampled schedules, bounded safety, finite
 exhaustion, induction, oracle comparisons and log monitoring are distinct
 claims. Keep the selected configuration, assumptions, bounds and independent
 acceptance requirements explicit; one claim cannot silently substitute for another.
+
+### Match the obligation, not a language stereotype
+
+Do not restrict Dafny to arithmetic, TLA+ to small finite instances, or P to
+sampled schedules. Distinguish the language's expressive power, the selected
+checker, the supported TlaLink profile, provisioned dependencies and actual
+native evidence. The following are modeling choices, not a fixed tool order
+or claims that these obligations have already been discharged:
+
+| Obligation | Useful approach | Boundary to preserve |
+|---|---|---|
+| Numeric bounds, sequence contents and data transformations | Dafny contracts, loop invariants and sequence lemmas | Mathematical values need explicit machine-range premises; content equality does not establish allocator, exception or concurrent-access behavior. |
+| Ownership, conservation, identity maps and one-shot authorization | Dafny state invariants and induction over transitions or histories; TLA+ induction when the state machine is already authored there | Distinguish authorization, effect attempt, successful effect and completion. Shared storage and every relevant source transition need justification. |
+| Cancellation, callback reentry, notification replacement and reuse races | Explicit TLA+ phases with TLC exploration; P when its event semantics faithfully represent those phases | Do not merge registration, synchronous callbacks, notification and cleanup into one convenient atomic step. A discovered invariant can subsequently support a general deductive argument. |
+| Communicating protocols, peer failures and asynchronous coordination | P state machines and monitors, or TLA+ actions; choose the P backend by the required exploration/proof claim | Model capacity, blocking, ordering and failures explicitly rather than inheriting stronger communication guarantees. |
+| Deadlock, shutdown dependencies and eventual progress | TLA+ dependency/temporal models with an appropriate checker, or P progress specifications with a supported backend | State scheduling, consumer, callback and external-settlement premises. Safety, absence of deadlock and eventual completion are different obligations. |
+| Generalizing beyond explored instances | Dafny induction, supported Apalache invariant induction, or an explicitly supported deductive backend | Unbounded history length, arbitrary participant count and arbitrary numeric parameters are separate dimensions. A larger run or symmetry audit is not a cutoff theorem. |
+| Relating a model to C# | Roslyn source premises, source-pinned inspection, meaningful controls and supported execution evidence | Neither a model theorem nor matching declarations establishes general C# refinement. Cross-model assumptions and relations remain explicit obligations. |
+
+### Deductive safety and the source bridge
+
+Dafny can define an event datatype, state, transition relation and invariant,
+prove one-step preservation, then induct over a finite event sequence. An
+arbitrary-finite-history theorem covers every permitted finite sequence with
+no fixed length cutoff; a prefix may end with operations still pending.
+Participant domains, capacity bounds and other parameters retain their
+separately declared scope. Proving termination of the replay function or lemma
+does not prove progress of the modeled asynchronous system.
+
+Review the legal-transition premises independently. If a transition permits an
+effect only after authorization, the model proof does not also prove that C#
+enforces authorization. Establish that bridge through supported source premises
+and an explicit semantic argument, including competing accesses, failures,
+cleanup and relevant callees. Use defect-relevant controls to challenge that
+bridge as well as the invariant; do not make a counterexample disappear by
+declaring the offending source behavior illegal without justification.
+
+### Capabilities beyond a single checker
+
+TLA+ is not synonymous with TLC. Existing TLA+ safety models may benefit from
+Apalache induction without translation to another language. Upstream
+[TLAPS](https://proofs.tlapl.us/doc/web/content/Home.html) also checks deductive
+safety proofs, potentially with parameterized arguments; it is not a supported
+TlaLink evidence adapter, and its documented temporal-reasoning limitations
+must remain explicit. Do not present upstream capabilities as provisioned
+project stages. Likewise, upstream Apalache modes outside the supported
+profile are not enabled by their presence in upstream documentation.
+
+P has deductive verification through
+[PVerifier](https://p-org.github.io/P/advanced/PVerifierLanguageExtensions/announcement/),
+not only schedule exploration. Its suitability still depends on the authored
+invariant, supported model and available dependencies. Under
+[P's communication semantics](https://p-org.github.io/P/advanced/psemantics/),
+ordinary sends are reliable, buffered and nonblocking. Backpressured I/O,
+borrowed-storage lifetimes, shared-memory operations and synchronous reentry
+need explicit modeling; an actor rewrite must not remove relevant waits or races.
+Observed-log monitoring remains limited to the events and ordering actually
+supported by the log, not all implementation behavior.
+
+When several approaches fit, pilot the smallest unresolved obligation and
+compare counterexample usefulness, proof/model maintenance, source-bridge
+effort and measured runtime/resources. State explosion motivates investigation,
+not an assumption that symbolic checking or induction will be cheaper.
+Exploration can discover an invariant that deduction generalizes; neither
+automatically composes with another language's theorem. Prefer retaining a
+suitable existing model over maintaining duplicate specifications without a
+specific evidence benefit. See upstream
+[Dafny induction guidance](https://dafny.org/latest/OnlineTutorial/Lemmas),
+[TLA+ tools](https://lamport.azurewebsites.net/tla/tools.html) and
+[Apalache modes](https://apalache-mc.org/docs/apalache/running.html).
 
 ### Using Apalache with TLA+
 
@@ -1161,6 +1231,73 @@ requirement unsatisfied (`WF015`, exit 1) even when run inputs are current.
 If run inputs also changed, their stale-evidence diagnostic instead makes the
 exit 2. Do not infer review approval from current run applicability.
 
+Before rerunning a scenario, use `accept` on its existing run. Changes to files
+declared only as required review inputs affect review freshness, not execution
+applicability. New runs do not pin these files as execution inputs. Acceptance
+also recognizes review-only pins in completed runs when validated stage
+evidence supplies the execution closure; `changed_review_inputs` lists changed
+or removed files whose execution checks were exempted. Archive bytes remain
+strictly checked. A file also used by a stage, compiler context or selected
+method summary remains an execution input. Unknown or invalid closures remain
+conservative.
+This does not rerun or cache native work, renew reviews or imply acceptance.
+The existing TLC result store is still the only native execution reuse mechanism.
+
+#### Automatic review-policy reassessment
+
+Use the ordinary commands; there is no bypass flag or separate update command:
+
+```powershell
+.\TlaLink.ps1 accept --project .\tlalink.project.json --run .\Results\existing-run --output .\Results\reassessment-new.json --format summary
+```
+
+`accept`, `explain` and project `report` automatically reconstruct the recorded
+project from archived authoring and independently check its saved expansion.
+When project/policy bytes changed, they compare the complete normalized
+execution definition and every acceptance requirement with only its `reviews`
+list excluded. Review obligations, review storage and the policy document's
+path may differ; stages, dependencies, source/model/config selections, compiler
+context, tools, resources, budgets, summary dependencies, check-coverage
+declarations and every non-review requirement field must remain identical.
+The comparison is conservative about list order and path spelling.
+
+The typed `policy_reassessment` result is retained in full acceptance receipts,
+summaries and project report acceptance snapshots:
+
+- `unchanged`: recorded/current authoring and policy identities match.
+- `review-only`: the validated archived execution definition and non-review
+  requirements match; the explicitly authored current review policy is evaluated.
+- `incompatible`: an execution definition or checker expectation changed.
+- `unavailable`: archived comparison material is missing or invalid.
+
+It includes recorded/current project, policy and authoring hashes, two explicit
+compatibility judgments and bounded changed-area labels. This classification
+does not replace `archive_status`, `current_applicability` or `acceptance_status`.
+A file also consumed by native execution remains an execution dependency even
+when it is project/policy authoring. Unknown stage closures do not receive
+exemptions. Missing or corrupted archived files still fail integrity checks.
+Unknown JSON fields are rejected, not projected away.
+
+Review consolidation therefore can leave execution applicability `current`
+while acceptance remains `not-accepted` because the replacement review is
+`pending`. Current obligations, origins, claims, assumptions, input bytes and
+decisions are checked normally; old IDs and agent decisions cannot grant a new
+human approval. The current policy is an explicit trusted authoring input:
+reassessment does not authenticate or authorize its edits.
+
+The original run, outcomes and input archive are never rewritten. A new
+acceptance receipt identifies both policies and the unchanged run hash.
+This is reevaluation of existing evidence, not execution reuse for additional
+backends or permission to change properties/configuration pins to fit results.
+
+Keep caller path spelling consistent across a campaign. Native build tools can
+embed it in generated configuration, assemblies and debug information; changed
+bytes remain actual drift even when the host considers the paths equivalent.
+Likewise, stored key bytes retain their original path spelling. Acceptance uses
+the host comparer for filepath lookups, not case-folded metadata IDs or rewritten
+historical paths. Shared build outputs can stale earlier compiler observations;
+recollect affected observations rather than treating those outputs as review-only.
+
 ### Persistent review decisions
 
 Review decisions live outside the project/run files so review after execution
@@ -1478,7 +1615,7 @@ bytes, not only source files. Keep shared-machine disk usage in mind.
 
 | Command | Evidence produced |
 |---|---|
-| `inspect-integrated` | Resolved C#/Dafny links, inventories, optional TLA links, explicit correspondence obligations; no proof or execution |
+| `inspect-integrated` | Resolved C#/formal links and inventories for selected TLA+ targets and/or Dafny bindings; no proof or execution |
 | `verify-integrated` | The above plus Dafny verification and a clean assumption audit over the complete local include closure |
 | `test-integrated` | The above plus verified concrete call preconditions, generated Dafny C# oracle/runtime and actual C# adapter comparisons |
 | `read-integrated` | Archived byte consistency and optional current-file applicability, separately from recorded outcomes; no rerun or project acceptance |
@@ -1488,6 +1625,13 @@ and `--baseline` (a prior current-format result). A baseline detects changed, ad
 removed maintained inputs; it does not replace review. `--jar` is required only
 when the manifest selects TLA+ models. Existing TLA-only commands retain their
 command names and do not require Dafny; their JSON uses the same current schema.
+`inspect-integrated` and project `inspect` stages also support a TLA+-only
+manifest (`bindings: []`, nonempty `tla_targets`) without selecting or launching
+Dafny. Such results remain inspection-only: proof, audit and execution are
+`not-run`. `verify-integrated`, `test-integrated`, `verify` and `oracle` still
+require actual selected Dafny bindings; an empty manifest never succeeds.
+Archived readers check the selected TLA+ declarations, native source extents,
+formal-owned selectors, C# attachments and pinned input closure independently.
 
 ### One explicit binding manifest, not another source annotation language
 
@@ -1497,12 +1641,12 @@ command names and do not require Dafny; their JSON uses the same current schema.
 - `scope`: one correspondence scope whose aliases select explicit native files.
   Proof/model inputs come from the selected inline bindings' aliases, not
   duplicate `proofs`/`models` arrays.
-- `tla_targets`: explicit TLA+ aliases to review alongside Dafny; default `[]`.
+- `tla_targets`: explicit TLA+ aliases to review alone or alongside Dafny; default `[]`.
   Merely declaring another alias or having links in C# does not select that
   native frontend or require its tool.
 - `bindings`: unique inline binding `id`, nullable C# `adapter`, and explicit
-  `cases` with unique IDs and typed `inputs`. Source/formal endpoints belong in
-  C# `bind` entries; duplicate manifest endpoints are rejected.
+  `cases` with unique IDs and typed `inputs`. Formal-owned `bind.source`
+  selectors resolve the C# endpoints; duplicate manifest endpoints are rejected.
 - Roslyn resolves the attached C# declaration directly, including overloads.
   Review-only bindings can target fields/properties. Explicit adapters retain
   resolved C# symbol selectors where the native oracle requires them.
@@ -1925,6 +2069,10 @@ and sufficient compiler context, just like `links check`.
 | `--context 0..20` | Surrounding physical C# lines; default `3`. Selected multiline syntax is always shown in full. |
 | `--context block` | Show the nearest enclosing C# block, including sibling statements. |
 | `--context member` | Show the containing member; useful for earlier guard clauses and cleanup paths. |
+| `--group-by member` | Add a source-ordered attachment map per containing C# member and show shared context once instead of repeating it per binding. Default `endpoint` keeps the original view. Paging still counts native endpoints; groups report returned versus matching attachment counts. |
+| `--callee-source true` | Request calls and inline one-level selected-source declarations in a deduplicated catalogue. Default `false`. Requires the calls section and conflicts with `--calls false`; does not infer concrete virtual/interface/delegate dispatch or expand transitive callees. |
+| `--callee-limit 1..100` | With callee source enabled, maximum unique declaration excerpts across the returned page; default `10`. Repeated calls reuse catalogue entries. Omitted declarations remain listed as `budget-omitted`. |
+| `--callee-max-lines 1..500` | Maximum physical lines per callee excerpt; default `80`. Truncated entries report total and omitted lines. Both callee budgets require `--callee-source true`. |
 | `--view compact` | Default. Concise readable captures; JSON omits the potentially large fingerprint map. Compiler settings, diagnostics and omission counts remain visible. |
 | `--view full` | Include raw capture/selector JSON in readable output and the complete checked fingerprint map in JSON. |
 | `--include-unlinked false` | Hide unlinked and declared-hidden native declarations; report how many were omitted. Default `true`. |
@@ -1964,6 +2112,35 @@ it is not a multi-command snapshot or acceptance protocol. Section selection
 omits unrequested JSON fields and readable blocks consistently; source context
 can itself contain selected code even when the separate `source` section is
 omitted.
+
+For multi-step ownership or cleanup review, combine `--symbol <member-ID>
+--group-by member --context member --callee-source true` with the ordinary
+filters and sections. `member_groups` lists returned attachments in physical
+source order with their model endpoint names and capture points, not runtime
+execution order. Shared context merges the selected excerpts; numbered gaps
+remain omissions. With member grouping, JSON places these shared `lines` in
+the group instead of each attachment, but retains each attachment's exact
+selection, lexical frames and calls. The context section controls shared lines;
+identities and group counts remain present when context is omitted.
+Unresolved and unlinked entries remain in the endpoint list rather than being
+silently assigned to a source member.
+
+`callee_sources` contains one excerpt per selected-source declaration, referenced
+by page-local `callee_keys` on calls. The catalogue is populated only from calls
+within returned selected syntax, not the surrounding member excerpt unless that
+whole member is itself selected. Budgets are consumed in deterministic endpoint/
+binding/call order; partial declarations and implementation parts count separately.
+An interface/abstract signature can be `declaration-only`; metadata or other
+unavailable bodies report `no-selected-source`. Calls without an addressable
+declaration ID report `no-declaration-id`. These are explicit inspection limits,
+not inferred concrete implementations. Original generic/reduced-extension IDs,
+constructed target signatures and nested-function flags remain visible.
+No recursive expansion, property/implicit-disposal expansion, exception summary
+or ownership inference is performed. A truncated excerpt can omit its cleanup;
+inspect the reported remaining lines before drawing a conclusion. Source
+availability does not override an authored interface/environment scope boundary.
+Budget omissions do not fail an otherwise structurally ready inspection;
+summary output counts omitted/truncated declaration excerpts separately.
 
 Use the existing explicit references/defines/language settings, or
 `--regression-result <native-engine-result.json>` to reuse a recorded compiler
@@ -2517,6 +2694,12 @@ controls run under `--core`, which also checks recorded compiler-context reuse.
 drift, finite caller-state counts, result reuse, report composition and native
 misuse controls. It requires only the selected TLA+ JAR and pinned Java
 toolchain. Core summary controls also run under `--core`.
+
+`--frontend` selects the native SANY/PlusCal parity, metadata/arity, import,
+translation freshness, source extent and failure controls without running
+unrelated proof or trace suites. It requires only the selected TLA+ JAR and
+pinned Java toolchain. Endpoint and metadata resolution share one SANY pass;
+parsing remains fresh, not a cached native result.
 
 `--trace` selects scalar argument, entity/guard, causal-order and whole-trace
 controls. It requires only the selected TLC JAR and pinned Java toolchain, not

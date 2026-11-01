@@ -1,0 +1,10 @@
+{
+  "schema_version": 4,
+  "kind": "integrated-bindings",
+  "sources": ["Counter.cs"],
+  "scope": "scope.json",
+  "bindings": [],
+  "source_obligations": [],
+  "correspondences": [],
+  "tla_targets": ["counter-only"]
+}

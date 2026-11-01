@@ -78,6 +78,14 @@ Skills do not install tools, approve correspondence or discharge human gates.
   Select the scenario explicitly for preflight as well as execution when only
   that scenario is needed. Start from synthetic examples, but do not treat
   their acceptance policies as requirements for a consumer system.
+- Reassess existing runs with `accept` before rerunning. Review-only changes
+  require revisiting the affected decisions, not replaying unchanged execution.
+  Keep execution applicability, changed review inputs and review status separate;
+  never carry approval forward merely because native inputs remain current.
+- Keep the established caller path spelling during an evidence campaign.
+  Host-equivalent paths can still produce different native cache keys or be
+  embedded differently in generated compiler inputs and binaries. Diagnose that
+  byte drift rather than rewriting receipts or weakening currentness checks.
 - Report the requested claim, scope, native outcomes, evidence locations,
   archive consistency, current applicability and acceptance separately.
   Identify coverage gaps, uncaptured causal edges and outstanding reviews.
@@ -365,6 +373,17 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
   Dafny verification/oracles and the individual P checker claims are not
   interchangeable. State adapter availability and native test coverage
   separately; missing dependencies never justify weakening requirements.
+  Do not restrict Dafny to arithmetic, equate TLA+ with finite TLC exploration,
+  or equate P with sampled schedules. Consider inductive safety for general
+  data/resource histories, explicit phases for races and dependencies, and
+  temporal/progress checks with stated environment premises. Keep language
+  potential separate from supported profiles and measured results. A history
+  theorem requires a separate argument that C# obeys its legal transitions;
+  lemma termination is not asynchronous progress. P's ordinary nonblocking
+  sends must not erase source backpressure, synchronous reentry or memory
+  lifetimes. Pilot overlapping approaches on one unresolved obligation and
+  compare proof maintenance, counterexamples, source-bridge effort and runtime
+  before duplicating models or assuming a different engine scales better.
 - Tests cache exact selected immutable tool paths once per session, including
   workflow children through an explicit test host. Hold read leases; on Unix
   recheck bytes before reporting success. Keep source/configuration/generated

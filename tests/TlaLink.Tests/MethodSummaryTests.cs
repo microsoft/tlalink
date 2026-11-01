@@ -120,6 +120,12 @@ public static class MethodSummaryTests
             string runPath = Path.Combine(first, "run.json"), originalRun = File.ReadAllText(runPath);
             try
             {
+                string recordedSummary = initial.Fingerprints.Keys.Single(p => Path.GetFileName(p) == "PermitSummary.tla");
+                string summaryHash = initial.Fingerprints[recordedSummary];
+                initial.Fingerprints.Remove(recordedSummary);
+                initial.Fingerprints.Add(Path.Combine(Path.GetDirectoryName(recordedSummary)!, "permitsummary.tla"), summaryHash);
+                File.WriteAllText(runPath, JsonSerializer.Serialize(initial, Files.Json));
+                CoreTests.Equal(OperatingSystem.IsWindows() ? 0 : 2, f.Cli("accept", "--run", first).Code);
                 JsonObject changed = JsonNode.Parse(originalRun)!.AsObject();
                 changed["method_summaries"] = new JsonArray();
                 File.WriteAllText(runPath, changed.ToJsonString(Files.Json));

@@ -78,6 +78,7 @@ public static class FormalOwnedLinksTests
 
     public static void RegisterNative(Action<string, Action> test, string root, string work)
     {
+        InspectionReviewContextTests.RegisterNative(test, root, work);
         test("bulk link migration plans first preserves tokens and captures and is idempotent", () =>
         {
             string directory = Directory.CreateDirectory(Path.Combine(work, "link-migration")).FullName;

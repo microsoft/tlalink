@@ -197,7 +197,10 @@ public static class ProjectCompositionTests
             File.AppendAllText(f.ComponentPath, "\n");
             var stale = TestCli.Run(["accept", "--project", f.Path, "--run", output]);
             CoreTests.Equal(2, stale.Code);
-            CoreTests.True(stale.Json.Contains("composition differs", StringComparison.Ordinal));
+            CoreTests.True(stale.Json.Contains("Stale current input", StringComparison.Ordinal));
+            using (JsonDocument classification = JsonDocument.Parse(stale.Json))
+                CoreTests.Equal("review-only", classification.RootElement.GetProperty("policy_reassessment")
+                    .GetProperty("status").GetString());
             File.WriteAllText(f.ComponentPath, original);
             string snapshotPath = System.IO.Path.Combine(output, "expanded-project.json");
             JsonObject snapshot = JsonNode.Parse(File.ReadAllText(snapshotPath))!.AsObject();
@@ -208,6 +211,36 @@ public static class ProjectCompositionTests
             Save(runPath, run);
             var corrupted = TestCli.Run(["accept", "--project", f.Path, "--run", output]);
             CoreTests.True(corrupted.Code != 0 && corrupted.Json.Contains("archived authoring", StringComparison.Ordinal));
+        });
+        test("native stored TLC evidence supports current-policy review consolidation without another search", () => {
+            Fixture f = new(work, TestTools.Jar(root));
+            ProjectAuthoring authored = ProjectInputs.Read<ProjectAuthoring>(f.Path);
+            Save(f.Path, authored with { ResultStore = "results" });
+            string output = System.IO.Path.Combine(f.Root, "recorded");
+            var execution = TestCli.Run(["run", "--project", f.Path, "--scenario", "complete", "--output", output]);
+            if (execution.Code != 0) throw new InvalidOperationException(execution.Json);
+            string runPath = System.IO.Path.Combine(output, "run.json");
+            byte[] recordedRun = File.ReadAllBytes(runPath);
+            Dictionary<string, string> archivedFiles = Directory.EnumerateFiles(output, "*", SearchOption.AllDirectories)
+                .ToDictionary(file => file, Files.Hash, FilePaths.Comparer);
+            ProjectComponent component = ProjectInputs.Read<ProjectComponent>(f.ComponentPath);
+            Save(f.ComponentPath, component with { Obligations = [] });
+            Save(f.Path, authored with { ResultStore = "results", Obligations =
+                [new("adequacy", "Synthetic current-policy source/model assessment.", [], Inputs: ["verification/inputs.json"])] });
+            string policyPath = ProjectInputs.Resolve(f.Path, authored.Requirements);
+            AcceptancePolicy policy = ProjectInputs.Read<AcceptancePolicy>(policyPath);
+            Save(policyPath, policy with { Requirements = policy.Requirements.Select(r =>
+                r with { Reviews = ["adequacy"] }).ToList() });
+            var reassessed = TestCli.Run(["accept", "--project", f.Path, "--run", output]);
+            if (reassessed.Code != 1) throw new InvalidOperationException(reassessed.Json);
+            using JsonDocument result = JsonDocument.Parse(reassessed.Json);
+            CoreTests.Equal("consistent", result.RootElement.GetProperty("archive_status").GetString());
+            CoreTests.Equal("current", result.RootElement.GetProperty("current_applicability").GetString());
+            CoreTests.Equal("review-only", result.RootElement.GetProperty("policy_reassessment").GetProperty("status").GetString());
+            CoreTests.Equal("pending", result.RootElement.GetProperty("reviews")[0].GetProperty("status").GetString());
+            CoreTests.True(recordedRun.SequenceEqual(File.ReadAllBytes(runPath)));
+            CoreTests.Equal(archivedFiles.Count, Directory.EnumerateFiles(output, "*", SearchOption.AllDirectories).Count());
+            foreach (var file in archivedFiles) CoreTests.Equal(file.Value, Files.Hash(file.Key));
         });
     }
 

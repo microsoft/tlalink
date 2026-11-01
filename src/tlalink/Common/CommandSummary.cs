@@ -11,7 +11,8 @@ public static class CommandSummary
             WorkflowRun run => Workflow(run),
             ProjectPlan plan => new ProjectPlanSummary(plan.Kind, plan.Project, plan.Status, plan.AnnotationVersion,
                 plan.MethodSummaries.Select(s => new PlannedMethodSummaryView(s.Scope, s.Summary, s.Method,
-                    s.InspectionStatus, s.InspectionOrigin, s.Boundary)).ToList(),
+                    s.InspectionStatus, s.InspectionOrigin, s.Boundary,
+                    s.Precondition is { } p ? new(p.Name, p.Scope, p.Kind, p.Location) : null)).ToList(),
                 plan.CheckCoverage.Select(Coverage).ToList(), plan.Diagnostics,
                 plan.Scenarios.Select(s => new PlannedScenarioSummary(s.Id, s.Stages.Select(stage =>
                     new PlannedStageSummary(stage.Id, stage.Kind, stage.DependsOn, stage.RequestedResources,
@@ -115,7 +116,8 @@ public static class CommandSummary
             result.Diagnostics, result.CheckCoverage.Select(Coverage).ToList(), result.MethodSummaries,
             result.Reviews.Select(r => new ReviewSummary(r.Obligation, r.Status, r.Decision?.Disposition,
                 r.Decision?.Reviewer, r.Decision?.Rationale, r.Decision?.RecordedAt, r.Decision?.Origin)).ToList(),
-            result.NextActions, result.Boundary) { Run = result.Run };
+            result.NextActions, result.Boundary) { Run = result.Run, ChangedReviewInputs = result.ChangedReviewInputs,
+                PolicyReassessment = result.PolicyReassessment };
         return worklist == null ? summary : worklist.Apply(summary);
     }
 

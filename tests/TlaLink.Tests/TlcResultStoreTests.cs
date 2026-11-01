@@ -130,6 +130,27 @@ public static class TlcResultStoreTests
             CoreTests.Equal(Accept("first"), Accept("second"));
             Review();
             CoreTests.Equal(0, Accept("second"));
+            string recordedPath = Path.Combine(work, "tlc-store-second", "run.json");
+            string recorded = Files.Read(recordedPath);
+            try
+            {
+                WorkflowRun variant = ProjectInputs.Read<WorkflowRun>(recordedPath);
+                string key = variant.Fingerprints.Keys.Single(p => FilePaths.Comparer.Equals(p, model));
+                string hash = variant.Fingerprints[key];
+                variant.Fingerprints.Remove(key);
+                variant.Fingerprints.Add(Path.Combine(Path.GetDirectoryName(key)!, "counter.tla"), hash);
+                File.WriteAllText(recordedPath, JsonSerializer.Serialize(variant, Files.Json));
+                var casing = TestCli.Run(["accept", "--project", path, "--run", Path.Combine(work, "tlc-store-second")]);
+                CoreTests.Equal(OperatingSystem.IsWindows() ? 0 : 2, casing.Code);
+                CoreTests.Equal(!OperatingSystem.IsWindows(), casing.Json.Contains("WF014", StringComparison.Ordinal));
+                if (OperatingSystem.IsWindows())
+                {
+                    variant.Fingerprints.Add(key, hash);
+                    File.WriteAllText(recordedPath, JsonSerializer.Serialize(variant, Files.Json));
+                    CoreTests.True(Accept("second") != 0);
+                }
+            }
+            finally { File.WriteAllText(recordedPath, recorded); }
             var plan = TestCli.Run(["plan", "--project", path, "--scenario", "complete"]);
             CoreTests.Equal(0, plan.Code);
             CoreTests.True(plan.Json.Contains("\"stored\"", StringComparison.Ordinal));

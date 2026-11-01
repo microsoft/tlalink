@@ -72,7 +72,8 @@ internal sealed class AcceptanceWorklist
                 .Select(g => new DiagnosticItem(g.Key.Code, g.Key.Severity, g.Count(), g.First())).ToList());
         Dictionary<string, int> counts = new(StringComparer.Ordinal) {
             ["diagnostics"] = summary.Diagnostics.Count, ["requirements"] = summary.Requirements.Count,
-            ["check_coverage"] = summary.CheckCoverage.Count, ["review_status"] = summary.ReviewStatus.Count
+            ["check_coverage"] = summary.CheckCoverage.Count, ["review_status"] = summary.ReviewStatus.Count,
+            ["changed_review_inputs"] = summary.ChangedReviewInputs.Count
         };
         Dictionary<string, int>? Omitted(params (string Name, int Count)[] fields)
         {
@@ -97,7 +98,8 @@ internal sealed class AcceptanceWorklist
                 Requirements = c.Requirements.Take(detailLimit).ToList(), Gaps = c.Gaps.Take(detailLimit).ToList(),
                 Omitted = Omitted(("requirements", c.Requirements.Count), ("gaps", c.Gaps.Count))
             }).ToList(),
-            ReviewStatus = summary.ReviewStatus.Take(detailLimit).ToList()
+            ReviewStatus = summary.ReviewStatus.Take(detailLimit).ToList(),
+            ChangedReviewInputs = summary.ChangedReviewInputs.Take(detailLimit).ToList()
         };
     }
 }

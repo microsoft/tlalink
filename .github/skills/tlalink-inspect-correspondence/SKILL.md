@@ -1,6 +1,6 @@
 ---
 name: tlalink-inspect-correspondence
-description: 'Inspect TlaLink source/model correspondence by inlining TLA+/PlusCal, Dafny or P declarations with resolved C# code. Use for reviewing bindings, guards, captures, cleanup, unresolved attachments or targeted agent responses; filter and page links inspect output instead of post-processing large JSON. Read-only inspection, not editing or proof approval.'
+description: 'Inspect TlaLink source/model correspondence with inline TLA+/PlusCal, Dafny or P and resolved C#. Use for bindings, guards, captures, multi-step ownership/cleanup review, grouped member context, bounded callee source, unresolved attachments or targeted responses; filter and page links inspect rather than post-process large JSON. Read-only, not editing or proof approval.'
 ---
 
 # Inspect correspondence without editing it
@@ -75,7 +75,9 @@ Reuse the same explicit context when refining the query:
 | Literal name, ID or selected-code fragment | `--search <text>`; not regex or surrounding-context search |
 | Earlier guard checks or sibling statements | `--section context --context block` |
 | Whole member, handlers and cleanup | `--section context --context member` |
+| Related attachments in source order, shared context once | `--group-by member --context member --section context` plus needed model/source sections |
 | Explicit call IDs and available source-definition locations | `--section calls`; this requests call resolution automatically |
+| One-level selected-source callee excerpts, deduplicated | `--section calls --callee-source true --callee-limit 5 --callee-max-lines 80` |
 | Only selected output blocks | Repeat `--section model\|source\|context\|captures\|observations\|calls` |
 | Smaller replies | `--include-unlinked false --limit 5`; continue with the returned `next_offset` |
 | Metadata/pin details | `--view full --format json`; default compact omits fingerprints |
@@ -91,6 +93,38 @@ syntax, file and capture filters must match the same binding. Capture-point
 filters select bindings and retain their other capture entries. Different
 binding IDs may intentionally observe the same C# statement at different points;
 do not collapse those model actions as duplicate source locations.
+
+## Multi-step ownership and cleanup review
+
+1. Discover the real member ID, then start with a member filter and
+   `--group-by member --context member --section model --section source
+   --section context --section captures`. The shared map orders attachments
+   physically and keeps capture points distinct; it is not an execution trace.
+2. Add `--section calls --callee-source true --callee-limit 5
+   --callee-max-lines 80` if understanding a selected call requires another
+   source fetch. Callee source implies call resolution; do not combine it with
+   `--calls false` or sections excluding calls.
+3. Read the deduplicated `callee_sources` entries referenced by each call's
+   `callee_keys`. They are one-level declarations in the selected compilation,
+   not a recursively expanded program. Calls are collected from the selected
+   syntax, not automatically from the surrounding context excerpt.
+4. Inspect `budget-omitted`, `truncated`, `declaration-only`,
+   `no-selected-source` and `no-declaration-id` statuses. Omitted cleanup can
+   invalidate a conclusion. Use `symbols describe` on an emitted ID for the
+   next justified step rather than blindly raising every budget or recursively
+   following all calls. Partial method declarations/implementation parts can
+   have separate catalogue entries.
+5. Account for acquisitions, ownership transfers, normal/exception exits and
+   release attempts versus successful effects in the authored review. Grouping
+   and body availability do not infer those semantics. Follow relevant implicit
+   disposal/getters and callback/await behavior separately.
+
+Paging remains endpoint-based: a member group may contain only part of its
+matching attachments, and member-wide filtering is not whole-member coverage.
+Unavailable bodies are a review boundary, not permission to invent their
+effects. Even when concrete source is present, do not cross a declared
+interface/environment boundary or treat a virtual body as the runtime target.
+These options never introduce fault injection, scheduling hooks or execution.
 
 ## Read the result before concluding
 

@@ -17,6 +17,8 @@ public static class IntegratedReview
         {
             packet.Bindings = FilePaths.Full(options.Required("bindings"));
             IntegratedManifest manifest = IntegratedInputs.Load(packet.Bindings, packet.Fingerprints);
+            if (manifest.Bindings.Count == 0 && options.Command != "inspect-integrated")
+                throw new InputException(ErrorCode.InvalidIntegratedInput, "Verification and oracle execution require selected Dafny bindings; TLA+-only inputs support inspection.");
             Program.PinTool(packet.Fingerprints);
             packet.Fingerprints["tool:integrated-schema"] = Schema.Version.ToString(System.Globalization.CultureInfo.InvariantCulture);
             CSharpScope source = CSharpScope.Parse(manifest.Sources, options.Many("reference"),
@@ -28,11 +30,14 @@ public static class IntegratedReview
             source.RequireCompilable();
             if (source.Diagnostics.Any(d => d.Severity == "error"))
                 throw new InputException(ErrorCode.InvalidIntegratedBinding, "Invalid C# annotations; see source diagnostics.");
-            DafnyBackend backend = new(options.Required("dafny"), output, options.Timeout, packet);
-            backend.Initialize();
-            DafnyIndexResult index = backend.Index(manifest.Proofs);
-            packet.Inventory.AddRange(index.Declarations);
-            List<FormalLinkDeclaration> formal = FormalCorrespondence.Dafny(index.Declarations, packet.Fingerprints);
+            DafnyBackend? backend = null;
+            if (manifest.Bindings.Count > 0)
+            {
+                backend = new(options.Required("dafny"), output, options.Timeout, packet);
+                backend.Initialize();
+                packet.Inventory.AddRange(backend.Index(manifest.Proofs).Declarations);
+            }
+            List<FormalLinkDeclaration> formal = FormalCorrespondence.Dafny(packet.Inventory, packet.Fingerprints);
             List<Issue> pairing = [];
             foreach (var group in manifest.Bindings.GroupBy(b => Markup.Name(b.Id).Alias, StringComparer.Ordinal))
                 FormalCorrespondence.Match(source, formal, group.Key, group.Select(b => b.Id), pairing);
@@ -47,7 +52,7 @@ public static class IntegratedReview
             packet.SourceInventory.AddRange(symbols.Select(s => s.Endpoint));
             foreach (DafnyBinding binding in manifest.Bindings)
             {
-                List<DafnyDeclaration> declarations = index.Declarations.Where(d => d.Name == binding.Dafny).ToList();
+                List<DafnyDeclaration> declarations = packet.Inventory.Where(d => d.Name == binding.Dafny).ToList();
                 if (declarations.Count != 1)
                     throw new InputException(ErrorCode.InvalidIntegratedBinding, $"{binding.Id}: expected one resolved Dafny declaration '{binding.Dafny}', found {declarations.Count}.");
                 SourceBinding inline = source.Bindings.Single(b => b.BindingId == binding.Id);
@@ -98,9 +103,13 @@ public static class IntegratedReview
                     ErrorCode.SourceObligationIncomplete, premise.Obligation.Id + ": " + premise.Reason));
             if (options.Optional("baseline") is string baseline) Baseline(baseline, packet);
             if (packet.LinksStatus == "passed" && packet.SourceObligationsStatus is "passed" or "not-specified" &&
-                options.Command != "inspect-integrated" && backend.Verify(manifest.Proofs) &&
-                options.Command == "test-integrated")
-                DafnyConformance.Run(manifest, source, symbols, backend, packet);
+                options.Command != "inspect-integrated")
+            {
+                DafnyBackend verifier = backend ?? throw new InputException(ErrorCode.InvalidIntegratedInput,
+                    "Native verification requires selected Dafny bindings.");
+                if (verifier.Verify(manifest.Proofs) && options.Command == "test-integrated")
+                    DafnyConformance.Run(manifest, source, symbols, verifier, packet);
+            }
             IntegratedInputs.CheckPins(packet.Fingerprints);
             IntegratedInputs.CheckPins(packet.GeneratedFiles);
             packet.ProvenanceStatus = "consistent";

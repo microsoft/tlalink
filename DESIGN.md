@@ -166,6 +166,23 @@ transitive body expansion. Filters/pages cannot hide validation failures or
 turn an empty selection into an adequacy claim; page-to-page inputs are not
 transactionally frozen.
 
+Member grouping reuses the already resolved source attachments and merges their
+physical excerpts once per containing declaration on the returned page.
+Per-attachment lexical context, model identity and capture points remain
+separate; source order is not runtime order or a complete member-coverage claim.
+Optional callee source expansion uses the same compilation and original
+declaration identities as symbol queries, including selected partial
+implementation parts. It emits a deduplicated page-local catalogue with
+per-call references and explicit unavailable/declaration-only statuses. Unique
+declaration and physical-line budgets expose omissions and truncation rather
+than hiding them or classifying them as semantic failures. Expansion is exactly
+one level from calls in the selected syntax, not from arbitrary surrounding
+context; no transitive effects, dynamic dispatch, exception propagation or
+resource transfer are inferred. All source/compiler pins remain checked.
+Public controls use independent synthetic member/handler/call fixtures and
+exercise budget thresholds, generic/extension identities, partial methods,
+nested functions, paging and section projection.
+
 One schema-4 `correspondence-scope` names explicit language/input aliases and
 symbol-resolved routine omission rules. Each connection has one unique
 `scope::name` ID, a compiler-resolved source attachment and a native attachment.
@@ -401,6 +418,9 @@ integration, a causal trace or model conformance. Build projects, the harness,
 compiler/source-generator behavior and OS/runtime remain trusted. Inputs exposed
 at the MSBuild capture boundary are recorded; this is not a complete MSBuild
 workspace or authenticated compiler/runtime closure.
+The SDK version is captured from `NETCoreSdkVersion` in that same observed
+build, not from an extra `dotnet --version` process in a different directory.
+The archived `sdk.log` contains this build-reported value.
 
 Source inventories can use that recorded reference closure and defines with
 explicit nullable mode, rather than silently adding the tool host's framework
@@ -613,6 +633,24 @@ Unsupported dependencies or incomplete searches do not justify substituting
 another checker or weakening an acceptance requirement. Native test coverage
 is stated separately from adapter availability.
 
+Language expressiveness, checker guarantees and integrated profiles are separate
+design dimensions. Dafny supports inductive concurrent-system safety arguments,
+not just arithmetic; TLA+ supports deduction as well as explicit-state checking;
+P supports deductive invariants as well as schedule exploration. Unsupported
+upstream backends do not become evidence stages merely by being named here.
+Keep a suitable existing model when another checker can discharge its obligation;
+use a focused comparison before introducing a second specification.
+
+For history-based safety, one-step preservation and induction establish what
+legal abstract executions preserve. Showing that C# produces those legal steps
+is a separate source-language bridge, not a consequence of a transition guard.
+Unbounded finite histories do not imply arbitrary parameters or eventual
+completion. Preserve synchronous reentry, shared storage, backpressure and
+effect/settlement phases when choosing an event-driven abstraction; P's ordinary
+nonblocking sends, for example, do not implement a blocking I/O contract.
+Cross-backend results compose only through justified relations and compatible
+assumptions, never merely through passing stages.
+
 Production hashing streams original bytes without tool-sized allocations.
 The console harness installs an internal, test-session lookup only for exact
 canonical paths to its selected immutable tool distributions, pinned Java
@@ -635,9 +673,19 @@ solver cost; the cache does not remove JVM startup or archive-copy costs.
 
 ## Authoritative frontends and paths
 
-TLA+ parsing uses SANY, not a local interpreter or replacement parser. The companion
-embedded in the C# bridge supplies declared variables/operator arities. The
-bridge creates fresh processes
+Integrated inspection may select only TLA+ targets, without initializing a
+Dafny frontend or fabricating a proof binding. Its TLA+ native inventory and
+formal-owned source attachments are checked against archived model/source bytes
+and compiler references. Native declaration extents are recorded frontend
+evidence, not a second model parser or authenticated proof of frontend behavior.
+Verification/oracle commands still require selected Dafny bindings. An
+inspection cannot claim proof, audit or execution outcomes, and neither an empty
+manifest nor missing selected attachments can produce ready evidence.
+
+TLA+ parsing uses SANY, not a local interpreter or replacement parser. One typed
+bridge response supplies endpoints, dependencies, declared variables and operator
+arities from the same SANY pass; metadata does not start a second JVM or repeat
+parsing. The bridge compiles one adapter and creates fresh processes
 to isolate upstream static state and cleans its own temporary compiler outputs.
 SANY/PlusCal compilation and execution, TLC stages and trace matching share the
 repository's `java-toolchain.json` pin through `Common/JavaToolchain.cs`.
@@ -859,12 +907,52 @@ not a reuse decision. The adapter version, not the TlaLink binary hash, scopes
 entries, so it must change whenever TLC invocation or result interpretation
 changes. Requiring passes under several fingerprint functions reduces, but does
 not eliminate, fingerprint collision risk.
+Stored-key input lookup uses the host filepath comparer for absolute paths and
+ordinal comparison for named metadata inputs, rejecting aliased path keys.
 
 Run metadata separates execution completion from stage outcomes and acceptance.
 Acceptance rechecks exact declared stages, semantic result consistency,
 artifacts, archived bytes, current inputs and required review dispositions.
 Artifacts are run-relative; source paths inside a relocated project are mapped
 relative to its recorded root. External tool/reference paths remain explicit.
+
+Review-only inputs are dependencies of review decisions, not native execution.
+New runs do not add required review inputs to their execution fingerprints.
+For a completed run with broad input pins, acceptance can classify an input as
+review-only only when a required review explicitly declares it and validated
+stage evidence establishes the execution closure. Authoring documents, compiler
+references, stage declarations, method-summary support and backend fingerprints
+remain execution dependencies; execution wins when roles overlap. Stored TLC
+keys supply its complete execution inputs. Missing, inconsistent or unknown
+closures keep current-byte checks conservative. Every original archived input
+is still checked, and `changed_review_inputs` exposes exempted current-file
+drift without renewing any review.
+
+Project/policy authoring is compared semantically before review-only drift is
+exempted. Acceptance independently reconstructs the archived project and
+validates its saved expansion, root hash and archived policy hash. Typed
+projections retain the entire execution definition except review obligations,
+review-directory selection and policy-document location. Every requirement
+field except its review references remains in the checker-expectation
+projection. New fields are retained by those record projections and unknown
+JSON fields fail boundary decoding; there is no DOM field-stripping allowlist.
+Complete-project comparison deliberately remains conservative about ordering,
+path spellings, unused tools and other scenarios.
+
+Only equivalent execution and checker projections permit automatic current-policy
+reassessment in the existing accept/explain/report flow. The resulting typed
+policy comparison links recorded/current project, policy and authoring hashes,
+compatibility judgments and changed areas. Native stage/compiler/summary input
+roles override this exemption, including when a stage consumed authoring bytes.
+Incomplete evidence or an unknown execution closure cannot turn a changed
+project into current execution. All original archived inputs and artifacts are
+still checked; approvals are never inherited from different review identities
+or origins. Current policy authorship remains trusted, not authenticated.
+
+This reassesses existing provenance, writes only new acceptance/report outputs,
+and does not record a new execution or introduce a backend cache. Incompatible
+execution/requirement changes remain stale and require appropriate fresh
+evidence; pending or stale current reviews remain separate acceptance blockers.
 
 Review decisions are append-only sidecar records, never edits to pinned run
 inputs. They pin the claim/assumptions, explicit source inputs and supporting

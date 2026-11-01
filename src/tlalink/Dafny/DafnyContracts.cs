@@ -161,8 +161,8 @@ public static class IntegratedInputs
         path = FilePaths.Full(path);
         IntegratedManifest manifest = Parse(Files.ReadPinned(path, pins));
         if (manifest.SchemaVersion != Schema.Version || manifest.Kind != "integrated-bindings" ||
-            manifest.Bindings.Count == 0 || manifest.Bindings.Count > 1000)
-            throw new InputException(ErrorCode.InvalidIntegratedInput, "Expected current integrated-bindings schema and 1..1000 bindings.");
+            manifest.Bindings.Count > 1000 || manifest.Bindings.Count == 0 && manifest.TlaTargets.Count == 0)
+            throw new InputException(ErrorCode.InvalidIntegratedInput, "Expected current integrated-bindings schema with selected Dafny bindings or TLA+ targets; maximum 1000 Dafny bindings.");
         if (manifest.Sources.Any(string.IsNullOrWhiteSpace) || string.IsNullOrWhiteSpace(manifest.Scope) ||
             manifest.Bindings.Any(b => b is null) || manifest.Correspondences.Any(c => c is null))
             throw new InputException(ErrorCode.InvalidIntegratedInput, "Scope paths and binding/correspondence records cannot be empty or null.");
