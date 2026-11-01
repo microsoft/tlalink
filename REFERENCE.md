@@ -1258,7 +1258,9 @@ summary counts, null if missing/ambiguous; they are not C# coverage counts.
 `goals` retains `severity`, `source`, `error_id`, `message`, native `location`
 and bounded `related_information` with `omitted_related_information`.
 Locations preserve native `filename`, `file_path`, `uri` and zero-based
-`range.start/end.{line,character}`; URIs are not filepaths. At most 100 goals,
+`range.start/end.{line,character}`; URIs are not filepaths. Related messages
+may omit a location; it remains null without changing the native proof outcome.
+At most 100 goals,
 10 related entries per goal and 2048 characters per message are retained.
 Complete native JSON logs remain archived. `read-dafny` reconstructs these
 fields from those logs, without interpreting Dafny expressions or promoting

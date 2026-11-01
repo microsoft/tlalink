@@ -39,4 +39,4 @@ internal sealed record DafnyNativeDiagnosticValue(int Severity, string? Source =
     public bool HasDefaultFormatMessage { get; private init; }
 }
 
-internal sealed record DafnyNativeRelatedInformation(string? DefaultFormatMessage, DafnyProofLocation? Location);
+internal sealed record DafnyNativeRelatedInformation(string? DefaultFormatMessage, DafnyProofLocation? Location = null);

@@ -67,6 +67,23 @@ public static class NativeProofDiagnosticsTests
             CoreTests.Equal("incomplete", DafnyBackend.ClassifyVerification(new("incomplete", "unused", null), log));
             CoreTests.True(DafnyProofOutput.Read(log + log).VerifiedObligations == null);
         });
+        test("Dafny related messages without locations retain completed verifier rejection", () =>
+        {
+            string log = Fixture("DafnyPostcondition.jsonl");
+            string[] lines = log.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            JsonObject diagnostic = JsonNode.Parse(lines[0])!.AsObject();
+            JsonObject related = diagnostic["value"]!["relatedInformation"]![0]!.AsObject();
+            related.Remove("location");
+            related["defaultFormatMessage"] = "ensures result == !canceled // resource limit";
+            log = diagnostic.ToJsonString() + "\n" + lines[1];
+            CoreTests.Equal("rejected", DafnyBackend.ClassifyVerification(new("failed", "unused", 4), log));
+            DafnyProofRelated message = DafnyProofOutput.Read(log).Goals.Single().RelatedInformation.Single();
+            CoreTests.True(message.Location == null);
+            CoreTests.Equal("ensures result == !canceled // resource limit", message.Message);
+            related.Remove("defaultFormatMessage");
+            CoreTests.Equal("incomplete", DafnyBackend.ClassifyVerification(new("failed", "unused", 4),
+                diagnostic.ToJsonString() + "\n" + lines[1]));
+        });
         test("Dafny native timing CSV retains named proof efforts without assigning times to error diagnostics", () =>
         {
             string csv = Fixture("DafnyTiming.csv");
