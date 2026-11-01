@@ -1,0 +1,21 @@
+{
+  "schema_version": 4,
+  "kind": "integrated-bindings",
+  "sources": ["AdmissionGate.cs", "Work.cs", "Service.cs"],
+  "scope": "scope.json",
+  "bindings": [
+    { "id": "proof::work", "adapter": null, "cases": [] }
+  ],
+  "source_obligations": [
+    {
+      "id": "lifetime",
+      "binding": "proof::work",
+      "kind": "balanced-async-gate",
+      "gate": "M:AdmissionGate.Enter",
+      "effect": "M:AdmissionGate.Exit",
+      "storage": "F:AsyncService.gate"
+    }
+  ],
+  "correspondences": [],
+  "tla_targets": []
+}

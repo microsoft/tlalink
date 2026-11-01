@@ -8,6 +8,27 @@ public static class FormalOwnedLinksTests
     public static void RegisterCore(Action<string, Action> test, string work)
     {
         LinkInspectionTests.Register(test, work);
+        test("archived correspondence reconstruction retains the explicit selected ID scope", () =>
+        {
+            string path = Path.Combine(work, "ArchiveSelection.cs");
+            File.WriteAllText(path, "public class ArchiveSelection { public void Commit() {} }");
+            CSharpScope source = CSharpScope.Parse([path]);
+            List<FormalLinkDeclaration> formal = [
+                new(new("archive::chosen", Source: new("M:ArchiveSelection.Commit")),
+                    new("Chosen", "Archive", "lemma", new("Archive.dfy", 1, 1), ""), 0),
+                new(new("archive::unselected", Source: new("M:UnavailableDependency.Reset")),
+                    new("Unselected", "Archive", "lemma", new("Dependency.dfy", 1, 1), ""), 0)
+            ];
+            Dictionary<string, ArchivedSourceBinding> Reconstruct(params string[] ids) =>
+                CorrespondenceEvidence.Bindings([path], ids, source.Fingerprints, Files.Read, formal,
+                    hash => source.Fingerprints.First(p => p.Value == hash).Key);
+            Dictionary<string, ArchivedSourceBinding> selected = Reconstruct("archive::chosen");
+            CoreTests.Equal(1, selected.Count);
+            CoreTests.True(selected.ContainsKey("archive::chosen"));
+            CoreTests.True(!selected.ContainsKey("archive::unselected"));
+            CoreTests.Equal(0, Reconstruct().Count);
+            CoreTests.ThrowsAny<InputException>(() => Reconstruct("archive::unselected"));
+        });
         test("formal comments resolve unannotated source declarations and repeated syntax explicitly", () =>
         {
             string path = Path.Combine(work, "FormalSource.cs");

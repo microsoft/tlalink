@@ -23,8 +23,9 @@ checkable:
   using Roslyn IDs and explicit syntax selectors. TlaLink independently resolves
   both endpoints and rejects missing or duplicate counterparts.
   Selected source premises can also be checked, such as whether only the
-  authorized gate outcome reaches an effect. These checks do not prove that
-  the implementation matches the model.
+  authorized gate outcome reaches an effect, or a supported async admission
+  has one matching release attempt in its enclosing `finally`. These checks
+  do not prove that the implementation matches the model.
 - **Executions are checked against the model.** Where supported, TlaLink runs
   instrumented copies of your code and checks the recorded behavior against
   the model. Selected cleanup and exception paths can be observed explicitly,

@@ -121,7 +121,8 @@ public static class PEvidence
                     FormalCorrespondence.P(packet.Inventory, packet.Fingerprints, Recorded);
                 Dictionary<string, ArchivedSourceBinding> inline = config.Bindings.Count == 0 ? [] :
                     CorrespondenceEvidence.Bindings(config.Sources.Select(p => ProjectInputs.Resolve(packet.Config, p)),
-                        packet.Fingerprints, Recorded, formal, hash => Safe(output, Path.Combine("inputs", hash)));
+                        config.Bindings.Select(b => b.Id), packet.Fingerprints, Recorded, formal,
+                        hash => Safe(output, Path.Combine("inputs", hash)));
                 foreach (PSourceLink link in packet.Links)
                 {
                     if (!packet.Inventory.Contains(link.Specification) ||

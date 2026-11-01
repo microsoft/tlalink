@@ -1,0 +1,14 @@
+using System.Threading;
+using System.Threading.Tasks;
+
+sealed class AsyncService
+{
+    private readonly AdmissionGate gate = new AdmissionGate();
+    private readonly AdmissionGate other = new AdmissionGate();
+    public async Task<int> RunAsync(bool stop, CancellationToken token)
+    {
+        this.gate.Enter();
+        try { await Work.RunAsync(token); return 1; }
+        finally { this.other.Exit(); }
+    }
+}

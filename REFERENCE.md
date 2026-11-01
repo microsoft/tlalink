@@ -1538,6 +1538,7 @@ case-sensitive semantic identities, not source text or CFG block numbers.
 |---|---|---|
 | `guarded-effect` | `gate`, `effect`: method documentation IDs; `when`: Boolean | Exactly one gate call on `this.storage` decides a direct Boolean branch. Every entry-to-effect path crosses the declared outcome edge, that outcome can reach the effect, and the one effect block cannot repeat. A value-type gate receiver must not be readonly. |
 | `guarded-try-effect` | Same as `guarded-effect` | Extends that check only to a selected first direct call in the body of one top-level try statement. The gate must be in the method prefix outside that region. Exception dispatch cannot enter the selected first site; handler behavior and arbitrary exception-flow summaries are not established. |
+| `balanced-async-gate` | `gate`, `effect`: distinct acquisition/release method IDs | In one async Task/ValueTask instance method, a direct acquisition on private readonly fresh reference storage immediately precedes a top-level try/finally, or is the last statement in its immediately preceding Monitor lock. The finally contains only the matching release attempt. Both sites must be reachable. Every completing path after normal acquisition, including returns, implicit exceptions and faulted/canceled awaits, therefore attempts release once under trusted C# try/finally semantics. This is not gate semantics, successful release, eventual completion or drain-before-destroy. |
 | `stable-storage` | `allowed_calls`: nonempty unique source method documentation IDs; optional `allowed_properties`: getter property IDs | In a reference-type owner, either a private writable value-type field with no initializer, or a private readonly reference-type field initialized directly by fresh `new T(...)` (including target-typed `new(...)`, without an object initializer). No replacement, copy or ref escape is allowed in the selected scope. Every use is an authored direct method call or instance getter without a setter/ref return. Factories, constructor-only initialization and constructor replacement are unsupported or rejected, not inferred fresh. Callee/getter effects and purity are not inferred. |
 | `atomic-exchange-gate` | none | The bound synchronous instance method consists of `return Interlocked.Exchange(ref this.storage, 1) == 0`, or its expression-bodied/equality-operand-order equivalent, using writable private Int32 storage. |
 | `monotonic-int32` | none | Selected private writable Int32 storage starts at zero and every scoped use is a recognized `Volatile.Read`, `Volatile.Write(..., 1)` or `Interlocked.Exchange(..., 1)`. Direct writes, resets and unrecognized ref escapes do not pass. |
@@ -1648,6 +1649,31 @@ the recorded premises with the explicitly pinned archived binding manifest,
 separately from archive/current bytes. These are selected structural premises, not a proof
 that the abstraction, allowed callees, resource identity or C# implementation
 matches the linked theorem. Coverage and required human reviews remain pending.
+
+For `balanced-async-gate`, `storage` belongs to the bound method's reference-type
+owner and is initialized directly by `new` of a sealed reference helper.
+`gate` and `effect` select synchronous, nonvirtual, parameterless void source
+methods on that helper. Scoped replacement, alias/ref escape, acquisition or
+release from another source method, and alias-returning getters do not pass.
+The protected method may use the gate field only for the selected acquisition
+and release. Other scoped helper methods/getters retain their own effect-contract
+obligations; their purity or admission effects are not inferred.
+
+The initial supported shape deliberately uses structured enclosure rather than
+claiming ordinary CFG dominance models exceptions. Nested handlers, filters and
+disposal inside the protected try remain enclosed by its outer finally.
+Only a simple return may follow that lifetime. Loops, jumps, nested functions,
+delegate/dynamic calls, outer using declarations, nested task results and
+unawaited task-returning calls are incomplete. A task call must be directly
+awaited, optionally through the framework Boolean `ConfigureAwait`; passing a
+task into `WhenAny` does not establish that task's settlement.
+
+Full results include `async_gate` with acquisition/release/region locations,
+explicit await locations and the claim boundary, alongside compiler flow facts.
+An acquisition that throws is outside the acquired-call guarantee. If release
+itself throws, its attempt is recorded structurally, not successful release.
+No conclusion follows about callee-internal detached work, resource-use
+termination or whether a particular input reaches a successful acquisition.
 
 Inline JSON `bind` entries identify the Dafny and optional TLA+ correspondences;
 adapters, cases and `tla_targets` remain explicit in the manifest. The example exercises

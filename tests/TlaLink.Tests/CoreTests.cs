@@ -16,6 +16,7 @@ public static class CoreTests
         SourceInventoryTests.Register(test, work);
         SourceSymbolTests.Register(test, work);
         SourceObligationTests.Register(test, work);
+        AsyncGateObligationTests.Register(test, work);
         ReferenceObligationTests.Register(test, work);
         CleanupInstrumentationTests.Register(test, work);
         ProjectCompositionTests.RegisterCore(test, work);
