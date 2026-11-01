@@ -1,0 +1,13 @@
+{
+  "schema_version": 4,
+  "kind": "apalache-analysis",
+  "name": "dispatcher-inductive",
+  "mode": "inductive",
+  "model": "../Tla/Dispatcher.tla",
+  "init": "Init",
+  "next": "Next",
+  "properties": ["Safety"],
+  "invariant": "Inv",
+  "const_init": "ConstInit",
+  "assumptions": ["Fixed three-job, capacity-two, retry-two domain; no arbitrary-parameter theorem.", "No deadlock, fairness or eventual worker-completion claim."]
+}

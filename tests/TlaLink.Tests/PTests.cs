@@ -68,6 +68,19 @@ public static class PTests
         });
 
         string compiler = TestTools.PCompiler(root);
+        PTranslationTests.Register(test, compiler, work);
+        test("PVerifier rejects runtime helper calls before native proof while PChecker still indexes them", () =>
+        {
+            string source = Path.Combine(work, "HelperCall.p");
+            File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "PVerifier", "HelperCall.p"), source);
+            string home = Path.GetDirectoryName(compiler)!;
+            CoreTests.True(PFrontend.Index(home, [source], Path.Combine(work, "helper-pchecker"), 60,
+                new(FilePaths.Comparer)).Any(d => d.Name == "HelperCall.SetValue"));
+            CoreTests.ThrowsAny<InputException>(() => PFrontend.Index(home, [source],
+                Path.Combine(work, "helper-pverifier"), 60, new(FilePaths.Comparer), "pverifier"));
+            CoreTests.True(Files.Read(Path.Combine(work, "helper-pverifier", "p-index.stderr.log"))
+                .Contains("overwrite helper effects", StringComparison.Ordinal));
+        });
         string fixture = Path.Combine(work, "p-fixture");
         Directory.CreateDirectory(fixture);
         foreach (string file in Directory.EnumerateFiles(Path.Combine(root, "examples", "P")))
@@ -204,7 +217,11 @@ public static class PTests
         });
         test("P missing verifier dependencies are explicit and cannot count as rejected invariants", () =>
         {
-            string output = Run(original with { Engine = "pverifier" }, 2);
+            File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "PVerifier", "NoCalls.p"),
+                Path.Combine(fixture, "NoCalls.p"));
+            string output = Run(original with {
+                Engine = "pverifier", Models = ["NoCalls.p"], Sources = [], Bindings = [], Scope = null
+            }, 2);
             PPacket packet = ProjectInputs.Read<PPacket>(Path.Combine(output, "result.json"));
             CoreTests.Equal("incomplete", packet.Status);
             CoreTests.True(packet.Diagnostics.Any(d => d.Is(ErrorCode.PPrerequisiteMissing)));

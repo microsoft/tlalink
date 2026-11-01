@@ -1,0 +1,13 @@
+{
+  "schema_version": 4,
+  "kind": "apalache-analysis",
+  "name": "dispatcher-retry-reachable",
+  "mode": "bounded",
+  "model": "../Tla/Dispatcher.tla",
+  "init": "Init",
+  "next": "Next",
+  "properties": ["NoRetry"],
+  "length": 8,
+  "const_init": "ConstInit",
+  "assumptions": ["Expected counterexample witnesses a reachable second attempt in the healthy model."]
+}

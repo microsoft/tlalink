@@ -1,0 +1,31 @@
+{
+  "schema_version": 4,
+  "kind": "acceptance-policy",
+  "project": "dispatcher-campaign",
+  "requirements": [
+    {"id": "source-regressions", "scenario": "source", "stage": "regressions", "expected": "passed", "claim": "selected-csharp-regressions", "tests": ["capacity", "retry", "exhaustion", "queued-cancellation", "running-cancellation", "completion-before-cancellation", "shutdown", "invalid-input", "snapshot-isolation", "concurrent-admission", "cancel-complete-race"], "config_sha256": "C003DC91EB7A0217E4F1468B252D22F24B6F6DD7BDC41EC7350450675AE30754"},
+    {"id": "tla-links", "scenario": "tla", "stage": "tla-links", "expected": "passed", "reviews": ["dispatcher-correspondence"]},
+    {"id": "tla-safety", "scenario": "tla", "stage": "tla-safety", "expected": "passed", "config_sha256": "1D1EF5BB14BF745A0D1F8E13BAB8C7ADD243BA5F3DFC717137868767FA108B06"},
+    {"id": "tla-progress", "scenario": "tla", "stage": "tla-progress", "expected": "passed", "config_sha256": "4D27D8C627BD83FC06D05148E62FC66C8A624D00B544865B5B37D35157B916A8"},
+    {"id": "tla-unfair", "scenario": "tla", "stage": "tla-unfair", "expected": "rejected", "diagnostic": "TLC2116", "config_sha256": "49FD5849BCF1D45BA2540DE821F49C8870EFB249ECC454EC7CA27247F12055D6"},
+    {"id": "tla-leak", "scenario": "tla", "stage": "tla-leak", "expected": "rejected", "diagnostic": "TLC2110", "diagnostic_text": "Invariant Safety is violated.", "config_sha256": "3438D2F0FE91291D16A647429E820209E7D46789DB0538339C6C4607BA36A118"},
+    {"id": "tla-early", "scenario": "tla", "stage": "tla-early", "expected": "rejected", "diagnostic": "TLC2110", "diagnostic_text": "Invariant Safety is violated.", "config_sha256": "3438D2F0FE91291D16A647429E820209E7D46789DB0538339C6C4607BA36A118"},
+    {"id": "tla-retry-reachable", "scenario": "tla", "stage": "tla-retry-reachable", "expected": "rejected", "diagnostic": "TLC2110", "diagnostic_text": "Invariant NoRetry is violated.", "config_sha256": "501760E21E23C2A6B71380827174478C94783A92E488BED15D0B9A8200151EFD"},
+    {"id": "tla-cancel-reachable", "scenario": "tla", "stage": "tla-cancel-reachable", "expected": "rejected", "diagnostic": "TLC2110", "diagnostic_text": "Invariant NoCancellation is violated.", "config_sha256": "CE06E9CC8531CC3D41D4ACBE2C188DCE4AE2FE85BCA44F2A55162C70684125AF"},
+    {"id": "tla-drain-reachable", "scenario": "tla", "stage": "tla-drain-reachable", "expected": "rejected", "diagnostic": "TLC2110", "diagnostic_text": "Invariant NeverDrained is violated.", "config_sha256": "49BE2DD7470AFFEDED6C29963CA7A7892B552728B6BA52361E4571C2A8E53705"},
+    {"id": "pluscal-links", "scenario": "pluscal", "stage": "pluscal-links", "expected": "passed", "reviews": ["dispatcher-correspondence"]},
+    {"id": "pluscal-safety", "scenario": "pluscal", "stage": "pluscal-safety", "expected": "passed", "reviews": ["dispatcher-correspondence"], "config_sha256": "F2148CAFB40ABCD2140F6796BA62D0245484E7F0AE57D8D7A1ECB388F2D40F40"},
+    {"id": "apalache-types", "scenario": "apalache", "stage": "apalache-types", "expected": "passed", "claim": "well-typed-model", "config_sha256": "D526890031E513AC1296822D9B0E97DC071A690BC5A57D5B8F6C2BB6320CE32D"},
+    {"id": "apalache-bounded", "scenario": "apalache", "stage": "apalache-bounded", "expected": "passed", "claim": "bounded-safety", "config_sha256": "E3DD07CBA1BDB2EEE457B9280CBA59F67975288CB1E513787DC8EA29CD723796"},
+    {"id": "apalache-inductive", "scenario": "apalache", "stage": "apalache-inductive", "expected": "passed", "claim": "inductive-invariants", "reviews": ["dispatcher-correspondence"], "config_sha256": "FA0C541BD2C545274CBCAFAD4F85B6A20F393E36190C31B4ADE2E8E6903B3745"},
+    {"id": "apalache-leak", "scenario": "apalache", "stage": "apalache-leak", "expected": "rejected", "diagnostic": "AP100", "claim": "not-established", "config_sha256": "7CDF38B25C7B6E5162A6B51FCDC7C271406C2476BCD9CC8DFFB45F5AA7CCB11C"},
+    {"id": "apalache-early", "scenario": "apalache", "stage": "apalache-early", "expected": "rejected", "diagnostic": "AP100", "claim": "not-established", "config_sha256": "781131A480E79B1BF43FCFD5A87CB809BE7F36C3FEE9DEC5D9A06A3E0BBF94CF"},
+    {"id": "apalache-retry-reachable", "scenario": "apalache", "stage": "apalache-retry-reachable", "expected": "rejected", "diagnostic": "AP100", "claim": "not-established", "config_sha256": "4F80C764EF9A59F5A12A09C2A2A949878FA4732E1E1602F1541ADC17E6105A70"},
+    {"id": "dafny-links", "scenario": "dafny", "stage": "dafny-links", "expected": "passed", "reviews": ["dispatcher-correspondence"]},
+    {"id": "dafny-history", "scenario": "dafny", "stage": "dafny-history", "expected": "passed", "claim": "dafny-contracts", "config_sha256": "B15AD64FCECE6A37A2D503311004564CF6C2AF4747CCA478032C82D7628F3B10"},
+    {"id": "dafny-leak", "scenario": "dafny", "stage": "dafny-leak", "expected": "rejected", "diagnostic": "DF100", "claim": "not-established", "config_sha256": "68AB5C5759BF4564F1CFEA69EEFF81F176C32694D0880D8D28943267EA14C786"},
+    {"id": "pchecker-healthy", "scenario": "pchecker", "stage": "pchecker-healthy", "expected": "passed", "claim": "explored-schedules", "reviews": ["dispatcher-correspondence"], "config_sha256": "EADCFBC3CBE72E4451F8255A93F7F1D3FEBEDF83C389206B7B3307105351D8B5"},
+    {"id": "pchecker-leak", "scenario": "pchecker", "stage": "pchecker-leak", "expected": "rejected", "diagnostic": "PL100", "claim": "model-counterexample", "config_sha256": "47DE3AEB8938C88DD4F39939ACB60FC1685F428B579A567EC9BAD4828FEDF2EE"},
+    {"id": "pchecker-early", "scenario": "pchecker", "stage": "pchecker-early", "expected": "rejected", "diagnostic": "PL100", "claim": "model-counterexample", "config_sha256": "36FE72FAC1C26871F2FC24090779357D8202036597F24D2E05E01FC0423B34E2"}
+  ]
+}

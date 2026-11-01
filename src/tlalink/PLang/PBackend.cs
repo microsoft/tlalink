@@ -70,6 +70,7 @@ public static class PBackend
             packet.Claim = "not-established";
             packet.Diagnostics.Add(new(error is InputException { Code: ErrorCode code } ? code : ErrorCode.PToolFailure, error.Message));
         }
+        packet.NativeMetrics = PNativeOutput.FromPacket(packet, output);
         PEvidence.Archive(output, packet);
         Files.WriteNew(Path.Combine(output, "result.json"), packet);
         ProjectWorkflow.Render(packet, options);
@@ -128,14 +129,16 @@ public static class PBackend
             "--outdir", generated, "--pfiles", .. config.Models];
         if (config.Engine == "pverifier")
         {
-            if (!config.Dependencies.Any(d => Path.GetFileNameWithoutExtension(d.Path).Equals("uclid", StringComparison.OrdinalIgnoreCase)))
-                throw new InputException(ErrorCode.PPrerequisiteMissing, "PVerifier requires an explicitly pinned UCLID5 distribution and solver dependencies.");
+            PInputs.RequiredExecutable(config.Dependencies, "uclid");
             compile.AddRange(["--timeout", timeout.ToString(System.Globalization.CultureInfo.InvariantCulture), "--jobs", "1"]);
         }
         PProcessResult compiled = run("p-compile", compile);
         string compilation = Files.Read(compiled.Stdout) + "\n" + Files.Read(compiled.Stderr);
         if (config.Engine == "pverifier")
+        {
+            packet.ProofDiagnostics = PProofOutput.Read(compilation);
             return PResults.Classify(config.Engine, compiled.ExitCode, compiled.TimedOut, compilation, config.Schedules);
+        }
         if (compiled.TimedOut || compiled.ExitCode != 0 || !compilation.Contains("Compilation succeeded.", StringComparison.Ordinal))
             return new("incomplete", "not-established", ErrorCode.PToolFailure);
         string[] binaries = Directory.GetFiles(generated, config.Name + ".dll", SearchOption.AllDirectories)
@@ -161,9 +164,7 @@ public static class PBackend
 
     private static PAssessment External(PAnalysis config, string output, int timeout, PPacket packet)
     {
-        ToolPin java = config.Dependencies.SingleOrDefault(d =>
-            Path.GetFileNameWithoutExtension(d.Path).Equals("java", StringComparison.OrdinalIgnoreCase))
-            ?? throw new InputException(ErrorCode.PPrerequisiteMissing, "An external backend requires one explicitly pinned Java executable.");
+        ToolPin java = PInputs.RequiredExecutable(config.Dependencies, "java");
         List<string> args;
         string observations = Path.Combine(output, "observations");
         if (config.Engine is "pex" or "psym")
@@ -179,10 +180,7 @@ public static class PBackend
             PObservation observe = config.Observation!;
             if (observe.Logs.Count != 1)
                 throw new InputException(ErrorCode.InvalidPInput, "The finite PObserve adapter requires one explicit log file per analysis.");
-            args = ["-Xmx512m", "-jar", observe.RuntimeJar.Path, "--jars", observe.MonitorJar.Path,
-                "--spec", observe.Specification, "--parser", observe.Parser, "--logs", observe.Logs[0],
-                "--outputDir", observations, "--inputKind", observe.InputKind, "--replay",
-                observe.Replay.ToString(System.Globalization.CultureInfo.InvariantCulture)];
+            args = ObservationArguments(observe, observations);
         }
         PProcessResult result = PProcess.Run(java.Path, args, output, "p-external", timeout, config.Dependencies);
         packet.Processes.Add(result);
@@ -193,4 +191,11 @@ public static class PBackend
             File.Exists(metrics) ? Files.Read(metrics) : "",
             Directory.Exists(observations) ? Directory.GetFiles(observations, "*Error_*.txt") : []);
     }
+
+    internal static List<string> ObservationArguments(PObservation observe, string output) => [
+        "-Xmx512m", "-jar", observe.RuntimeJar.Path, "--jars", observe.MonitorJar.Path,
+        "--spec", observe.Specification, "--parser", observe.Parser, "--logs", observe.Logs[0],
+        "--outputDir", output, "--inputkind", observe.InputKind.ToUpperInvariant(), "--replaySize",
+        observe.Replay.ToString(System.Globalization.CultureInfo.InvariantCulture)
+    ];
 }

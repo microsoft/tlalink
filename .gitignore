@@ -141,6 +141,15 @@ StyleCopReport.xml
 *.tmp_proj
 *_wpftmp.csproj
 *.log
+!examples/Dispatcher/verification/PObserve/duplicate-completion.log
+!examples/Dispatcher/verification/PObserve/parser-error.log
+!tests/TlaLink.Tests/Fixtures/PTranslation/healthy.log
+!tests/TlaLink.Tests/Fixtures/PTranslation/wrong-state.log
+!tests/TlaLink.Tests/Fixtures/PTranslation/parser-error.log
+!examples/Dispatcher/verification/P/Artifacts/
+examples/Dispatcher/verification/P/Artifacts/*
+!examples/Dispatcher/verification/P/Artifacts/pex-pom.xml
+!examples/Dispatcher/verification/P/Artifacts/psym-pom.xml
 *.tlog
 *.vspscc
 *.vssscc

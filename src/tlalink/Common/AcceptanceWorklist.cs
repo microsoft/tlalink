@@ -73,7 +73,8 @@ internal sealed class AcceptanceWorklist
         Dictionary<string, int> counts = new(StringComparer.Ordinal) {
             ["diagnostics"] = summary.Diagnostics.Count, ["requirements"] = summary.Requirements.Count,
             ["check_coverage"] = summary.CheckCoverage.Count, ["review_status"] = summary.ReviewStatus.Count,
-            ["changed_review_inputs"] = summary.ChangedReviewInputs.Count
+            ["changed_review_inputs"] = summary.ChangedReviewInputs.Count,
+            ["next_steps"] = summary.NextSteps.Count
         };
         Dictionary<string, int>? Omitted(params (string Name, int Count)[] fields)
         {
@@ -89,7 +90,8 @@ internal sealed class AcceptanceWorklist
             DiagnosticCounts = StatusCounts(diagnostics.Select(d => d.Severity)),
             RequirementsCounts = StatusCounts(summary.Requirements.Select(r => r.Status)),
             ReviewStatusCounts = StatusCounts(summary.ReviewStatus.Select(r => r.Status)),
-            Counts = counts, Omitted = counts.ToDictionary(p => p.Key, p => Math.Max(0, p.Value - detailLimit), StringComparer.Ordinal),
+            Counts = counts, Omitted = counts.ToDictionary(p => p.Key,
+                p => Math.Max(0, p.Value - (p.Key == "next_steps" ? itemLimit : detailLimit)), StringComparer.Ordinal),
             Diagnostics = summary.Diagnostics.Take(detailLimit).ToList(),
             Requirements = summary.Requirements.Take(detailLimit).Select(r => r with {
                 Missing = r.Missing.Take(detailLimit).ToList(), Omitted = Omitted(("missing", r.Missing.Count))
@@ -99,7 +101,8 @@ internal sealed class AcceptanceWorklist
                 Omitted = Omitted(("requirements", c.Requirements.Count), ("gaps", c.Gaps.Count))
             }).ToList(),
             ReviewStatus = summary.ReviewStatus.Take(detailLimit).ToList(),
-            ChangedReviewInputs = summary.ChangedReviewInputs.Take(detailLimit).ToList()
+            ChangedReviewInputs = summary.ChangedReviewInputs.Take(detailLimit).ToList(),
+            NextSteps = summary.NextSteps.Take(itemLimit).ToList()
         };
     }
 }

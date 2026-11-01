@@ -1,0 +1,13 @@
+{
+  "schema_version": 4,
+  "kind": "apalache-analysis",
+  "name": "dispatcher-early-release",
+  "mode": "bounded",
+  "model": "../Tla/EarlyRelease.tla",
+  "init": "ControlInit",
+  "next": "BadNext",
+  "properties": ["ControlInv"],
+  "length": 8,
+  "const_init": "ControlConstInit",
+  "assumptions": ["Deliberately return a running job's credit before completion; require a native safety counterexample."]
+}

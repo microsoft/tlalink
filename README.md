@@ -41,6 +41,19 @@ checks the archived execution and checker requirements, then evaluates the
 current reviews separately. New or changed reviews are never approved merely
 because the execution still applies.
 
+For larger campaigns, project reports compare explicitly selected runs with
+backend-specific outcomes, timings, available native metrics and outstanding
+reviews. Acceptance and explanation output also suggest selective next steps:
+revisit reviews, search an eligible TLC stage, or collect a new scenario run,
+without replaying unchanged execution or weakening requirements.
+Native proof diagnostics help localize failed or unknown obligations;
+explicit pinned extended-P setup and focused translation controls support
+repeatable campaigns. See [campaign usage](examples/Dispatcher/README.md) and
+[setup commands](scripts/README.md).
+Local setup and CI share exact common tool pins; backend-specific exceptions
+are explicit rather than silently selecting different SDKs or JDKs. See
+[build prerequisites](REFERENCE.md#requirements-and-build).
+
 The goal is to move from **"the agent says this looks correct"** to **"here is
 the evidence, its scope and what remains unproven."** You do not need to read
 or write TLA+, Dafny or P yourself.
@@ -224,6 +237,7 @@ access to the relevant sources and a shell. Then ask it to:
 | [Apalache](examples/Apalache/README.md) | Symbolic TLA+ type, bounded safety and induction checks. |
 | [Integrated bindings](examples/Integrated/README.md) | Comparing C# calls with verified Dafny results. |
 | [P](examples/P/README.md) | Linking C# to a P state machine checked with PChecker. |
+| [Dispatcher campaign](examples/Dispatcher/README.md) | A shared C# lifecycle across the supported backends, with defect controls and measured limitations. |
 
 Each example project uses the same layout: a small root `tlalink.project.json`
 that selects `component.json` files kept beside the code they check.

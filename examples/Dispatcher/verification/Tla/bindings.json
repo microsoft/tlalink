@@ -1,0 +1,9 @@
+{
+  "schema_version": 4,
+  "kind": "integrated-bindings",
+  "sources": ["../../src/Dispatcher.cs"],
+  "scope": "scope.json",
+  "bindings": [],
+  "tla_targets": ["dispatcher-tla"],
+  "correspondences": []
+}

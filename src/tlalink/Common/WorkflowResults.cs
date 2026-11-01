@@ -27,7 +27,10 @@ public sealed record AcceptanceResult(int SchemaVersion, string Kind, string Pro
 {
     public List<string> ChangedReviewInputs { get; init; } = [];
     public WorkflowPolicyReassessment? PolicyReassessment { get; init; }
+    public List<WorkflowNextStep> NextSteps { get; init; } = [];
 }
+public sealed record WorkflowNextStep(string Kind, string? Stage, string Reason,
+    List<string> Arguments, string WorkingDirectory);
 public sealed record PlannedMethodSummary(string Scope, MethodSummary Summary, string Method,
     Endpoint Implementation, Endpoint Specification, Endpoint? Precondition, string InspectionStatus,
     ReviewOrigin InspectionOrigin, string Boundary);

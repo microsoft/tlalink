@@ -1,0 +1,14 @@
+{
+  "schema_version": 4,
+  "kind": "p-analysis",
+  "name": "DispatcherLeak",
+  "engine": "pchecker",
+  "models": ["Dispatcher.p"],
+  "sources": [],
+  "bindings": [],
+  "dependencies": [],
+  "test_case": "tcLeakedCredit",
+  "schedules": 10,
+  "max_steps": 3000,
+  "seed": 17
+}

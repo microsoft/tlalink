@@ -126,7 +126,11 @@ public sealed class DafnyBackend(string executable, string output, int timeout, 
     {
         StageResult proof = Run(prefix + "-verify", Executable,
             ["verify", .. roots, "--verify-included-files", "--json-output", "--show-snippets=false",
-                "--verification-time-limit", timeout.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
+                "--verification-time-limit", timeout.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                "--log-format", "csv;LogFileName=" + Path.Combine(Output, prefix + "-verification.csv")]);
+        string timingFile = Path.Combine(Output, prefix + "-verification.csv");
+        if (File.Exists(timingFile))
+            Files.Pin(packet.GeneratedFiles, timingFile, Files.Hash(timingFile));
         packet.ProofStatus = ClassifyVerification(proof, Files.Read(proof.Log));
         if (packet.ProofStatus != "verified")
         {

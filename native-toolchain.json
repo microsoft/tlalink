@@ -1,0 +1,60 @@
+{
+  "schema_version": 4,
+  "kind": "native-toolchain",
+  "dotnet": {
+    "sdk8": "8.0.424",
+    "runtime8": "8.0.30",
+    "reason": "P native compiler/checker targets net8.0; SDK 10 from global.json builds it, while this separately provisioned .NET 8 runtime executes it."
+  },
+  "maven": {
+    "version": "3.9.11",
+    "directory": "apache-maven-3.9.11",
+    "archive_url": "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.11/apache-maven-3.9.11-bin.zip",
+    "archive_sha256": "0D7125E8C91097B36EDB990EA5934E6C68B4440EEF4EA96510A0F6815E7EEADB"
+  },
+  "sbt": {
+    "version": "1.4.9",
+    "directory": "",
+    "archive_url": "https://repo.maven.apache.org/maven2/org/scala-sbt/sbt-launch/1.4.9/sbt-launch-1.4.9.jar",
+    "archive_sha256": "6581531C0188AEF375B1A80ECA877643D9FCAE316299E0A67761D4C0AD7473E2"
+  },
+  "z3": {
+    "version": "4.13.0",
+    "directory": "z3-4.13.0-x64-win",
+    "archive_url": "https://github.com/Z3Prover/z3/releases/download/z3-4.13.0/z3-4.13.0-x64-win.zip",
+    "archive_sha256": "2BCD14B6849FDDEAD3D0B3CB671CC9D134A8EF0B1D3EFF3EFD7D75A5BBF00DD3"
+  },
+  "p": {
+    "version": "3.1.0",
+    "repository": "https://github.com/p-org/P.git",
+    "commit": "857776015de5f2683f11945728a1dc57f4b74b33",
+    "directory": "",
+    "reason": ""
+  },
+  "psym_generator": {
+    "version": "2.4.0",
+    "repository": "https://github.com/p-org/P.git",
+    "commit": "40038c8fba144dcbada82907e8375d990f019ae3",
+    "directory": "",
+    "reason": "The supported PSym 1.1.4 Maven runtime requires P 2.4.0 generation; P 3.1.0 serves the other maintained native profiles."
+  },
+  "uclid": {
+    "version": "0.9.5",
+    "repository": "https://github.com/uclid-org/uclid.git",
+    "commit": "a4e4e7a22780833c86d6a650af2fcf88a7d00a06",
+    "directory": "uclid-0.9.5",
+    "reason": ""
+  },
+  "uclid_build_java": {
+    "version": "17.0.18+8",
+    "directory": "jdk-17.0.18+8",
+    "archive_url": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.18%2B8/OpenJDK17U-jdk_x64_windows_hotspot_17.0.18_8.zip",
+    "archive_sha256": "C24E6215FA75F861D2A900CEEC67C620CD2EB6DFB81541087D5981293B16F0E5",
+    "reason": "Pinned upstream UCLID SBT 1.4.9 invokes System.setSecurityManager; measured Java 25 build fails with UnsupportedOperationException. Only this build uses Java 17; native execution uses the shared JDK."
+  },
+  "lombok": { "version": "1.18.42" },
+  "generation_patches": {
+    "p3-generation.patch": "584B3A1182812B6256BF72C4F78D22CA5C3A724FAEA37236B45C65E504FF32C1",
+    "p24-generation.patch": "D16B005CEAEFEBA3257D50D03ADBF4E40BC806961062DFAE18CF8EB88F9E2C24"
+  }
+}

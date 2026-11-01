@@ -1,0 +1,61 @@
+diff --git a/Src/PCompiler/CompilerCore/Backend/PEx/PExCodeGenerator.cs b/Src/PCompiler/CompilerCore/Backend/PEx/PExCodeGenerator.cs
+index 2d39f23..875a097 100644
+--- a/Src/PCompiler/CompilerCore/Backend/PEx/PExCodeGenerator.cs
++++ b/Src/PCompiler/CompilerCore/Backend/PEx/PExCodeGenerator.cs
+@@ -43,7 +43,7 @@ internal class PExCodeGenerator : ICodeGenerator, IExpressionEmitter<Compilation
+     /// <summary>
+     ///     This compiler has a compilation stage.
+     /// </summary>
+-    public bool HasCompilationStage => true;
++    public bool HasCompilationStage => false;
+     private static List<Variable> _globalParams = [];
+ 
+     private string GetGlobalParamAndLocalVariableName(Variable v)
+@@ -2142,7 +2142,6 @@ internal class PExCodeGenerator : ICodeGenerator, IExpressionEmitter<Compilation
+         context.WriteLine(output, "import pex.runtime.machine.eventhandlers.*;");
+         context.WriteLine(output, "import pex.runtime.machine.events.*;");
+         context.WriteLine(output, "import pex.values.*;");
+-        context.WriteLine(output, "import pex.utils.*;");
+         context.WriteLine(output, "import pex.utils.misc.*;");
+         context.WriteLine(output, "import pex.utils.serialize.*;");
+         context.WriteLine(output, "import java.util.List;");
+diff --git a/Src/PCompiler/CompilerCore/Backend/PObserve/MachineGenerator.cs b/Src/PCompiler/CompilerCore/Backend/PObserve/MachineGenerator.cs
+index e82305e..9c5d475 100644
+--- a/Src/PCompiler/CompilerCore/Backend/PObserve/MachineGenerator.cs
++++ b/Src/PCompiler/CompilerCore/Backend/PObserve/MachineGenerator.cs
+@@ -116,7 +116,7 @@ namespace Plang.Compiler.Backend.Java {
+                 WriteFunction(f);
+             }
+ 
+-            WriteOverloads();
++            WriteOverloads(cname);
+             
+             WriteLine();
+ 
+@@ -1035,7 +1035,7 @@ namespace Plang.Compiler.Backend.Java {
+             }
+         }
+ 
+-        private void WriteOverloads()
++        private void WriteOverloads(string cname)
+         {
+             // toString()
+             WriteLine();
+@@ -1055,7 +1055,7 @@ namespace Plang.Compiler.Backend.Java {
+ 
+             // deepEquals
+             WriteLine();
+-            WriteLine($"public boolean deepEquals({_currentMachine.Name} other) {{");
++            WriteLine($"public boolean deepEquals({cname} other) {{");
+             WriteLine("return (true");
+             foreach (var (jType, fieldName) in FieldsForCurrentMachine())
+             {
+@@ -1070,7 +1070,7 @@ namespace Plang.Compiler.Backend.Java {
+             // equals
+             WriteLine();
+             WriteLine("public boolean equals(Object other) {");
+-            WriteLine($"return (this.getClass() == other.getClass()) && this.deepEquals(({_currentMachine.Name})other);");
++            WriteLine($"return (this.getClass() == other.getClass()) && this.deepEquals(({cname})other);");
+             WriteLine("} // equals()");
+ 
+             // hashCode

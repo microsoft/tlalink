@@ -64,6 +64,7 @@ public static class Program
             ToolHashTests.Register(Test, work);
             if (selection is null or "--core" or "--apalache") ApalacheTests.RegisterExample(Test, root);
             DiagnosticTests.Register(Test);
+            if (selection == "--diagnostics") NativeProofDiagnosticsTests.RegisterCore(Test, root, work);
             if (selection == "--frontend")
             {
                 Suite("tla-only-inspection", directory => IntegratedTlaOnlyTests.Register(Test, root, directory));
@@ -74,6 +75,8 @@ public static class Program
             }
             if (selection is null or "--core")
             {
+                NativeToolchainTests.Register(Test, root);
+                NativeProofDiagnosticsTests.RegisterCore(Test, root, work);
                 Suite("native-contracts", directory => NativeContractTests.Register(Test, directory));
                 Suite("trace-contracts", directory => TraceContractTests.Register(Test, directory));
                 Suite("typed-results", directory => TypedResultTests.Register(Test, directory));
@@ -98,6 +101,7 @@ public static class Program
             }
             if (selection == "--evidence")
             {
+                Suite("native-proof-diagnostics", directory => NativeProofDiagnosticsTests.RegisterNative(Test, root, directory));
                 Suite("evidence-core", directory => StageEvidenceTests.RegisterCore(Test, root, directory));
                 Suite("evidence-native", directory => StageEvidenceTests.RegisterNative(Test, root, directory));
                 return Finish();

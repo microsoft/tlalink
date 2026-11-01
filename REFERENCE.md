@@ -226,11 +226,46 @@ Get-FileHash .\.tools\tla\v1.8.0\tla2tools.jar -Algorithm SHA256
 The full console suite needs the native TLA+, Apalache, Dafny and P prerequisites
 described below; do not run it as a backend-free installation check.
 
-[global.json](global.json) selects SDK 10.0.204 with feature-band roll-forward.
+[global.json](global.json) selects SDK 10.0.204 exactly, without roll-forward.
 There are no third-party NuGet dependencies: Roslyn references come from the
 selected SDK. [NuGet.Config](NuGet.Config) retains the approved package proxy.
 No product-tree build is involved. TlaLink does not upload code; any surrounding
 agent or editor has its own data handling policy.
+
+Common prerequisites have one authoritative pin per tool:
+
+| Selection | Authoritative file |
+|---|---|
+| C# build SDK, including generated native build roots | [global.json](global.json) |
+| Shared JDK for SANY/PlusCal, TLC, Apalache and compatible P profiles | [java-toolchain.json](java-toolchain.json) |
+| Native build tools, .NET 8 prerequisite and justified backend exceptions | [native-toolchain.json](native-toolchain.json) |
+
+Both CI workflows read these pins instead of floating .NET versions or
+duplicating SDK selections. The .NET 8 SDK installed by CI supplies the exact
+runtime needed by upstream P; maintained C# projects still build with the one
+.NET 10 SDK. Backend-bundled solvers remain part of their selected distribution,
+not replacements for an independently selected UCLID solver.
+
+[TlaLink.ps1](TlaLink.ps1) and native setup share
+[SDK discovery](scripts/DotNet-Toolchain.ps1). They prefer an already provisioned
+`.tools\dotnet\<sdk-version>\distribution` host, otherwise require the exact SDK
+on the selected PATH host. Discovery never installs tools. The wrapper selects
+that host for child builds and restores the caller's environment afterwards.
+For direct `dotnet` commands using a repository-local installation:
+
+```powershell
+. .\scripts\DotNet-Toolchain.ps1
+$dotnet = Get-TlaLinkDotNet $PWD
+$env:PATH = "$(Split-Path $dotnet)$([IO.Path]::PathSeparator)$env:PATH"
+$env:DOTNET_ROOT = Split-Path $dotnet
+dotnet --version
+dotnet build .\TlaLink.sln
+.\tests\Toolchain.Tests.ps1
+```
+
+After switching SDKs, force a fresh restore if the previous SDK's asset files
+cannot be read: `dotnet restore .\TlaLink.sln --force --configfile .\NuGet.Config`.
+Do not modify the shared product-tree SDK or rewrite old evidence to clear drift.
 
 ## Workspace and publication boundary
 
@@ -298,7 +333,8 @@ The Java setup script provisions only the pinned Java distribution.
 `main` and manual dispatches using Ubuntu 24.04 x64. It builds Release with the
 .NET SDK selected by `global.json`, runs backend-independent controls, then
 explicitly provisions the pinned Java, TLC 1.8.0, Dafny 4.11.0 and P 3.1.0 tools
-before running the complete console suite. The .NET 8 SDK supplies P's runtime.
+before running the complete console suite. The exact .NET 8 prerequisite is
+read from [native-toolchain.json](native-toolchain.json); it supplies P's runtime.
 Apalache 0.62.4 is also explicitly provisioned for native safety/induction controls.
 Archive downloads are checksum-verified; third-party actions use commit pins.
 The TLA+ tools JAR comes from this repository's pinned mirror release, because the
@@ -324,6 +360,38 @@ Approved configuration bytes are preserved across checkouts with explicit
 `.gitattributes` rules; CI does not rewrite acceptance pins for its host.
 
 ## Optional P prerequisites
+
+For explicit source-pinned extended-P builds, use
+[the setup command reference](scripts/README.md) and
+[the Dispatcher recipes](examples/Dispatcher/setup/README.md).
+The Windows x64 / PowerShell 7 wrapper plans all selected profiles without
+provisioning:
+
+```powershell
+.\examples\Dispatcher\setup\Initialize-Native.ps1 -Engines pex,psym,pobserve,pverifier -Output .\.tools\extended-p-new -Plan
+```
+
+`-CheckPrerequisites` additionally checks the separately installed pinned
+SDK/runtime and Git. Omitting `-Plan`/`-CheckPrerequisites` explicitly provisions
+and builds into a new directory; analysis commands never call it. An optional
+reviewed dependency archive enables offline dependency resolution without a
+latest-version refresh. Keep the complete retained build closure for the
+ordinary human build/source review; setup is not an approval receipt.
+Shared native versions and any compatibility exception are declared in
+[native-toolchain.json](native-toolchain.json), not separately selected by a
+sample wrapper. See the setup recipes for measured compatibility and controls.
+The manual [extended-P CI lane](.github/workflows/extended-p.yml) uses these same
+recipes and explicit engine selections. It tests completed healthy/defect
+outcomes and archive/currentness separately from pending human review.
+
+The focused `--p` test suite includes
+[native translation controls](tests/TlaLink.Tests/Fixtures/PTranslation/README.md)
+for inline field/event persistence, helper rejection, supported verifier
+invariants, PObserve generation/monitoring and PEx generation/Java compilation.
+Select extended controls through explicitly pinned configurations as documented
+there. Absent optional selections print `SKIP`; explicitly selected missing
+inputs fail. Compilation defects, native property counterexamples and parser
+incompleteness remain distinct. These controls do not attest the full P language.
 
 P commands additionally require a complete local P 3.1.0 distribution.
 The tool does not install or update it. To prepare the optional local tool:
@@ -652,6 +720,16 @@ without treating archive validity as a property pass.
 The focused native suite shares synthetic model setup and reuses its successful
 bounded run for reader controls, not for changed-input analyses. Console tests
 report per-test elapsed times; Apalache receipts also retain per-process times.
+`processes[].phase_timings` retains available native `PASS #n` timestamp
+intervals (`pass`, `phase`, `start_timestamp`, `end_timestamp`,
+`duration_seconds`, `basis=native-log-timestamp-interval`). An interval ends
+at the next pass marker; the last ends at the native total-time log marker
+and can include final reporting. These are log wall-clock intervals, not
+solver CPU time or isolated internal pass timers. Missing closing timestamps
+leave phases absent, including interrupted final phases. Midnight rollover
+is handled only for adjacent 23:xx/00:xx markers. The command summary exposes
+the same intervals keyed by native query ID in `phase_timings`.
+Independent readers reconstruct them from archived logs.
 Native checks remain fresh processes. Large tool fingerprints are streamed
 without allocating a tool-sized byte array.
 
@@ -674,6 +752,33 @@ when its fast, independently reported feedback is useful; omit redundant
 typecheck-only stages in a latency-sensitive workflow.
 
 ## P analysis workflow
+
+For a PVerifier run, use `check-p ... --format summary` to see bounded native
+`proof_diagnostics` as well as the unchanged outcome. The same typed field is
+retained in `p-result`: `verified_invariants` and `failed_properties` are the
+native terminal counts (null when absent/ambiguous), `observed_goals` and
+`omitted_goals` count diagnostic entries, and `goals` contains native
+`status=failed|unknown|remaining`, `message` and optional
+`location={file,line,column}`. Locations retain upstream path/coordinate
+spelling; no source location is invented for base cases/default obligations.
+At most 100 goals and 2048 message characters per goal are retained; complete
+stdout/stderr remain archived. Counts are not interchangeable: native failed
+properties may include unknown solver goals and remaining goals may depend
+on earlier failures. Mixed unknown/counterexample output remains incomplete;
+diagnostic previews never change classification or satisfy a rejection gate.
+`read-p --result ... --current true` independently reconstructs these fields
+from archived native logs before checking current applicability.
+
+`native_metrics` retains available native numeric totals: PEx
+`distinct_states`, `timelines`, `schedules`, `maximum_reported_depth`; PSym
+`symbolic_executions`, `schedules`, `maximum_reported_depth` (maximum emitted
+completed-execution depth); PChecker `schedules`; and PObserve `events_read`,
+`verified_events`, `verified_keys`, `partition_keys`, `parser_errors`,
+`spec_errors`, `out_of_order_errors`, `unknown_errors`. Unemitted or ambiguous
+totals remain null, not invented zeros. Partial-run counters are observations,
+not evidence of exhaustion or completion. PObserve totals reuse its native
+metrics table. PVerifier does not emit per-goal timings in its supported output;
+its goal diagnostics and native counts are not goal-duration measurements.
 
 Select the distribution's actual `p.dll`, not a global tool shim. The bridge
 checks the exact compiler/frontend version and runs parsing/typechecking in a
@@ -720,9 +825,27 @@ JAR, P sources, compiler inputs and parser/log assumptions, not just a name.
 All dependency entries are `{ "path": "...", "sha256": "..." }`, resolved
 relative to the manifest. Their directories are prepended only to the child
 process PATH. Include the complete selected tool/solver runtime closure, not
-just launchers. For `pobserve`, `observation` contains `runtime_jar`,
+just launchers. Select exactly one native `java.exe`/`java` executable for
+external engines and one `uclid.exe`/`uclid` for PVerifier; same-stem DLLs,
+Markdown files and batch scripts are not executable selections.
+PVerifier rejects procedural helper calls through the authoritative frontend's
+call graph: the pinned native generator can overwrite their field/message
+effects. Use inline handlers and declared pure expressions for this supported
+profile. This safeguard does not attest every native translation.
+For `pobserve`, `observation` contains `runtime_jar`,
 `monitor_jar`, `specification`, `parser`, `logs`, `input_kind` (`text`/`json`)
 and `replay`. `artifact` is only valid for PEx/PSym.
+`parser` is the upstream parser's **simple class name**, not its namespace.
+The adapter translates `input_kind` to native `TEXT`/`JSON` through
+`--inputkind` and `replay` to `--replaySize`; the latter is a replay window,
+not a count of complete log executions. Readers recheck these exact options
+and selected runtime/monitor/log identities.
+
+The [dispatcher campaign](examples/Dispatcher/README.md) exercises the main
+backends and separately built P engines on one synthetic C# lifecycle. Its
+external-project initializer pins selected distributions and build inputs;
+it does not install them or approve their correspondence. Native installation
+and build recipes are a separate [setup step](examples/Dispatcher/setup/README.md).
 
 PChecker assertion traces are read from native JSON, including failures whose
 details appear only in counterexample artifacts rather than stdout. A timeout,
@@ -883,6 +1006,51 @@ Binding, case and correspondence IDs use the same 1..100-character letters,
 digits, dots, underscores and hyphens. Case requirements use the unambiguous
 `binding-id/case-id` form; IDs cannot contain its separator.
 Dependencies are explicit and cycles fail preflight.
+
+### Campaign comparison and selective next steps
+
+Use the existing project report with every run selected explicitly:
+
+```powershell
+.\TlaLink.ps1 report --project .\examples\Dispatcher\tlalink.project.json --run .\Results\dispatcher-tla-new --run .\Results\dispatcher-dafny-new --output .\Results\dispatcher-comparison-new.md --format summary
+.\TlaLink.ps1 explain --project .\examples\Dispatcher\tlalink.project.json --run .\Results\dispatcher-tla-new --format summary
+```
+
+Runs must belong to the selected project; generated external-P projects need
+their own explicit project reports. There is no latest-run discovery.
+The same `evidence-report` manifest now retains optional node `stage` records
+and renders a campaign matrix: backend-specific expected/observed outcomes,
+independent requirement dispositions, stage wall time, native metrics where
+recorded, TLC reuse, incomplete reasons, required review statuses and each run's
+separate archive/applicability/acceptance results. Missing metrics are absent,
+not zero; neither elapsed time nor engine outcomes imply equivalent claims.
+Named controls come from authored requirements, never filename inference.
+
+`accept` and `explain` include typed `next_steps` in full and summary output.
+Each item has `kind`, optional `stage`, `reason`, an `arguments` array and
+`working_directory`. These are CLI argument vectors, not shell commands;
+prepend the normal TlaLink launcher. Empty arguments mean a required
+investigation/review, not an executable action.
+
+Summary output retains at most ten next steps, with exact
+`counts.next_steps`/`omitted.next_steps` totals; full acceptance output retains
+all steps. Guidance never executes anything:
+
+- Current execution with changed or pending reviews calls for review and
+  `accept`, not replaying unchanged execution.
+- Stale execution or incomplete stages call for scenario-selected `doctor`
+  and a new scenario `run`. The suggested output directory is new.
+- A current incomplete TLC stage may additionally suggest `check-stage`,
+  **only** when the project declares `result_store`, retaining the authored
+  budget. This optional search neither repairs the old run nor accepts it.
+- Damaged/unknown archives, inconsistent evidence or changed independent
+  checker expectations block automatic execution advice.
+- Unexpected completed outcomes require investigation before changing
+  inputs; an unchanged rerun is not a fix.
+
+This is whole-scenario advice, not a stage-level change-impact analysis.
+Non-TLC stages are not cached, no approval is carried forward, and approved
+requirements/configurations are never changed by guidance.
 
 Supported stage kinds are:
 
@@ -1082,6 +1250,32 @@ failures and budgets cannot satisfy verification or assertion rejection.
 For compound controls, optional requirement `diagnostic_count` pins the exact
 number (1..1000) of matching code/text diagnostics. One failed assertion cannot
 stand in for several required negative controls.
+
+`check-dafny ... --format summary` exposes the same `proof_diagnostics` stored
+in `dafny-result`. `verified_obligations` and `errors` are the native terminal
+summary counts, null if missing/ambiguous; they are not C# coverage counts.
+`observed_goals`/`omitted_goals` count native error-diagnostic entries, and
+`goals` retains `severity`, `source`, `error_id`, `message`, native `location`
+and bounded `related_information` with `omitted_related_information`.
+Locations preserve native `filename`, `file_path`, `uri` and zero-based
+`range.start/end.{line,character}`; URIs are not filepaths. Related messages
+may omit a location; it remains null without changing the native proof outcome.
+At most 100 goals,
+10 related entries per goal and 2048 characters per message are retained.
+Complete native JSON logs remain archived. `read-dafny` reconstructs these
+fields from those logs, without interpreting Dafny expressions or promoting
+parser/resource errors to completed rejections. The native `LeakedCredit.dfy`
+terminal-credit control checks a failed postcondition; a separate malformed
+source control must remain incomplete. Use `--core` for diagnostic-parser and
+summary tests and `--evidence` for the native Dafny control.
+The verifier also archives native `dafny-verification.csv` using Dafny's
+supported `--log-format csv` (without assertion isolation). `proof_timings`
+retains `observed_efforts`, `omitted_efforts` and at most 100 native named
+`efforts` with `name`, `outcome`, `duration_seconds`, `resource_count` and
+`random_seed`. These time named verification efforts, not individual error
+messages; CSV supplies no source ranges. No time is assigned to a diagnostic
+by declaration spelling. Readers reconstruct the exact bounded CSV projection.
+Missing CSV leaves timings null, including early frontend failure.
 
 Direct commands are `check-regression --config ... --output ... --timeout ...`
 and `check-dafny --config ... --dafny ... --output ... --timeout ...`.

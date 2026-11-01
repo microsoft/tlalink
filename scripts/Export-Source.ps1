@@ -12,7 +12,22 @@ if (Test-Path -LiteralPath $target) { throw 'The export destination must be new.
 
 $files = @(
     '.gitignore', '.gitattributes', 'AGENTS.md', 'DESIGN.md', 'global.json', 'NuGet.Config',
-    'README.md', 'REFERENCE.md', 'SECURITY.md', 'TlaLink.ps1', 'TlaLink.sln', 'TlaLink.code-workspace', 'java-toolchain.json'
+    'README.md', 'REFERENCE.md', 'SECURITY.md', 'TlaLink.ps1', 'TlaLink.sln', 'TlaLink.code-workspace', 'java-toolchain.json', 'native-toolchain.json',
+    ([IO.Path]::Combine([string[]]@('examples', 'Dispatcher', 'verification', 'P', 'Artifacts', 'pex-pom.xml'))),
+    ([IO.Path]::Combine([string[]]@('examples', 'Dispatcher', 'verification', 'P', 'Artifacts', 'psym-pom.xml'))),
+    ([IO.Path]::Combine([string[]]@('examples', 'Dispatcher', 'verification', 'PObserve', 'runtime-pom.xml'))),
+    ([IO.Path]::Combine([string[]]@('examples', 'Dispatcher', 'verification', 'PObserve', 'monitor-pom.xml'))),
+    ([IO.Path]::Combine([string[]]@('examples', 'Dispatcher', 'verification', 'PObserve', 'duplicate-completion.log'))),
+    ([IO.Path]::Combine([string[]]@('examples', 'Dispatcher', 'verification', 'PObserve', 'parser-error.log'))),
+    ([IO.Path]::Combine([string[]]@('examples', 'Dispatcher', 'setup', 'p3-generation.patch'))),
+    ([IO.Path]::Combine([string[]]@('examples', 'Dispatcher', 'setup', 'p24-generation.patch'))),
+    ([IO.Path]::Combine([string[]]@('tests', 'TlaLink.Tests', 'Fixtures', 'NativeProofDiagnostics', 'PVerifierGoals.stdout.txt'))),
+    ([IO.Path]::Combine([string[]]@('tests', 'TlaLink.Tests', 'Fixtures', 'NativeProofDiagnostics', 'Apalache.stdout.txt'))),
+    ([IO.Path]::Combine([string[]]@('tests', 'TlaLink.Tests', 'Fixtures', 'NativeProofDiagnostics', 'DafnyPostcondition.jsonl'))),
+    ([IO.Path]::Combine([string[]]@('tests', 'TlaLink.Tests', 'Fixtures', 'NativeProofDiagnostics', 'DafnyTiming.csv'))),
+    ([IO.Path]::Combine([string[]]@('tests', 'TlaLink.Tests', 'Fixtures', 'PTranslation', 'healthy.log'))),
+    ([IO.Path]::Combine([string[]]@('tests', 'TlaLink.Tests', 'Fixtures', 'PTranslation', 'wrong-state.log'))),
+    ([IO.Path]::Combine([string[]]@('tests', 'TlaLink.Tests', 'Fixtures', 'PTranslation', 'parser-error.log')))
 )
 $extensions = @('.cs', '.csproj', '.java', '.json', '.tla', '.cfg', '.dfy', '.p', '.ps1', '.md', '.yml', '.yaml')
 foreach ($directory in 'src', 'tests', 'examples', 'schemas', 'scripts', '.github') {

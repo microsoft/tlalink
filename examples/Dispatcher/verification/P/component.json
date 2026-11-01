@@ -1,0 +1,10 @@
+{
+  "schema_version": 4,
+  "kind": "project-component",
+  "id": "pchecker",
+  "stages": [
+    {"id": "pchecker-healthy", "kind": "p-pchecker", "timeout_seconds": 120, "config": "checker.json"},
+    {"id": "pchecker-leak", "kind": "p-pchecker", "timeout_seconds": 120, "config": "leaked-credit.json"},
+    {"id": "pchecker-early", "kind": "p-pchecker", "timeout_seconds": 120, "config": "early-release.json"}
+  ]
+}

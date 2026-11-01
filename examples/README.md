@@ -1,6 +1,6 @@
 # Examples
 
-Small, synthetic examples that show how TlaLink connects C# code to formal
+Synthetic examples that show how TlaLink connects C# code to formal
 models and keeps the evidence. They are demonstrations, not acceptance
 policies for your own system.
 
@@ -13,6 +13,7 @@ policies for your own system.
 | [Apalache](Apalache/README.md) | Symbolic TLA+ checks: type checking, bounded safety, induction and expected rejections. | TLA+ tools, Apalache |
 | [Integrated](Integrated/README.md) | Comparing selected C# calls with verified Dafny methods, alongside a TLA+ model. | TLA+ tools, Dafny |
 | [P](P/README.md) | Linking C# to a P state machine and exploring it with PChecker. | P |
+| [Dispatcher](Dispatcher/README.md) | A larger shared admission/retry/cancellation/drain campaign, including native extended-P engines, defect controls and measured limitations. | Selected backends; extended P uses separate pinned artifact/solver setup |
 
 Every project example uses the same layout: a small root `tlalink.project.json`
 selects `component.json` files kept beside the code they check, and a separate

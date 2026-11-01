@@ -72,6 +72,14 @@ public static class ApalacheEvidence
                 Error("Missing provenance or invalid native deadline.");
             if (packet.Processes.Any(p => p == null))
                 throw new InputException(ErrorCode.InvalidApalacheEvidence, "Null native process receipt.");
+            foreach (ApalacheProcessResult process in packet.Processes)
+            {
+                if (!packet.Artifacts.ContainsKey(process.Id + ".stdout.log") ||
+                    !packet.Artifacts.ContainsKey(process.Id + ".stderr.log"))
+                    Error("Apalache phase timings require pinned native logs.");
+                if (Schema.Hash(process.PhaseTimings) != Schema.Hash(ApalacheTiming.Read(ApalacheBackend.Text(output, process.Id))))
+                    Error("Apalache phase timings differ from archived native log timestamps.");
+            }
             foreach (var pin in packet.Fingerprints.Where(p => FilePaths.IsAbsolute(p.Key)))
             {
                 if (!Hash(pin.Value)) throw new InputException(ErrorCode.InvalidApalacheEvidence, "Invalid input hash.");

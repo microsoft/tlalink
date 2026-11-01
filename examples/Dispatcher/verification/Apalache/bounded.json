@@ -1,0 +1,13 @@
+{
+  "schema_version": 4,
+  "kind": "apalache-analysis",
+  "name": "dispatcher-bounded",
+  "mode": "bounded",
+  "model": "../Tla/Dispatcher.tla",
+  "init": "Init",
+  "next": "Next",
+  "properties": ["Inv"],
+  "length": 8,
+  "const_init": "ConstInit",
+  "assumptions": ["Three jobs, two outstanding credits, two attempts per job.", "Successful lock operations are atomic; worker completion is an environment outcome."]
+}

@@ -55,6 +55,8 @@ public sealed class PPacket : IAnalysisResult, IArtifactEvidence
     public List<OmissionRuleMatch> OmissionMatches { get; init; } = [];
     public List<SourceLinkDeclaration> SourceBindings { get; init; } = [];
     public List<Issue> Diagnostics { get; init; } = [];
+    public PProofDiagnostics? ProofDiagnostics { get; set; }
+    public PNativeMetrics? NativeMetrics { get; set; }
     public List<PProcessResult> Processes { get; init; } = [];
     public Dictionary<string, string> Fingerprints { get; init; } = new(FilePaths.Comparer);
     public Dictionary<string, string> Artifacts { get; init; } = new(FilePaths.Comparer);
@@ -74,6 +76,16 @@ public static class PInputs
     public static readonly string[] Engines = ["inspect", "pchecker", "pex", "psym", "pverifier", "pobserve"];
     public static bool IsStage(string kind) => kind.StartsWith("p-", StringComparison.Ordinal) &&
         Engines.Contains(kind[2..], StringComparer.Ordinal);
+
+    internal static ToolPin RequiredExecutable(IEnumerable<ToolPin> dependencies, string name)
+    {
+        string filename = OperatingSystem.IsWindows() ? name + ".exe" : name;
+        ToolPin[] matches = dependencies.Where(d => FilePaths.Comparer.Equals(Path.GetFileName(d.Path), filename)).ToArray();
+        if (matches.Length != 1)
+            throw new InputException(ErrorCode.PPrerequisiteMissing,
+                "The native backend requires exactly one explicitly pinned " + filename + " executable; found " + matches.Length + ".");
+        return matches[0];
+    }
 
     public static PAnalysis Load(string path, Dictionary<string, string> pins)
     {

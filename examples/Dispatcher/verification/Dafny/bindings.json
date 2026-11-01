@@ -1,0 +1,14 @@
+{
+  "schema_version": 4,
+  "kind": "integrated-bindings",
+  "sources": ["../../src/Dispatcher.cs"],
+  "scope": "scope.json",
+  "bindings": [
+    {"id": "dispatcher-dafny::admit", "adapter": null, "cases": []},
+    {"id": "dispatcher-dafny::start", "adapter": null, "cases": []},
+    {"id": "dispatcher-dafny::complete", "adapter": null, "cases": []},
+    {"id": "dispatcher-dafny::cancel", "adapter": null, "cases": []},
+    {"id": "dispatcher-dafny::close", "adapter": null, "cases": []}
+  ],
+  "correspondences": []
+}

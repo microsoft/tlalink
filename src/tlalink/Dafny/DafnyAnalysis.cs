@@ -7,7 +7,11 @@ public sealed record DafnyResult(int SchemaVersion, string Kind, string Status, 
     string ConfigSha256, string Dafny, string Directory, int TimeoutSeconds, List<string> Roots, string ProofStatus,
     string AuditStatus, List<DafnyDeclaration> Inventory, Dictionary<string, StageResult> Stages,
     Dictionary<string, string> Fingerprints, Dictionary<string, string> Artifacts, List<Issue> Diagnostics, string Boundary)
-    : IAnalysisResult, IArtifactEvidence;
+    : IAnalysisResult, IArtifactEvidence
+{
+    public DafnyProofDiagnostics? ProofDiagnostics { get; init; }
+    public DafnyProofTimings? ProofTimings { get; init; }
+}
 
 public static class DafnyAnalysisBackend
 {
@@ -68,7 +72,13 @@ public static class DafnyAnalysisBackend
             status == "passed" ? "dafny-contracts" : "not-established", config, Files.Hash(config), executable,
             output, options.Timeout, analysis.Proofs, state.ProofStatus, state.AuditStatus, inventory, stages,
             state.Fingerprints, StageEvidence.Seal(output, state.Fingerprints), state.Diagnostics,
-            "Native verification of the selected Dafny roots and transitive includes, with assumption audit; no C# equivalence, oracle execution or cross-model refinement.");
+            "Native verification of the selected Dafny roots and transitive includes, with assumption audit; no C# equivalence, oracle execution or cross-model refinement.")
+        {
+            ProofDiagnostics = state.Stages.TryGetValue("dafny-verify", out StageResult? verification)
+                ? DafnyProofOutput.Read(Files.Read(verification.Log)) : null,
+            ProofTimings = File.Exists(Path.Combine(output, "dafny-verification.csv"))
+                ? DafnyProofTiming.Read(Files.Read(Path.Combine(output, "dafny-verification.csv"))) : null
+        };
         Files.WriteNew(Path.Combine(output, "result.json"), result);
         ProjectWorkflow.Render(result, options);
         return status == "passed" ? 0 : status == "rejected" ? 1 : 2;
@@ -151,16 +161,24 @@ public static class DafnyAnalysisBackend
         if (result.Stages.TryGetValue("dafny-verify", out StageResult? proof))
         {
             string log = Files.Read(FileFor(proof.Log));
+            if (Schema.Hash(result.ProofDiagnostics) != Schema.Hash(DafnyProofOutput.Read(log)))
+                Error("Dafny proof diagnostics differ from archived native output.");
             proofStatus = DafnyBackend.ClassifyVerification(proof, log);
             NativeProcessInvocation invocation = ProjectInputs.Read<NativeProcessInvocation>(FileFor("dafny-verify.invocation.json"));
             string[] expected = ["verify", .. result.Roots, "--verify-included-files", "--json-output", "--show-snippets=false",
-                "--verification-time-limit", result.TimeoutSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)];
+                "--verification-time-limit", result.TimeoutSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                "--log-format", "csv;LogFileName=" + Path.Combine(result.Directory, "dafny-verification.csv")];
             if (invocation.Executable != result.Dafny ||
                 !invocation.Arguments.SequenceEqual(expected))
                 Error("Dafny verification invocation differs from the selected obligation.");
             if (proofStatus == "rejected" && !VerificationDiagnostics(log).SequenceEqual(result.Diagnostics.Where(d => d.Is(ErrorCode.DafnyVerificationFailed))))
                 Error("Dafny rejection diagnostics differ from the native verifier output.");
         }
+        else if (result.ProofDiagnostics != null) Error("Dafny proof diagnostics lack a native verification stage.");
+        DafnyProofTimings? timings = result.Artifacts.ContainsKey("dafny-verification.csv")
+            ? DafnyProofTiming.Read(Files.Read(FileFor("dafny-verification.csv"))) : null;
+        if (Schema.Hash(result.ProofTimings) != Schema.Hash(timings))
+            Error("Dafny proof timings differ from archived native verification CSV.");
         if (result.Stages.TryGetValue("dafny-audit", out StageResult? audit))
         {
             auditStatus = audit.Status != "passed" || audit.ExitCode != 0 || !result.Artifacts.ContainsKey("dafny-audit.txt") ? "incomplete" :

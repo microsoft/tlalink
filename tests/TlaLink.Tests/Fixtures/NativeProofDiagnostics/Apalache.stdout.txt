@@ -1,0 +1,6 @@
+PASS #0: SanyParser                                               I@23:59:59.500
+PASS #1: TypeCheckerSnowcat                                       I@00:00:00.100
+ > Running Snowcat .::.                                           I@00:00:00.100
+Type checker [OK]                                                 I@00:00:00.200
+Total time: 1.48 sec                                              I@00:00:00.250
+EXITCODE: OK

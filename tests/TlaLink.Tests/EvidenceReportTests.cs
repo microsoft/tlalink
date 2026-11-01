@@ -75,6 +75,51 @@ public static class EvidenceReportTests
             CoreTests.Equal(2, TestCli.Run(["report", "--manifest", fixture.Manifest, "--output", output]).Code);
             CoreTests.Equal(markdown, Files.Read(output));
         });
+        test("campaign matrix preserves negative controls incompleteness metrics and review gates", () =>
+        {
+            var f = Fixture();
+            ReportCampaignStage stage = new("closure", "scope", "healthy", "tlc", "completed",
+                2.5, false, [new("distinct_states", "42")],
+                [new("safety", "passed", "satisfied", [])], [new("mapping", "pending")],
+                [], "consistent", "current", "not-accepted", []);
+            EvidenceReportManifest value = f.Value with {
+                Nodes = f.Value.Nodes.Select(n => n.Id == "check" ? n with { Stage = stage } :
+                    n.Id == "control" ? n with { Stage = stage with {
+                        Stage = "credit-control", Backend = "dafny-verify", DurationSeconds = null, Metrics = [],
+                        Requirements = [new("terminal-credit", "rejected", "satisfied", [])]
+                    }} : n).Append(new("timeout", "check", "Bounded search", "Selected eight-step search.",
+                        "incomplete", "passed", [], [Path.GetFileName(f.Source)], [], [],
+                        stage with {
+                            Stage = "bounded", Backend = "apalache-check", DurationSeconds = 120,
+                            Metrics = [], ExecutionStatus = "incomplete",
+                            Requirements = [new("bounded-safety", "passed", "unsatisfied", ["expected completed outcome passed"])],
+                            IncompleteReasons = ["native timeout"]
+                        })).ToList()
+            };
+            string path = Path.Combine(f.Directory, "campaign.json"), output = path + ".md";
+            Files.WriteNew(path, value);
+            CoreTests.Equal(0, TestCli.Run(["report", "--manifest", path, "--output", output]).Code);
+            string markdown = Files.Read(output);
+            CoreTests.True(markdown.Contains("distinct&#95;states: 42", StringComparison.Ordinal));
+            CoreTests.True(markdown.Contains("terminal-credit: rejected / rejected / satisfied", StringComparison.Ordinal));
+            CoreTests.True(markdown.Contains("not recorded / not reused", StringComparison.Ordinal));
+            CoreTests.True(markdown.Contains("native timeout", StringComparison.Ordinal));
+            CoreTests.True(markdown.Contains("mapping: pending", StringComparison.Ordinal));
+            CoreTests.True(markdown.Contains("consistent / current / not-accepted", StringComparison.Ordinal));
+            CoreTests.True(!markdown.Contains("distinct&#95;states: 0", StringComparison.Ordinal));
+            foreach (ReportCampaignStage bad in new[] {
+                stage with { DurationSeconds = -1 }, stage with { Run = "absent" },
+                stage with { Backend = "generic-proof" }
+            })
+            {
+                string invalid = Path.Combine(f.Directory, Guid.NewGuid().ToString("N") + ".json");
+                Files.WriteNew(invalid, f.Value with {
+                    Nodes = f.Value.Nodes.Select(n => n.Id == "check" ? n with { Stage = bad } : n).ToList()
+                });
+                CoreTests.Equal(2, TestCli.Run(["report", "--manifest", invalid, "--output", invalid + ".md"]).Code);
+                CoreTests.True(!File.Exists(invalid + ".md"));
+            }
+        });
         test("report expands inventoried regions using explicit file defaults and symbol dispositions", () =>
         {
             string directory = Directory.CreateDirectory(Path.Combine(work, "inventory-report")).FullName;

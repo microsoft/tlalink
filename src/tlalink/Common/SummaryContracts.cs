@@ -49,6 +49,7 @@ public sealed record AcceptanceSummary(string Project, string Scenario, string E
     public Dictionary<string, int>? Omitted { get; init; }
     public List<string> ChangedReviewInputs { get; init; } = [];
     public WorkflowPolicyReassessment? PolicyReassessment { get; init; }
+    public List<WorkflowNextStep> NextSteps { get; init; } = [];
 }
 public sealed record WorkflowStageSummary(string Id, string Kind, string ExecutionStatus, string Outcome,
     double DurationSeconds, string Evidence, List<string> Diagnostics, TlcStatistics? Statistics,
@@ -87,13 +88,24 @@ public sealed record IntegratedSummary(string Command, string Status, string Lin
 public sealed record ProcessSummary(string Id, int? ExitCode, bool? TimedOut, double? DurationSeconds);
 public sealed record ApalacheSummary(string Status, string Claim, string Mode, string Directory,
     List<ProcessSummary> Processes, List<Issue> Diagnostics, List<string> Boundaries)
-    : CommandSummaryResult("apalache-result");
+    : CommandSummaryResult("apalache-result")
+{
+    public Dictionary<string, List<ApalachePhaseTiming>> PhaseTimings { get; init; } = [];
+}
 public sealed record PAnalysisSummary(string Command, string Status, string Claim, string LinksStatus,
     string ProvenanceStatus, List<ProcessSummary> Processes, List<Issue> Diagnostics, List<string> Boundaries)
-    : CommandSummaryResult("p-result");
+    : CommandSummaryResult("p-result")
+{
+    public PProofDiagnostics? ProofDiagnostics { get; init; }
+    public PNativeMetrics? NativeMetrics { get; init; }
+}
 public sealed record DafnySummary(string Status, string Claim, string Directory, string ProofStatus,
     string AuditStatus, Dictionary<string, StageResult> Stages, List<Issue> Diagnostics, string Boundary)
-    : CommandSummaryResult("dafny-result");
+    : CommandSummaryResult("dafny-result")
+{
+    public DafnyProofDiagnostics? ProofDiagnostics { get; init; }
+    public DafnyProofTimings? ProofTimings { get; init; }
+}
 public sealed record RegressionSummary(string Status, string Claim, string Directory,
     List<Issue> Diagnostics, string Boundary) : CommandSummaryResult("csharp-regression-result");
 public sealed record EvidenceInspectionSummary([property: JsonIgnore] string NativeKind, string ArchiveStatus,
