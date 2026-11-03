@@ -10,8 +10,11 @@ public sealed class CliOptions
     public string? Action { get; }
     public CliOptions(string[] args)
     {
-        if (args.Length == 0) throw new InputException("Usage: TlaLink <links|symbols|prepare-sources|check-prepared-sources|report|gc|expand|project-schema|doctor|plan|run|check-stage|accept|explain|inspect-source|inspect|check|review|inputs|instrument|execute|validate-trace|check-regression|read-regression|check-dafny|read-dafny|check-apalache|read-apalache|inspect-integrated|verify-integrated|test-integrated|read-integrated> [--option value ...]");
+        if (args.Length == 0) throw new InputException("Usage: TlaLink <toolchain|links|symbols|prepare-sources|check-prepared-sources|report|gc|expand|project-schema|doctor|plan|run|check-stage|accept|explain|inspect-source|inspect|check|review|inputs|instrument|execute|validate-trace|check-regression|read-regression|check-dafny|read-dafny|check-apalache|read-apalache|inspect-integrated|verify-integrated|test-integrated|read-integrated> [--option value ...]");
         Command = args[0];
+        if (Command == "toolchain")
+            Action = args.Length > 1 && args[1] == "restore" ? args[1] :
+                throw new InputException("Usage: toolchain restore --directory <cache> [--tool <id> ...] [--offline true|false] [--exclusive true|false].");
         if (Command == "symbols")
             Action = args.Length > 1 && args[1] is "find" or "show" or "resolve" or
                 "references" or "callers" or "callees" or "describe" ? args[1] :
@@ -21,6 +24,7 @@ public sealed class CliOptions
                 throw new InputException(ErrorCode.InvalidAnnotation, "Usage: links <list|check|inspect|set|remove|migrate> --scope <file> [--target <alias>].");
         Dictionary<string, string[]> allowed = new()
         {
+            ["toolchain"] = ["directory", "tool", "offline", "exclusive", "timeout", "format"],
             ["prepare-sources"] = ["manifest", "output", "timeout", "format"],
             ["check-prepared-sources"] = ["result", "format"],
             ["report"] = ["manifest", "project", "run", "source-report", "source-inventory", "output", "format"],
@@ -72,10 +76,11 @@ public sealed class CliOptions
             "inspect-integrated" or "verify-integrated" or "test-integrated" or "inspect-p" or "check-p")
             options = [.. options, "language-version"];
         HashSet<string> repeated = ["source", "model", "reference", "define", "arg", "evidence", "capture"];
+        if (Command == "toolchain") repeated.Add("tool");
         if (Command == "report") repeated.Add("run");
         if (Command == "links" && Action == "inspect")
             repeated.UnionWith(["binding", "endpoint", "symbol", "syntax", "source-file", "kind", "status", "capture-point", "section"]);
-        for (int i = Command is "symbols" or "links" ? 2 : 1; i < args.Length; i += 2)
+        for (int i = Command is "symbols" or "links" or "toolchain" ? 2 : 1; i < args.Length; i += 2)
         {
             if (!args[i].StartsWith("--", StringComparison.Ordinal) || i + 1 >= args.Length) throw new InputException("Options require --name value.");
             string name = args[i][2..];

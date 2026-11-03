@@ -40,6 +40,9 @@ review policy or review context do not replay unchanged execution: TlaLink
 checks the archived execution and checker requirements, then evaluates the
 current reviews separately. New or changed reviews are never approved merely
 because the execution still applies.
+Adding an independent scenario likewise does not force existing scenarios to
+rerun: reassessment compares the selected scenario and its requirements while
+retaining shared execution settings and actual input-byte checks.
 
 For larger campaigns, project reports compare explicitly selected runs with
 backend-specific outcomes, timings, available native metrics and outstanding
@@ -210,6 +213,28 @@ dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --core
 These need no formal-methods tools. The checkers themselves are set up
 separately, only when you need them; see the
 [setup instructions](REFERENCE.md#requirements-and-build).
+
+### Package as a .NET tool
+
+```powershell
+dotnet pack .\src\tlalink\TlaLink.csproj --configuration Release --output .\dist
+```
+
+The resulting `TlaLink` NuGet package exposes `dotnet tlalink` through a
+consumer's local tool manifest. Commit that manifest and use `dotnet tool
+restore` in build setup. No package is published by this command, and native
+checkers are not bundled. See [installation and package tests](REFERENCE.md#net-tool-package).
+
+Provision pinned prebuilt checkers explicitly during setup:
+
+```powershell
+dotnet tlalink toolchain restore --directory .\.tools --timeout 600
+```
+
+This installs or checks the pinned JDK, TLC, Dafny, Apalache and P compiler.
+Repeat runs check complete file contents; offline reuse and guarded repairs are
+supported. It never installs tools during analysis, upgrades pins or changes
+proofs or approvals. See [native tool restore](REFERENCE.md#native-tool-restore).
 
 Use [symbol lookup](REFERENCE.md#finding-c-symbols) to discover exact C#
 declaration IDs, resolve source positions, find references/call sites or inspect

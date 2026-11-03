@@ -7,6 +7,8 @@ public static class CommandSummary
     internal static CommandSummaryResult Create(object value, CliOptions options, AcceptanceWorklist? worklist)
     {
         CommandSummaryResult result = value switch {
+            ToolchainRestoreResult restore => new ToolchainRestoreSummary(restore.Status, restore.Directory,
+                restore.Tools, restore.Boundary),
             AcceptanceResult acceptance => Acceptance(acceptance, worklist),
             WorkflowRun run => Workflow(run),
             ProjectPlan plan => new ProjectPlanSummary(plan.Kind, plan.Project, plan.Status, plan.AnnotationVersion,

@@ -65,7 +65,7 @@ try {
     Test 'maintained PowerShell setup and launch scripts parse' {
         $scripts = @('TlaLink.ps1', 'scripts\DotNet-Toolchain.ps1', 'scripts\Native-Toolchain.ps1', 'scripts\Initialize-Java.ps1',
             'scripts\Initialize-ExtendedP.ps1', 'examples\Dispatcher\setup\Initialize-Native.ps1',
-            'examples\Dispatcher\setup\Initialize-NativeProjects.ps1')
+            'examples\Dispatcher\setup\Initialize-NativeProjects.ps1', 'tests\ToolPackage.Tests.ps1')
         foreach ($script in $scripts) {
             $tokens = $null
             $errors = $null

@@ -62,6 +62,41 @@ validation; compiler context, compiled adapters and loaded .NET binaries tie
 execution evidence to that implementation. TLA+, Dafny and P remain distinct
 formal backends supporting the C# workflow.
 
+## Installed tool distribution
+
+The CLI is a framework-dependent .NET 10 tool package. A consumer's local tool
+manifest pins its version; tool restore is explicit build setup, not an analysis
+side effect. The package carries its managed Roslyn runtime closure and the same
+flat bridge/runtime source assets used by checkout execution. It does not carry
+consumer sources, native engines, their distributions or machine SDK/JDK
+installations. SDK redistribution notices accompany the copied Roslyn assemblies.
+The existing embedded JDK pin remains authoritative; an installed tool outside
+the checkout requires an explicit same-pin `TLALINK_JAVA_HOME` selection.
+
+`toolchain restore` is a separate, explicit setup boundary for pinned prebuilt
+distributions. The embedded analysis archive catalogue complements, rather than
+duplicates, the Java/native pin authorities. It performs no version negotiation,
+project edits or approval. Every invocation verifies archive bytes and derives
+complete installed-file expectations from that archive; mutable inventory
+receipts and timestamp shortcuts are not trusted. An exclusive restorer lock
+coordinates setup only. Repair requires an explicit offline-users assertion,
+checks a staged replacement and retains the displaced tree. Tools commit
+independently, so a failed multi-tool restore can be safely repeated.
+Archive-internal relative file links become ordinary files with target contents;
+filesystem-link traversal, external/cyclic archive links and unsupported entries
+are rejected. This trusts a non-adversarial local filesystem without concurrent
+external mutation; it is not publisher authentication or runtime readiness.
+.NET hosts, platform prerequisites and extended source-built engines remain
+separate setup. Analysis commands never call restore, and a restored distribution
+does not make project pins, archived evidence or human decisions current.
+
+Packaging changes deployment, not source resolution, evidence formats, outcome
+classification or acceptance. The producing build/host and installed tool remain
+trusted, not authenticated. Package smoke tests restore an exact local manifest
+against an isolated offline feed and run outside the checkout, checking bridge
+bytes and compiler-backed behavior. Optional installed Java instrumentation
+tests complement, rather than replace, native backend suites or human review.
+
 ## Architecture
 
 ### Typed JSON contracts
@@ -1002,13 +1037,23 @@ drift without renewing any review.
 Project/policy authoring is compared semantically before review-only drift is
 exempted. Acceptance independently reconstructs the archived project and
 validates its saved expansion, root hash and archived policy hash. Typed
-projections retain the entire execution definition except review obligations,
+projections retain the run's selected normalized scenario and check obligations,
+along with every shared execution setting except review obligations,
 review-directory selection and policy-document location. Every requirement
-field except its review references remains in the checker-expectation
-projection. New fields are retained by those record projections and unknown
-JSON fields fail boundary decoding; there is no DOM field-stripping allowlist.
-Complete-project comparison deliberately remains conservative about ordering,
-path spellings, unused tools and other scenarios.
+field for that scenario except its review references remains in the
+checker-expectation projection. This is the single applicability convention:
+adding, changing or removing another scenario does not invalidate this run,
+because it did not execute that scenario. Shared compiler/tool/store settings
+and selected stages, dependencies, budgets and coverage remain conservative.
+New fields are retained by those record projections and unknown JSON fields
+fail boundary decoding; there is no DOM field-stripping allowlist. Ordering
+and path spellings within the selected projections remain significant.
+
+The `scenario-equivalent` policy status distinguishes unrelated-scenario
+changes from `review-only` changes. It grants no outcome or approval for the
+other scenario and does not exempt any file actually consumed by execution.
+Every imported authoring file, including unselected components, remains part
+of archive integrity validation.
 
 Only equivalent execution and checker projections permit automatic current-policy
 reassessment in the existing accept/explain/report flow. The resulting typed

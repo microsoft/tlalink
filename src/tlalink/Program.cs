@@ -13,6 +13,7 @@ public static class Program
         try
         {
             options = new(args);
+            if (options.Command == "toolchain") return ToolchainRestore.Run(options);
             if (options.Command == "symbols") return SourceSymbols.Run(options);
             if (options.Command is "prepare-sources" or "check-prepared-sources") return SourcePreparation.Run(options);
             if (CliOptions.AnnotationCommands.Contains(options.Command, StringComparer.Ordinal))

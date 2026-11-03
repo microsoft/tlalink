@@ -11,6 +11,7 @@ root-relative because this document lives beside the README.
 - [Overview](#overview)
 - [Human-readable evidence reports](#human-readable-evidence-reports)
 - [Requirements and build](#requirements-and-build)
+- [.NET tool package](#net-tool-package)
 - [Workspace and publication boundary](#workspace-and-publication-boundary)
 - [Continuous integration](#continuous-integration)
 - [Optional P prerequisites](#optional-p-prerequisites)
@@ -267,6 +268,153 @@ After switching SDKs, force a fresh restore if the previous SDK's asset files
 cannot be read: `dotnet restore .\TlaLink.sln --force --configfile .\NuGet.Config`.
 Do not modify the shared product-tree SDK or rewrite old evidence to clear drift.
 
+## .NET tool package
+
+TlaLink is packable as the framework-dependent `TlaLink` .NET tool, command
+`tlalink`, targeting .NET 10. Building the package requires the repository's
+exact SDK. The installed command needs the .NET 10 runtime; commands that build
+C# hosts additionally need an appropriate, explicitly selected SDK and compiler
+context. Packaging does not introduce an agent, hosted service or new evidence
+format.
+
+From the tool repository:
+
+```powershell
+dotnet pack .\src\tlalink\TlaLink.csproj --configuration Release --output .\dist
+.\tests\ToolPackage.Tests.ps1 -Package .\dist\TlaLink.0.1.0-alpha.1.nupkg
+```
+
+The project declares the initial prerelease version `0.1.0-alpha.1`. An
+intentional release build can override it with `-p:Version=<version>`.
+`pack` creates a local package; it does not push to a feed or claim that this
+package ID/version is published or reserved.
+
+In a consumer repository, after making the package available through an
+approved feed or a local directory:
+
+```powershell
+dotnet new tool-manifest --output .config
+dotnet tool install TlaLink --version 0.1.0-alpha.1 --add-source C:\packages
+dotnet tlalink doctor --project .\proofs\tlalink.project.json --scenario source-links
+```
+
+Replace the example package directory, project and scenario with the consumer's
+explicit selections. Commit `.config\dotnet-tools.json`, including its exact
+version. Subsequent build setup uses `dotnet tool restore` with the consumer's
+approved NuGet sources, followed by ordinary `dotnet tlalink` commands.
+The installed tool requires neither the TlaLink checkout nor its PowerShell
+launcher; existing reference examples using `.\TlaLink.ps1` can instead invoke
+`dotnet tlalink` with the same arguments. CLI paths still resolve against the
+caller's directory, authored references against their declaring document.
+
+The package contains the tool, SDK-selected Roslyn runtime assemblies, flat
+Java/Dafny/P bridge sources, trace runtime source, embedded toolchain pins and the
+existing approved NuGet configuration used by generated native builds.
+MIT licensing and SDK redistribution notices accompany it. It does **not**
+include example projects, consumer inputs, a .NET SDK, JDK, solvers or native
+checker distributions. Those remain explicit separately provisioned selections.
+Outside the checkout, set `TLALINK_JAVA_HOME` to the absolute directory of the
+same pinned JDK; no PATH/JAVA_HOME substitution or analysis-time provisioning
+is introduced. Native build package sources retain the existing approved
+configuration; packaging does not add feed discovery or credentials.
+
+The PowerShell package tests install into an isolated consumer directory and
+fresh package cache, using only the supplied package through an offline feed.
+They check exact local manifest restoration, every deployed bridge's bytes,
+Roslyn resolution, typed schema generation and incomplete exit semantics.
+With separately provisioned prerequisites they also run the installed Java
+frontend and generate actual trace instrumentation:
+
+```powershell
+.\tests\ToolPackage.Tests.ps1 -Package .\dist\TlaLink.0.1.0-alpha.1.nupkg `
+  -Jar .\.tools\tla\v1.8.0\tla2tools.jar `
+  -JavaHome C:\tools\pinned-jdk
+```
+
+These are installation/structural controls, not source/model approval or a
+replacement for backend-specific native suites. Package installation and tool
+restoration belong to setup, not `doctor`, `plan`, `run` or acceptance.
+The existing exit-code and evidence/currentness/review distinctions are unchanged.
+
+## Native tool restore
+
+The explicit setup command provisions pinned **prebuilt** tools on Windows/Linux
+x64. It works in the installed .NET tool as well as through the checkout launcher:
+
+```powershell
+dotnet tlalink toolchain restore --directory .\.tools --timeout 600
+dotnet tlalink toolchain restore --directory .\.tools --tool java --tool tlc --offline true
+# Only after stopping every analysis process or other user of this cache:
+dotnet tlalink toolchain restore --directory .\.tools --exclusive true --timeout 600
+```
+
+`--directory` is required and resolves against the caller's directory. No
+environment variables, manifests, requirements, existing evidence or reviews are
+rewritten. Select distinct `--tool` values `java`, `tlc`, `dafny`, `apalache`, `p`;
+omitting them selects all five. Both `--offline` and `--exclusive` default to
+`false` and accept only `true`/`false`. `--timeout` is 1..7200 seconds (default
+30), per download, including streaming the response; use a larger value for
+large archives. `--format json|text|summary` uses the ordinary output contract.
+
+The bundled [analysis-toolchain.json](analysis-toolchain.json) pins archive
+URLs, SHA256, layout and entrypoints. Java is derived from the existing
+[java-toolchain.json](java-toolchain.json); the P package version must agree with
+[native-toolchain.json](native-toolchain.json). The installed tool's package
+version selects these pins. This is **restore, not upgrade**: changing a version
+requires an intentional tool release and explicit consumer pin updates, not a
+floating latest-version lookup or automatic migration.
+
+Each invocation rehashes `.archives\<sha256>` and derives its complete expected
+file inventory from those verified archive bytes, then checks every installed
+file's contents and, on Linux, permission bits. Missing, changed or extra files
+make the installation differ. Healthy tools are returned as `current` without
+rewriting their files. Missing installations are staged and returned as
+`installed`. Online mode fetches missing or damaged archives over HTTPS and
+verifies their digest before use. Offline mode requires a complete healthy
+archive cache even when installed files already exist; it performs no downloads.
+The cache and inventories are not timestamp-based evidence reuse.
+
+A mismatched installation requires `--exclusive true`, an assertion that **all
+users of the cache are stopped**. A restorer lock coordinates setup commands
+only, not running analysis. Repair first stages and checks the replacement,
+then retains the previous installation under `.replaced\<unique-name>` and
+returns `repaired` with `replaced_directory`. Nothing recursively deletes old
+installations. Failed staging/download files are retained for diagnosis.
+Tools commit independently: if a later tool fails, earlier completed
+installations remain, and repeating restore rechecks them. Do not mix authored
+files or mutable backend outputs into managed installation directories.
+
+Archive paths are validated; duplicate entries, escaping/cyclic links,
+unsupported entry types and filesystem-link traversal at cache/installation
+boundaries fail explicitly. Archive-internal relative file links are materialized
+as regular files, never filesystem symlinks. Archive hashes are integrity pins,
+not independent publisher authentication, and setup assumes a trusted local
+filesystem with no concurrent external mutation.
+
+Exit 0 and `toolchain-restore-result.status=ready` mean the selected distributions
+match the bundled archive pins. `tools` lists each ID, version, status, absolute
+directory/entrypoint, archive hash, file count and displaced location. Failure
+uses ordinary `command-error`, incomplete/exit 2; partial progress is not a
+successful all-tools result. This checks distribution bytes, **not** native
+execution readiness, model correctness or review approval. Platform libraries,
+the tool's .NET 10 host and the P compiler's .NET 8 runtime are separately
+provisioned prerequisites. Extended source-built P engines and their dependencies
+still use [explicit extended setup](scripts/README.md#extended-p-windows-x64--powershell-7).
+
+Pass the returned entrypoints explicitly to CLI options or authored tool pins;
+restore never updates those pins. Default managed locations are:
+
+| Tool | Path below the requested directory |
+|---|---|
+| JDK | `java\<win-x64|linux-x64>\jdk-25.0.4.1+1` |
+| TLC | `tla\v1.8.0\tla2tools.jar` |
+| Dafny | `dafny\4.11.0\<win-x64|linux-x64>\Dafny.exe` (Windows) or `dafny` (Linux) |
+| Apalache | `apalache\0.62.4\lib\apalache.jar` |
+| P compiler | `p\3.1.0\p.dll` (invoked through the selected `dotnet` host) |
+
+Outside a checkout set `TLALINK_JAVA_HOME` explicitly to the absolute returned
+JDK directory. Check selected prerequisites with project `doctor` afterwards.
+
 ## Workspace and publication boundary
 
 Consumer repositories should separate maintained product sources, models, proofs,
@@ -342,6 +490,10 @@ upstream rolling release replaces its asset in place.
 Missing tools, build errors and failed controls fail the job rather than skip
 native tests. Console logs and the full suite's JSON report are retained for
 seven days, including on failure when available.
+
+CI also packs the .NET tool and runs the isolated offline installation tests.
+After native provisioning, it exercises Java frontend/instrumentation through
+that installed package rather than a checkout-built CLI.
 
 Native P coverage exercises PChecker; the other P engines have classifier and
 evidence controls, not automatically provisioned solver/monitor distributions.
@@ -1447,13 +1599,16 @@ Use the ordinary commands; there is no bypass flag or separate update command:
 
 `accept`, `explain` and project `report` automatically reconstruct the recorded
 project from archived authoring and independently check its saved expansion.
-When project/policy bytes changed, they compare the complete normalized
-execution definition and every acceptance requirement with only its `reviews`
-list excluded. Review obligations, review storage and the policy document's
-path may differ; stages, dependencies, source/model/config selections, compiler
-context, tools, resources, budgets, summary dependencies, check-coverage
-declarations and every non-review requirement field must remain identical.
-The comparison is conservative about list order and path spelling.
+When project/policy bytes changed, they compare the run's selected normalized
+scenario, its check-coverage declarations and every requirement for that
+scenario with only its `reviews` list excluded. Review obligations, review
+storage and the policy document's path may differ; selected stages,
+dependencies, source/model/config selections, shared compiler context, tools,
+result store, resources, budgets, summary dependencies and every selected
+non-review requirement field must remain identical. Other scenarios and their
+requirements may be added, changed, removed or reordered without invalidating
+this run. The comparison remains conservative about shared settings, list
+order within the selected projection and path spelling.
 
 The typed `policy_reassessment` result is retained in full acceptance receipts,
 summaries and project report acceptance snapshots:
@@ -1461,6 +1616,9 @@ summaries and project report acceptance snapshots:
 - `unchanged`: recorded/current authoring and policy identities match.
 - `review-only`: the validated archived execution definition and non-review
   requirements match; the explicitly authored current review policy is evaluated.
+- `scenario-equivalent`: the selected scenario and requirements match, but
+  other scenarios or their requirements changed. This grants no evidence or
+  approval for those other scenarios.
 - `incompatible`: an execution definition or checker expectation changed.
 - `unavailable`: archived comparison material is missing or invalid.
 
@@ -1470,7 +1628,8 @@ does not replace `archive_status`, `current_applicability` or `acceptance_status
 A file also consumed by native execution remains an execution dependency even
 when it is project/policy authoring. Unknown stage closures do not receive
 exemptions. Missing or corrupted archived files still fail integrity checks.
-Unknown JSON fields are rejected, not projected away.
+Unknown JSON fields are rejected, not projected away. Every archived imported
+authoring file remains integrity-checked, including unselected components.
 
 Review consolidation therefore can leave execution applicability `current`
 while acceptance remains `not-accepted` because the replacement review is

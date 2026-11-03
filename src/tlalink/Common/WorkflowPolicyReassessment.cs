@@ -41,7 +41,7 @@ internal static class WorkflowPolicyComparison
         HashSet<string> reviewInputs = new(FilePaths.Comparer);
         WorkflowPolicyReassessment Report(string status, bool? execution, bool? expectations) =>
             new(status, recorded, current, execution, expectations, changes,
-                "Compares archived execution definitions and non-review requirements with the explicitly authored current policy. " +
+                "Compares the run's selected archived scenario, shared execution settings and non-review requirements with the explicitly authored current policy. " +
                 "Archive integrity, actual execution inputs, evidence and current review decisions are checked independently; " +
                 "no run rewriting, execution cache or approval of policy edits is implied.");
         if (run.Project != project.Id)
@@ -70,8 +70,8 @@ internal static class WorkflowPolicyComparison
         if (previous.SchemaVersion != Schema.Version || previous.Kind != "acceptance-policy" || previous.Project != run.Project)
             throw new InputException(ErrorCode.WorkflowProvenanceInconsistent, "Archived acceptance policy identity contradicts the run.");
 
-        bool executionSame = Schema.Hash(Execution(archived)) == Schema.Hash(Execution(project));
-        bool expectationsSame = Schema.Hash(Expectations(previous)) == Schema.Hash(Expectations(policy));
+        bool executionSame = Schema.Hash(Execution(archived, run.Scenario)) == Schema.Hash(Execution(project, run.Scenario));
+        bool expectationsSame = Schema.Hash(Expectations(previous, run.Scenario)) == Schema.Hash(Expectations(policy, run.Scenario));
         if (!executionSame) changes.Add("execution-definition");
         if (!expectationsSame) changes.Add("checker-expectations");
         if (Schema.Hash(archived.Obligations) != Schema.Hash(project.Obligations)) changes.Add("review-obligations");
@@ -84,19 +84,28 @@ internal static class WorkflowPolicyComparison
         if (!executionSame || !expectationsSame)
             return new(Report("incompatible", executionSame, expectationsSame), reviewInputs);
 
+        bool otherScenariosChanged = Schema.Hash(Execution(archived)) != Schema.Hash(Execution(project)) ||
+            Schema.Hash(Expectations(previous)) != Schema.Hash(Expectations(policy));
+        if (otherScenariosChanged) changes.Add("other-scenarios");
         reviewInputs.UnionWith(recordedAuthoring!.Keys.Select(p => WorkflowInputRoles.CurrentInput(path, run, p)));
         reviewInputs.Add(WorkflowInputRoles.CurrentInput(path, run, recordedPolicy));
         reviewInputs.UnionWith(archived.Obligations.SelectMany(o => o.Inputs).Select(p => ProjectInputs.Resolve(path, p)));
-        return new(Report("review-only", true, true), reviewInputs);
+        return new(Report(otherScenariosChanged ? "scenario-equivalent" : "review-only", true, true), reviewInputs);
     }
 
     private sealed record RequirementReviews(string Id, List<string>? Reviews);
 
-    private static AnalysisProject Execution(AnalysisProject project) =>
-        project with { Obligations = [], ReviewDirectory = "", Requirements = "" };
+    private static AnalysisProject Execution(AnalysisProject project, string? scenario = null) =>
+        project with {
+            Obligations = [], ReviewDirectory = "", Requirements = "",
+            Scenarios = scenario == null ? project.Scenarios : project.Scenarios.Where(s => s.Id == scenario).ToList(),
+            CheckObligations = scenario == null ? project.CheckObligations :
+                (project.CheckObligations ?? []).Where(o => o.Scenario == scenario).ToList()
+        };
 
-    private static AcceptancePolicy Expectations(AcceptancePolicy policy) =>
-        policy with { Requirements = policy.Requirements.Select(r => r with { Reviews = null }).ToList() };
+    private static AcceptancePolicy Expectations(AcceptancePolicy policy, string? scenario = null) =>
+        policy with { Requirements = policy.Requirements.Where(r => scenario == null || r.Scenario == scenario)
+            .Select(r => r with { Reviews = null }).ToList() };
 
     private static bool SameAuthoring(string path, WorkflowRun run, Dictionary<string, string> recorded,
         Dictionary<string, string> current)

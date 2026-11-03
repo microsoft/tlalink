@@ -14,6 +14,34 @@ as shown in [the reference](../REFERENCE.md#requirements-and-build).
 [Toolchain.Tests.ps1](../tests/Toolchain.Tests.ps1) tests exact pin enforcement,
 missing-SDK rejection, nonmutating discovery and PowerShell syntax.
 
+## .NET tool packaging
+
+With the selected SDK, `dotnet pack .\src\tlalink\TlaLink.csproj --configuration
+Release --output .\dist` creates the .NET tool package without publishing it.
+Use [ToolPackage.Tests.ps1](../tests/ToolPackage.Tests.ps1) with `-Package` to
+install and restore it from an isolated offline feed and exercise the installed
+CLI outside this checkout. Optional `-Jar` and `-JavaHome` select already
+provisioned native prerequisites for Java/instrumentation smoke tests; they do
+not download anything. The test restores its environment and removes its
+temporary consumer/cache directory afterwards.
+
+Consumer build setup uses a committed local tool manifest and
+`dotnet tool restore`; native provisioning stays separate.
+See [package commands and boundaries](../REFERENCE.md#net-tool-package).
+
+## Prebuilt native tools
+
+Use the installed CLI's `dotnet tlalink toolchain restore --directory .\.tools
+--timeout 600` for idempotent JDK/TLC/Dafny/Apalache/P compiler setup; checkout
+users can invoke the same command through `.\TlaLink.ps1`. The bundled
+[archive catalogue](../analysis-toolchain.json) reuses the Java/native pin
+authorities. Offline mode rechecks cached archive and installation bytes.
+Repair requires `--exclusive true` after stopping all cache users and retains
+displaced files; it never upgrades version pins or edits project requirements.
+See [the full command contract](../REFERENCE.md#native-tool-restore) for selection,
+paths, prerequisites and incomplete outcomes. Extended P source builds remain
+the separate workflow below.
+
 ## Extended P (Windows x64 / PowerShell 7)
 
 `Initialize-ExtendedP.ps1` translates the maintained

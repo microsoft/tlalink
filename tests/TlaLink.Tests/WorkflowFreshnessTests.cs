@@ -13,7 +13,7 @@ public static class WorkflowFreshnessTests
     }
 
     private static Fixture Create(string work, string name, bool executedReview = false, bool emptyClosure = false,
-        bool multipleReviews = false)
+        bool multipleReviews = false, bool additionalScenario = false)
     {
         string directory = Directory.CreateDirectory(Path.Combine(work, "freshness-" + name)).FullName;
         string samples = Path.Combine(AppContext.BaseDirectory, "Fixtures", "WorkflowFreshness");
@@ -30,6 +30,17 @@ public static class WorkflowFreshnessTests
         AcceptancePolicy policy = new(Schema.Version, "acceptance-policy", "freshness",
             [new("scope-inputs", "scope", "model-inputs", "passed",
                 Reviews: multipleReviews ? ["inspection", "second-inspection"] : ["inspection"])]);
+        if (additionalScenario)
+        {
+            authored = authored with {
+                Scenarios = [.. authored.Scenarios,
+                    new("independent", [new("independent-inputs", "inputs", [], 30, Models: ["Model.tla"])])]
+            };
+            policy = policy with {
+                Requirements = [.. policy.Requirements,
+                    new("independent-check", "independent", "independent-inputs", "passed")]
+            };
+        }
         Files.WriteNew(projectPath, authored);
         Files.WriteNew(policyPath, policy);
         AnalysisProject project = ProjectInputs.Load(projectPath).Project;
@@ -102,8 +113,111 @@ public static class WorkflowFreshnessTests
             ["review.md"], origin));
     }
 
+    private static Fixture AddScenario(Fixture fixture)
+    {
+        Save(fixture.ProjectPath, fixture.Project with {
+            Scenarios = [.. fixture.Project.Scenarios,
+                new("independent", [new("independent-inputs", "inputs", [], 30, Models: ["Model.tla"])])]
+        });
+        Save(Path.Combine(fixture.Directory, "requirements.json"), fixture.Policy with {
+            Requirements = [.. fixture.Policy.Requirements,
+                new("independent-check", "independent", "independent-inputs", "passed", Reviews: ["inspection"])]
+        });
+        return Reload(fixture);
+    }
+
     public static void Register(Action<string, Action> test, string work)
     {
+        test("unrelated scenario additions preserve selected execution and pending reviews without replay", () =>
+        {
+            Fixture f = Create(work, "scenario-addition");
+            byte[] recorded = File.ReadAllBytes(Path.Combine(f.RunDirectory, "run.json"));
+            f = AddScenario(f);
+            var result = f.Evaluate();
+            CoreTests.Equal("consistent", result.Report.ArchiveStatus);
+            CoreTests.Equal("current", result.Report.CurrentApplicability);
+            CoreTests.Equal("scenario-equivalent", result.Report.PolicyReassessment!.Status);
+            CoreTests.True(result.Report.PolicyReassessment.ExecutionDefinitionUnchanged == true);
+            CoreTests.True(result.Report.PolicyReassessment.CheckerExpectationsUnchanged == true);
+            CoreTests.True(result.Report.PolicyReassessment.ChangedAreas.Contains("other-scenarios"));
+            CoreTests.Equal(1, result.Report.Requirements.Count);
+            CoreTests.Equal("pending", result.Report.Reviews.Single().Status);
+            CoreTests.Equal("not-accepted", result.Report.AcceptanceStatus);
+            CoreTests.True(result.Report.NextSteps.All(s => s.Kind is not ("run" or "check-stage")));
+            CoreTests.True(recorded.SequenceEqual(File.ReadAllBytes(Path.Combine(f.RunDirectory, "run.json"))));
+        });
+        test("unselected stages coverage and requirements can change but shared source bytes remain current inputs", () =>
+        {
+            Fixture f = AddScenario(Create(work, "scenario-edits"));
+            Save(f.ProjectPath, f.Project with {
+                Scenarios = f.Project.Scenarios.Select(s => s.Id == "independent"
+                    ? s with { Stages = [s.Stages.Single() with { TimeoutSeconds = 31 }] } : s).ToList(),
+                CheckObligations = [new("independent-safety", "safety", "independent", ["independent-check"])]
+            });
+            Save(Path.Combine(f.Directory, "requirements.json"), f.Policy with {
+                Requirements = f.Policy.Requirements.Select(r => r.Scenario == "independent"
+                    ? r with { Expected = "rejected", Diagnostic = "SYN001" } : r).ToList()
+            });
+            f = Reload(f);
+            CoreTests.Equal("current", f.Evaluate().Report.CurrentApplicability);
+            File.AppendAllText(Path.Combine(f.Directory, "Model.tla"), "\nChanged shared model bytes.\n");
+            var result = f.Evaluate();
+            CoreTests.Equal("scenario-equivalent", result.Report.PolicyReassessment!.Status);
+            CoreTests.Equal("stale", result.Report.CurrentApplicability);
+            CoreTests.True(result.Report.Diagnostics.Any(d => d.Is(ErrorCode.WorkflowEvidenceStale)));
+        });
+        test("archived unselected scenarios can change disappear or reorder without changing selected evidence", () =>
+        {
+            foreach (string kind in new[] { "edit", "remove", "reorder" })
+            {
+                Fixture f = Create(work, "scenario-archived-" + kind, additionalScenario: true);
+                Save(f.ProjectPath, f.Project with {
+                    Scenarios = kind switch {
+                        "remove" => f.Project.Scenarios.Where(s => s.Id == "scope").ToList(),
+                        "reorder" => f.Project.Scenarios.AsEnumerable().Reverse().ToList(),
+                        _ => f.Project.Scenarios.Select(s => s.Id == "independent"
+                            ? s with { Stages = [s.Stages.Single() with { TimeoutSeconds = 31 }] } : s).ToList()
+                    }
+                });
+                Save(Path.Combine(f.Directory, "requirements.json"), f.Policy with {
+                    Requirements = kind switch {
+                        "remove" => f.Policy.Requirements.Where(r => r.Scenario == "scope").ToList(),
+                        "reorder" => f.Policy.Requirements.AsEnumerable().Reverse().ToList(),
+                        _ => f.Policy.Requirements.Select(r => r.Scenario == "independent"
+                            ? r with { Expected = "rejected", Diagnostic = "SYN001" } : r).ToList()
+                    }
+                });
+                var result = Reload(f).Evaluate();
+                CoreTests.Equal("scenario-equivalent", result.Report.PolicyReassessment!.Status);
+                CoreTests.Equal("consistent", result.Report.ArchiveStatus);
+                CoreTests.Equal("current", result.Report.CurrentApplicability);
+                CoreTests.Equal("not-accepted", result.Report.AcceptanceStatus);
+            }
+        });
+        test("scenario isolation still rejects added selected requirements and shared execution changes", () =>
+        {
+            foreach (string kind in new[] { "requirement", "compiler", "tool", "store", "coverage", "stage" })
+            {
+                Fixture f = AddScenario(Create(work, "scenario-selected-" + kind));
+                if (kind == "requirement")
+                    Save(Path.Combine(f.Directory, "requirements.json"), f.Policy with {
+                        Requirements = [.. f.Policy.Requirements,
+                            new("extra-check", "scope", "model-inputs", "passed", Reviews: ["inspection"])]
+                    });
+                else
+                    Save(f.ProjectPath, kind switch {
+                        "compiler" => f.Project with { Compiler = f.Project.Compiler with { Defines = ["SYNTHETIC_DEFINE"] } },
+                        "tool" => f.Project with { Tools = f.Project.Tools with { Jar = new("tool.txt", new string('A', 64)) } },
+                        "store" => f.Project with { ResultStore = "new-store" },
+                        "coverage" => f.Project with { CheckObligations = [new("scope-safety", "safety", "scope", ["scope-inputs"])] },
+                        _ => f.Project with { Scenarios = f.Project.Scenarios.Select(s => s.Id == "scope"
+                            ? s with { Stages = [s.Stages.Single() with { TimeoutSeconds = 31 }] } : s).ToList() }
+                    });
+                var result = Reload(f).Evaluate();
+                CoreTests.Equal("incompatible", result.Report.PolicyReassessment!.Status);
+                CoreTests.Equal("stale", result.Report.CurrentApplicability);
+            }
+        });
         test("review-only byte changes preserve execution applicability without satisfying human review", () =>
         {
             Fixture f = Create(work, "review-only");
@@ -358,19 +472,23 @@ public static class WorkflowFreshnessTests
         });
         test("a stage-consumed project remains an execution dependency even during policy reassessment", () =>
         {
-            Fixture f = Create(work, "project-dual-role");
-            string resultPath = Path.Combine(f.RunDirectory, "model-inputs", "result.json");
-            ModelInputsResult result = ProjectInputs.Read<ModelInputsResult>(resultPath);
-            result.Fingerprints.Add(f.ProjectPath, f.Run.ProjectSha256);
-            Save(resultPath, result);
-            string hash = Files.Hash(resultPath);
-            f.Run.Artifacts[Path.Combine("model-inputs", "result.json")] = hash;
-            f.Run.Stages[0] = f.Run.Stages[0] with { Sha256 = hash };
-            Save(Path.Combine(f.RunDirectory, "run.json"), f.Run);
-            var evaluation = ReplaceReview(f).Evaluate();
-            CoreTests.Equal("review-only", evaluation.Report.PolicyReassessment!.Status);
-            CoreTests.Equal("stale", evaluation.Report.CurrentApplicability);
-            CoreTests.True(evaluation.Report.Diagnostics.Any(d => d.Is(ErrorCode.WorkflowEvidenceStale)));
+            foreach (string kind in new[] { "review", "scenario" })
+            {
+                Fixture f = Create(work, "project-dual-role-" + kind);
+                string resultPath = Path.Combine(f.RunDirectory, "model-inputs", "result.json");
+                ModelInputsResult result = ProjectInputs.Read<ModelInputsResult>(resultPath);
+                result.Fingerprints.Add(f.ProjectPath, f.Run.ProjectSha256);
+                Save(resultPath, result);
+                string hash = Files.Hash(resultPath);
+                f.Run.Artifacts[Path.Combine("model-inputs", "result.json")] = hash;
+                f.Run.Stages[0] = f.Run.Stages[0] with { Sha256 = hash };
+                Save(Path.Combine(f.RunDirectory, "run.json"), f.Run);
+                var evaluation = (kind == "review" ? ReplaceReview(f) : AddScenario(f)).Evaluate();
+                CoreTests.Equal(kind == "review" ? "review-only" : "scenario-equivalent",
+                    evaluation.Report.PolicyReassessment!.Status);
+                CoreTests.Equal("stale", evaluation.Report.CurrentApplicability);
+                CoreTests.True(evaluation.Report.Diagnostics.Any(d => d.Is(ErrorCode.WorkflowEvidenceStale)));
+            }
         });
         test("missing policy snapshots unknown closures and damaged policy archives fail closed", () =>
         {
