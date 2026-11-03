@@ -202,3 +202,4 @@ try {
     foreach ($name in $variables) { [Environment]::SetEnvironmentVariable($name, $previous[$name]) }
     [IO.Directory]::Delete($work, $true)
 }
+exit 0
