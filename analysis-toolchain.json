@@ -1,0 +1,61 @@
+{
+  "schema_version": 4,
+  "kind": "analysis-toolchain",
+  "tools": [
+    {
+      "id": "tlc",
+      "version": "1.8.0",
+      "platform": "any",
+      "url": "https://github.com/microsoft/tlalink/releases/download/tla2tools-2ef2af8/tla2tools.jar",
+      "sha256": "D15655EEAFF4B3F7B3D65C46B838BC0F35D131B2EF4B1E473689B62C98D4726F",
+      "format": "file",
+      "prefix": "",
+      "directory": "tla/v1.8.0",
+      "entrypoint": "tla2tools.jar"
+    },
+    {
+      "id": "dafny",
+      "version": "4.11.0",
+      "platform": "win-x64",
+      "url": "https://github.com/dafny-lang/dafny/releases/download/v4.11.0/dafny-4.11.0-x64-windows-2022.zip",
+      "sha256": "3653F05A111CA21E234709EA7B25CE96083FD6C6F10484256BA54110DBC0654D",
+      "format": "zip",
+      "prefix": "dafny/",
+      "directory": "dafny/4.11.0/win-x64",
+      "entrypoint": "Dafny.exe"
+    },
+    {
+      "id": "dafny",
+      "version": "4.11.0",
+      "platform": "linux-x64",
+      "url": "https://github.com/dafny-lang/dafny/releases/download/v4.11.0/dafny-4.11.0-x64-ubuntu-22.04.zip",
+      "sha256": "A46A9FF7CDD720F7955854C78E95DF13F4CFE6B80691B05F8654FE19E8267179",
+      "format": "zip",
+      "prefix": "dafny/",
+      "directory": "dafny/4.11.0/linux-x64",
+      "entrypoint": "dafny"
+    },
+    {
+      "id": "apalache",
+      "version": "0.62.4",
+      "platform": "any",
+      "url": "https://github.com/apalache-mc/apalache/releases/download/v0.62.4/apalache-0.62.4.zip",
+      "sha256": "3B6B7EBF24E778535BF47E0CB3F0799C9AB9048DF41119C7D3091C6CA1760BC1",
+      "format": "zip",
+      "prefix": "apalache-0.62.4/",
+      "directory": "apalache/0.62.4",
+      "entrypoint": "lib/apalache.jar"
+    },
+    {
+      "id": "p",
+      "version": "3.1.0",
+      "platform": "any",
+      "url": "https://packagefeedproxy.microsoft.io/nuget/v3/flat2/p/3.1.0/p.3.1.0.nupkg",
+      "sha256": "B2A212E3B1AF1BF2FDC9B80899DA2901D6625D1A2E478D478E30028872A4BDC1",
+      "format": "zip",
+      "prefix": "tools/net8.0/any/",
+      "directory": "p/3.1.0",
+      "entrypoint": "p.dll"
+    }
+  ]
+}

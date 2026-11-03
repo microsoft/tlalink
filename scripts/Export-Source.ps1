@@ -12,7 +12,7 @@ if (Test-Path -LiteralPath $target) { throw 'The export destination must be new.
 
 $files = @(
     '.gitignore', '.gitattributes', 'AGENTS.md', 'DESIGN.md', 'global.json', 'NuGet.Config',
-    'README.md', 'REFERENCE.md', 'SECURITY.md', 'TlaLink.ps1', 'TlaLink.sln', 'TlaLink.code-workspace', 'java-toolchain.json', 'native-toolchain.json',
+    'README.md', 'REFERENCE.md', 'LICENSE', 'SECURITY.md', 'TlaLink.ps1', 'TlaLink.sln', 'TlaLink.code-workspace', 'java-toolchain.json', 'native-toolchain.json', 'analysis-toolchain.json',
     ([IO.Path]::Combine([string[]]@('examples', 'Dispatcher', 'verification', 'P', 'Artifacts', 'pex-pom.xml'))),
     ([IO.Path]::Combine([string[]]@('examples', 'Dispatcher', 'verification', 'P', 'Artifacts', 'psym-pom.xml'))),
     ([IO.Path]::Combine([string[]]@('examples', 'Dispatcher', 'verification', 'PObserve', 'runtime-pom.xml'))),

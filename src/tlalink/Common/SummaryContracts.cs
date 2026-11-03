@@ -22,6 +22,8 @@ public abstract record CommandSummaryResult(string ResultKind)
 
 public sealed record FailureSummary(string? Command, string Status, List<Issue> Diagnostics)
     : CommandSummaryResult("command-error");
+public sealed record ToolchainRestoreSummary(string Status, string Directory, List<RestoredTool> Tools, string Boundary)
+    : CommandSummaryResult("toolchain-restore-result");
 public sealed record RequirementSummary(string Id, string Status, List<string> Missing,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Dictionary<string, int>? Omitted = null);
 public sealed record CoverageSummary(string Id, string Kind, string Scenario, string Status,

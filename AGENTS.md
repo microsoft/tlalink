@@ -82,6 +82,11 @@ Skills do not install tools, approve correspondence or discharge human gates.
   require revisiting the affected decisions, not replaying unchanged execution.
   Keep execution applicability, changed review inputs and review status separate;
   never carry approval forward merely because native inputs remain current.
+- Applicability comparison is scoped to the run's selected normalized scenario
+  and its requirements, retaining shared execution settings. Unrelated scenario
+  edits use `scenario-equivalent`, not automatic approval or a reason to replay
+  unchanged execution. Preserve all archived authoring checks and let actual
+  execution inputs override authoring/review exemptions.
 - Read `accept`/`explain` `next_steps` before rerunning. They are read-only CLI
   argument vectors with a working directory, not shell commands or a new
   execution plan. Empty vectors require investigation/review. Current
@@ -252,6 +257,15 @@ Skills do not install tools, approve correspondence or discharge human gates.
   Keep serial-owner assumptions explicit for unguarded synchronous components.
 
 ## Build and validation
+
+- Explicit `toolchain restore` setup uses `analysis-toolchain.json` for prebuilt
+  archive identities, reusing `java-toolchain.json` for Java and
+  `native-toolchain.json` for the P version. Do not duplicate those authorities.
+  Verify cached archive bytes and derive complete installed-file expectations
+  from them on every restore; timestamps and mutable installation receipts are
+  not integrity checks. Materialize only archive-internal file links as regular
+  files. Stage replacements and retain displaced installations; replacement
+  requires an explicit offline-writers assertion. Analysis never calls restore.
 
 Prefer maintained sample source and contract files under
 `tests/TlaLink.Tests/Fixtures` over embedded code strings in new tests. Share

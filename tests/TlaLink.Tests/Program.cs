@@ -76,6 +76,7 @@ public static class Program
             if (selection is null or "--core")
             {
                 NativeToolchainTests.Register(Test, root);
+                Suite("toolchain-restore", directory => ToolchainRestoreTests.Register(Test, root, directory));
                 NativeProofDiagnosticsTests.RegisterCore(Test, root, work);
                 Suite("native-contracts", directory => NativeContractTests.Register(Test, directory));
                 Suite("trace-contracts", directory => TraceContractTests.Register(Test, directory));

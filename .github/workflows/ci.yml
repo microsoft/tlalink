@@ -37,7 +37,6 @@ jobs:
           . .\scripts\Native-Toolchain.ps1
           $pin = Get-TlaLinkNativeToolchain $PWD
           "dotnet8=$($pin.dotnet.sdk8)" >> $env:GITHUB_OUTPUT
-          "p=$($pin.p.version)" >> $env:GITHUB_OUTPUT
 
       - name: Set up .NET
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
@@ -61,46 +60,36 @@ jobs:
           dotnet $tests . --core 2>&1 | Tee-Object -FilePath (Join-Path $reports 'core.log')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Provision pinned Java
+      - name: Pack and smoke-test the installed .NET tool
         run: |
-          & (Join-Path $PWD 'scripts\Initialize-Java.ps1')
+          dotnet pack .\src\tlalink\TlaLink.csproj --configuration Release --no-build --output .\.tools\packages --nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $package = @(Get-ChildItem -LiteralPath .\.tools\packages -Filter '*.nupkg')
+          if ($package.Count -ne 1) { throw 'Expected one freshly packed TlaLink tool.' }
+          & .\tests\ToolPackage.Tests.ps1 -Package $package[0].FullName
 
-      - name: Provision native test backends
+      - name: Restore pinned prebuilt tools and check offline idempotence
         run: |
           $ErrorActionPreference = 'Stop'
-          function Get-PinnedArchive([string]$Uri, [string]$File, [string]$Sha256) {
-            Invoke-WebRequest -Uri $Uri -OutFile $File
-            if ((Get-FileHash -LiteralPath $File -Algorithm SHA256).Hash -ne $Sha256) {
-              throw "Backend archive SHA256 mismatch: $File"
-            }
+          $cli = Join-Path $PWD 'src\tlalink\bin\Release\net10.0\TlaLink.dll'
+          $cache = Join-Path $PWD '.tools'
+          $restored = @(dotnet $cli toolchain restore --directory $cache --timeout 600)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $result = ($restored -join "`n") | ConvertFrom-Json
+          $restored | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'tlalink-ci\restore.json')
+          $repeated = @(dotnet $cli toolchain restore --directory $cache --offline true)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $checked = ($repeated -join "`n") | ConvertFrom-Json
+          if ($checked.tools.Count -ne 5 -or @($checked.tools | Where-Object status -ne 'current').Count) {
+            throw 'Repeated offline restore must leave all five installations current.'
           }
-          $tools = Join-Path $PWD '.tools'
-          $tla = Join-Path $tools 'tla\v1.8.0'
-          $null = New-Item -ItemType Directory -Path $tla -Force
-          # Upstream replaces its rolling v1.8.0 asset in place; this repository mirrors the pinned build.
-          Get-PinnedArchive `
-            'https://github.com/microsoft/tlalink/releases/download/tla2tools-2ef2af8/tla2tools.jar' `
-            (Join-Path $tla 'tla2tools.jar') `
-            'D15655EEAFF4B3F7B3D65C46B838BC0F35D131B2EF4B1E473689B62C98D4726F'
-          $dafny = Join-Path $env:RUNNER_TEMP 'dafny-4.11.0.zip'
-          Get-PinnedArchive `
-            'https://github.com/dafny-lang/dafny/releases/download/v4.11.0/dafny-4.11.0-x64-ubuntu-22.04.zip' `
-            $dafny `
-            'A46A9FF7CDD720F7955854C78E95DF13F4CFE6B80691B05F8654FE19E8267179'
-          unzip -q $dafny -d $tools
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          dotnet tool install P --version '${{ steps.toolchain.outputs.p }}' --tool-path (Join-Path $tools 'p') --configfile NuGet.Config
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $apalacheArchive = Join-Path $env:RUNNER_TEMP 'apalache-0.62.4.zip'
-          Get-PinnedArchive `
-            'https://github.com/apalache-mc/apalache/releases/download/v0.62.4/apalache-0.62.4.zip' `
-            $apalacheArchive `
-            '3B6B7EBF24E778535BF47E0CB3F0799C9AB9048DF41119C7D3091C6CA1760BC1'
-          $apalache = Join-Path $tools 'apalache'
-          $null = New-Item -ItemType Directory -Path $apalache -Force
-          unzip -q $apalacheArchive -d $apalache
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Move-Item -LiteralPath (Join-Path $apalache 'apalache-0.62.4') -Destination (Join-Path $apalache '0.62.4')
+          $tools = @{}
+          foreach ($tool in $result.tools) { $tools[$tool.id] = $tool }
+          "TLALINK_JAVA_HOME=$($tools.java.directory)" >> $env:GITHUB_ENV
+          "TLALINK_TLA_JAR=$($tools.tlc.entrypoint)" >> $env:GITHUB_ENV
+          "TLALINK_DAFNY=$($tools.dafny.entrypoint)" >> $env:GITHUB_ENV
+          "TLALINK_APALACHE_JAR=$($tools.apalache.entrypoint)" >> $env:GITHUB_ENV
+          "TLALINK_P_COMPILER=$($tools.p.entrypoint)" >> $env:GITHUB_ENV
 
       - name: Run complete console suite
         run: |
@@ -109,6 +98,21 @@ jobs:
           dotnet $tests . (Join-Path $reports 'results.json') 2>&1 |
             Tee-Object -FilePath (Join-Path $reports 'native.log')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Smoke-test installed native bridge and instrumentation
+        run: |
+          $package = @(Get-ChildItem -LiteralPath .\.tools\packages -Filter '*.nupkg')
+          if ($package.Count -ne 1) { throw 'Expected one freshly packed TlaLink tool.' }
+          & .\tests\ToolPackage.Tests.ps1 -Package $package[0].FullName `
+            -Jar $env:TLALINK_TLA_JAR -JavaHome $env:TLALINK_JAVA_HOME
+
+      - name: Upload tool package
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: tlalink-tool-package
+          path: .tools/packages/*.nupkg
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload test reports
         if: always()
