@@ -4,7 +4,8 @@ $PSNativeCommandUseErrorActionPreference = $false
 $arguments = @($args)
 $project = Join-Path $PSScriptRoot 'src\tlalink\TlaLink.csproj'
 . (Join-Path $PSScriptRoot 'scripts\DotNet-Toolchain.ps1')
-try { $dotnet = Get-TlaLinkDotNet $PSScriptRoot }
+$provision = Test-TlaLinkAutoProvision
+try { $dotnet = Get-TlaLinkDotNet $PSScriptRoot -Provision:$provision }
 catch [IO.InvalidDataException], [InvalidOperationException] {
     Write-Error $_ -ErrorAction Continue
     exit 2
@@ -25,7 +26,22 @@ try {
     finally {
         Pop-Location
     }
-    & $dotnet (Join-Path $PSScriptRoot 'src\tlalink\bin\Debug\net10.0\TlaLink.dll') @arguments
+    $cli = Join-Path $PSScriptRoot 'src\tlalink\bin\Debug\net10.0\TlaLink.dll'
+    # Explicit toolchain commands manage the cache themselves; every other command first restores any
+    # missing pinned analysis tool into this checkout's .tools, so the CLI itself still never installs.
+    if ($provision -and $arguments.Count -gt 0 -and $arguments[0] -ne 'toolchain') {
+        $missing = @(Get-TlaLinkMissingTools $PSScriptRoot)
+        if ($missing.Count) {
+            [Console]::Error.WriteLine("Restoring pinned analysis tools into $(Join-Path $PSScriptRoot '.tools'): $($missing -join ', ')")
+            $restore = @('toolchain', 'restore', '--timeout', '600') + @($missing | ForEach-Object { '--tool', $_ })
+            $restoreOutput = & $dotnet $cli @restore 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error ($restoreOutput -join "`n") -ErrorAction Continue
+                exit 2
+            }
+        }
+    }
+    & $dotnet $cli @arguments
     exit $LASTEXITCODE
 }
 finally {

@@ -265,7 +265,10 @@ Skills do not install tools, approve correspondence or discharge human gates.
   from them on every restore; timestamps and mutable installation receipts are
   not integrity checks. Materialize only archive-internal file links as regular
   files. Stage replacements and retain displaced installations; replacement
-  requires an explicit offline-writers assertion. Analysis never calls restore.
+  requires an explicit offline-writers assertion. Analysis never calls restore;
+  the checkout launcher `TlaLink.ps1` restores missing pinned entrypoints (and
+  the exact SDK) before starting the CLI unless `TLALINK_AUTO_PROVISION` is
+  `false`/`0`. Keep that provisioning in the launcher, not in analysis commands.
 
 Prefer maintained sample source and contract files under
 `tests/TlaLink.Tests/Fixtures` over embedded code strings in new tests. Share
@@ -308,16 +311,18 @@ its prerequisites; see [testing](REFERENCE.md#tests-and-evidence).
 - Tool distributions belong in the ignored root `.tools` cache. Public tests
   accept `TLALINK_TLA_JAR`, `TLALINK_DAFNY`, `TLALINK_P_COMPILER` and
   `TLALINK_APALACHE_JAR` overrides;
-  `--core` runs without external backend tools. Provisioning is explicit;
-  analysis commands must not install or upgrade tools.
+  `--core` runs without external backend tools. Analysis commands must not
+  install or upgrade tools; provisioning happens in explicit setup or the
+  checkout launcher.
 - Common build tools use one authoritative pin: `global.json` selects the exact
   SDK without roll-forward; `java-toolchain.json` selects the shared JDK;
   `native-toolchain.json` selects remaining native prerequisites and documents
   narrowly justified exceptions. CI, native setup and project initialization
   consume these pins, not floating or independently duplicated versions.
-  `scripts\DotNet-Toolchain.ps1` discovers an already installed exact SDK;
-  `TlaLink.ps1` selects it for children without installing or changing the
-  shared product-tree SDK. After an SDK switch, regenerate incompatible
+  `scripts\DotNet-Toolchain.ps1` discovers an already installed exact SDK and,
+  only when the launcher requests it, provisions that exact SDK into `.tools`;
+  `TlaLink.ps1` selects it for children without changing the shared
+  product-tree SDK. After an SDK switch, regenerate incompatible
   restore assets rather than substituting another SDK. Test bootstrap behavior
   with `tests\Toolchain.Tests.ps1`. Changing a pin requires fresh applicable
   evidence, not rewritten receipts, requirements or carried-forward review.

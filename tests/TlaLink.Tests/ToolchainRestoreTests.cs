@@ -142,6 +142,8 @@ public static class ToolchainRestoreTests
                 new CliOptions(["toolchain", "restore", "--directory", work, "--format", "summary"]));
             CoreTests.True(summary is ToolchainRestoreSummary { Status: "ready" });
         });
+        test("toolchain restore defaults to the checkout's ignored tool cache", () =>
+            CoreTests.Equal(Path.Combine(Path.GetFullPath(root), ".tools"), JavaToolchain.RepositoryTools()));
     }
 
     private sealed class Fixture

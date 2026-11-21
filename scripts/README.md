@@ -1,18 +1,23 @@
 # Explicit setup commands
 
 Setup is separate from `doctor`, `plan`, `run`, `check-p` and acceptance.
-Those analysis commands never provision or refresh tools.
+Those analysis commands never provision or refresh tools. The checkout
+[launcher](../TlaLink.ps1) performs setup before starting the CLI, as described
+below; set `TLALINK_AUTO_PROVISION=false` (or `0`) to disable it.
 
 ## Common .NET host
 
 [global.json](../global.json) is the exact SDK authority, with roll-forward
-disabled. [DotNet-Toolchain.ps1](DotNet-Toolchain.ps1) discovers the already
-installed `.tools\dotnet\<version>\distribution` SDK or the selected PATH host;
-it never downloads or installs. The root [launcher](../TlaLink.ps1) uses that
-same host for child builds. Direct build/test commands can select it explicitly
-as shown in [the reference](../REFERENCE.md#requirements-and-build).
+disabled. [DotNet-Toolchain.ps1](DotNet-Toolchain.ps1) discovers the
+`.tools\dotnet\<version>\distribution` SDK or the selected PATH host; discovery
+alone never downloads or installs. When neither has the exact SDK, the root
+[launcher](../TlaLink.ps1) provisions it into `.tools\dotnet\<version>\distribution`
+from the official .NET release metadata, verifying the archive's published
+SHA512, and uses that host for child builds. Direct build/test commands can
+select it explicitly as shown in [the reference](../REFERENCE.md#requirements-and-build).
 [Toolchain.Tests.ps1](../tests/Toolchain.Tests.ps1) tests exact pin enforcement,
-missing-SDK rejection, nonmutating discovery and PowerShell syntax.
+missing-SDK rejection, nonmutating discovery, the provisioning opt-out,
+missing-tool detection and PowerShell syntax.
 
 ## .NET tool packaging
 
@@ -33,7 +38,10 @@ See [package commands and boundaries](../REFERENCE.md#net-tool-package).
 
 Use the installed CLI's `dotnet tlalink toolchain restore --directory .\.tools
 --timeout 600` for idempotent JDK/TLC/Dafny/Apalache/P compiler setup; checkout
-users can invoke the same command through `.\TlaLink.ps1`. The bundled
+users can invoke `.\TlaLink.ps1 toolchain restore`, whose `--directory` defaults
+to the checkout's `.tools`. For any other command the launcher restores just the
+tools whose pinned entrypoint is missing from that cache before starting the CLI.
+The bundled
 [archive catalogue](../analysis-toolchain.json) reuses the Java/native pin
 authorities. Offline mode rechecks cached archive and installation bytes.
 Repair requires `--exclusive true` after stopping all cache users and retains

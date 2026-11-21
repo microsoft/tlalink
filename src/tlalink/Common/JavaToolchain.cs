@@ -46,14 +46,19 @@ public static class JavaToolchain
             Path.Combine(home, "bin", FilePaths.ExecutableName("javac")), fingerprints);
     }
 
-    private static string DefaultHome(string platform, string directory)
+    private static string DefaultHome(string platform, string directory) =>
+        RepositoryTools() is string tools ? Path.Combine(tools, "java", platform, directory) :
+        throw new InputException(ErrorCode.ToolFailure,
+            "Cannot locate the repository-local pinned JDK. Set TLALINK_JAVA_HOME to an absolute directory containing the same pinned distribution.");
+
+    /// <summary>The ignored <c>.tools</c> cache of the checkout containing this build, or null for a deployed tool.</summary>
+    internal static string? RepositoryTools()
     {
         for (DirectoryInfo? ancestor = new(Path.GetDirectoryName(typeof(JavaToolchain).Assembly.Location)!);
             ancestor != null; ancestor = ancestor.Parent)
             if (File.Exists(Path.Combine(ancestor.FullName, "java-toolchain.json")) &&
                 File.Exists(Path.Combine(ancestor.FullName, "TlaLink.sln")))
-                return Path.Combine(ancestor.FullName, ".tools", "java", platform, directory);
-        throw new InputException(ErrorCode.ToolFailure,
-            "Cannot locate the repository-local pinned JDK. Set TLALINK_JAVA_HOME to an absolute directory containing the same pinned distribution.");
+                return Path.Combine(ancestor.FullName, ".tools");
+        return null;
     }
 }

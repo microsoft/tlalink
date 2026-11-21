@@ -39,15 +39,50 @@ try {
         Rejects { Get-TlaLinkDotNet $work } 'SDK 999.0.999'
         if (Test-Path (Join-Path $work '.tools')) { throw 'SDK discovery wrote tools.' }
     }
-    Test 'the CLI reports a missing SDK as incomplete exit 2' {
+    Test 'the CLI reports a missing SDK as incomplete exit 2 when provisioning is disabled' {
         $null = New-Item -ItemType Directory -Path (Join-Path $work 'scripts')
         Copy-Item -LiteralPath (Join-Path $root 'scripts\DotNet-Toolchain.ps1') -Destination (Join-Path $work 'scripts')
         Copy-Item -LiteralPath (Join-Path $root 'TlaLink.ps1') -Destination $work
-        $output = @(& (Join-Path $work 'TlaLink.ps1') doctor 2>&1)
+        $previous = $env:TLALINK_AUTO_PROVISION
+        $env:TLALINK_AUTO_PROVISION = 'false'
+        try { $output = @(& (Join-Path $work 'TlaLink.ps1') doctor 2>&1) }
+        finally { $env:TLALINK_AUTO_PROVISION = $previous }
         if ($LASTEXITCODE -ne 2 -or ($output -join "`n") -notlike '*SDK 999.0.999*') {
             throw 'Missing SDK did not produce an explicit incomplete CLI result.'
         }
         if (Test-Path (Join-Path $work '.tools')) { throw 'CLI discovery wrote tools.' }
+    }
+    Test 'an unpublished SDK cannot be provisioned and leaves no installation' {
+        $previous = $env:TLALINK_AUTO_PROVISION
+        $env:TLALINK_AUTO_PROVISION = $null
+        try { $output = @(& (Join-Path $work 'TlaLink.ps1') doctor 2>&1) }
+        finally { $env:TLALINK_AUTO_PROVISION = $previous }
+        if ($LASTEXITCODE -ne 2 -or ($output -join "`n") -notlike '*SDK 999.0.999*') {
+            throw 'Unpublished SDK did not produce an explicit incomplete CLI result.'
+        }
+        if (Test-Path (Join-Path $work '.tools\dotnet\999.0.999')) { throw 'Failed provisioning left an installation.' }
+    }
+    Test 'automatic provisioning is on unless explicitly disabled' {
+        $previous = $env:TLALINK_AUTO_PROVISION
+        try {
+            foreach ($value in @($null, '1', 'true')) {
+                $env:TLALINK_AUTO_PROVISION = $value
+                if (!(Test-TlaLinkAutoProvision)) { throw "Provisioning disabled by '$value'." }
+            }
+            foreach ($value in @('0', 'false')) {
+                $env:TLALINK_AUTO_PROVISION = $value
+                if (Test-TlaLinkAutoProvision) { throw "Provisioning enabled by '$value'." }
+            }
+        }
+        finally { $env:TLALINK_AUTO_PROVISION = $previous }
+    }
+    Test 'missing analysis tools are detected by pinned entrypoint' {
+        Copy-Item -LiteralPath (Join-Path $root 'java-toolchain.json'), (Join-Path $root 'analysis-toolchain.json') -Destination $work
+        $missing = @(Get-TlaLinkMissingTools $work)
+        if (($missing -join ',') -cne 'java,tlc,dafny,apalache,p') { throw "Unexpected missing tools: $($missing -join ',')" }
+        $jar = Join-Path $work '.tools\tla\v1.8.0\tla2tools.jar'
+        $null = New-Item -ItemType File -Force -Path $jar
+        if (@(Get-TlaLinkMissingTools $work) -contains 'tlc') { throw 'Present entrypoint reported missing.' }
     }
     Test 'host discovery preserves the caller environment' {
         $path = $env:PATH
