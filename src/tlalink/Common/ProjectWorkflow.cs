@@ -449,7 +449,7 @@ public static partial class ProjectWorkflow
     private static JsonElement InvokeCli(List<string> arguments, string output, int timeout)
     {
         arguments.InsertRange(0, CliHost ?? [typeof(Program).Assembly.Location]);
-        var execution = Invoke(Executable("dotnet"), arguments, output, timeout, "command", allowFailure: true);
+        var execution = Invoke(CurrentDotNetHost(), arguments, output, timeout, "command", allowFailure: true);
         try
         {
             using JsonDocument document = JsonDocument.Parse(execution.Text, new JsonDocumentOptions { AllowDuplicateProperties = false });
@@ -458,6 +458,21 @@ public static partial class ProjectWorkflow
             return result;
         }
         catch (JsonException error) { throw new InputException(ErrorCode.InvalidCommandOutput, "Invalid command output; see command.log: " + error.Message); }
+    }
+
+    /// <summary>
+    /// The muxer of the running runtime, so a child command sees the same runtime and reference set as this
+    /// process. Resolving "dotnet" from PATH can select another installation and change pinned inputs mid-run.
+    /// </summary>
+    private static string CurrentDotNetHost()
+    {
+        string? process = Environment.ProcessPath;
+        if (process != null && Path.GetFileNameWithoutExtension(process).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+            return process;
+        // An apphost (tool or test runner): the muxer sits above shared/Microsoft.NETCore.App/<version>.
+        string root = Path.GetFullPath(Path.Combine(System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory(), "..", "..", ".."));
+        string muxer = Path.Combine(root, OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet");
+        return File.Exists(muxer) ? muxer : Executable("dotnet");
     }
 
     private static (int ExitCode, string Text) Invoke(string executable, List<string> arguments, string output,

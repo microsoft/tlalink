@@ -35,7 +35,7 @@ public static class PrimitiveKindTests
             [new("BrokenChannelAbortKeepsItems", "KindInvariant"),
              new("BrokenChannelLateAbortIgnored", "AbortDiscards")]),
         new("CancellationSource", "MCCancellationSource", "NoWakeWitness",
-            [("Cancel", 1)], [("CanWait", 1)],
+            [("Cancel", 1), ("CancelRejected", 1), ("Dispose", 1)], [("CanWait", 1)],
             [new("BrokenCancellationSourceReset", "RequestStable")]),
     ];
 

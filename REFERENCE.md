@@ -1714,7 +1714,7 @@ predicates, `Internal(i)` and `Fairness`. Every action `A` also has pure
 | `admission-gate` | `TlaLinkAdmissionGate` | `Enter`, `EnterRejected`, `TryEnter`, `Exit`, `Close`, `Signal` | `CanWaitDrained` |
 | `counting-resource` | `TlaLinkCountingResource` | `TryAcquire`, `Acquire`, `Release`, `Close`, `Resume` | `CanResume` |
 | `channel` | `TlaLinkChannel` | `TryEnqueue`, `Dequeue`, `StartWait`, `Complete` | `CanDequeue` |
-| `cancellation-source` | `TlaLinkCancellationSource` | `Cancel` | `CanWait` |
+| `cancellation-source` | `TlaLinkCancellationSource` | `Cancel`, `CancelRejected`, `Dispose` | `CanWait` |
 | `custom` | the manifest's `module` | declared by that module | declared by that module |
 
 `critical-section` is a proposal concept for lock regions, not a manifest

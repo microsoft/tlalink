@@ -104,7 +104,7 @@ set, keeps per-instance state in functions over that set, and exports:
 | `counting-resource` | available, FIFO waiters, closed | `TryAcquire`, `Acquire`, `Release`, `Close` | `Acquire` until granted or closed |
 | `channel` | item sequence, bound, completion (none, drain, abort) | `Enqueue`, `TryEnqueue`, `Dequeue`, `Complete` | `Dequeue` until item or completion |
 | `critical-section` | none | the whole region is one atomic step | none |
-| `cancellation-source` | requested, registered callbacks | `Cancel` (runs callbacks inline), `Register` | `Wait` until requested |
+| `cancellation-source` | requested, disposed | `Cancel` (runs callbacks inline), `CancelRejected` after disposal, `Dispose` | `Wait` until requested |
 | `custom` | defined by the author's module | declared by the manifest | declared by the manifest |
 
 Three rules make the library usable for real code:
@@ -171,7 +171,7 @@ Every kind module has the same shape:
 | `TlaLinkAdmissionGate` | none | `[count, closed, signaled]` | `Enter(i)`, `EnterRejected(i)`, `TryEnter(i, limit, ok)`, `Exit(i)`, `Close(i)`, `Signal(i)` | `CanWaitDrained(i)` | `Signal(i)` |
 | `TlaLinkCountingResource` | `Waiters`, `Capacity` (a function of `Instances`) | `[available, queue, granted, closed]` | `TryAcquire(i, ok)`, `Acquire(i, w)`, `Release(i)`, `Close(i)`, `Resume(i, w)` | `CanResume(i, w)` | none |
 | `TlaLinkChannel` | `Items` | `[items, completion, waiting]` | `TryEnqueue(i, x, ok)`, `Dequeue(i, x)`, `StartWait(i)`, `Complete(i, mode)` | `CanDequeue(i)` | none |
-| `TlaLinkCancellationSource` | none | `[requested]` | `Cancel(i)` | `CanWait(i)` | none |
+| `TlaLinkCancellationSource` | none | `[requested, disposed]` | `Cancel(i)`, `CancelRejected(i)`, `Dispose(i)` | `CanWait(i)` | none |
 
 Semantics the modules must make precise:
 
