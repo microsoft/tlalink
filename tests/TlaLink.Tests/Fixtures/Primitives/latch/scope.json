@@ -1,0 +1,10 @@
+{
+  "schema_version": 4,
+  "kind": "correspondence-scope",
+  "annotation_version": 4,
+  "targets": [
+    { "id": "latch", "language": "tla", "inputs": ["Latch.tla"], "required_bindings": ["latch::ready"] }
+  ],
+  "omissions": [],
+  "synchronization": { "primitives": ["primitive.json"] }
+}

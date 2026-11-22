@@ -151,10 +151,10 @@ These options never introduce fault injection, scheduling hooks or execution.
 - Native delegations are shown as authored, not recursively interpreted.
   Explicit calls retain declared dispatch; implicit and transitive effects are
   outside the call list.
-- For a reviewed method summary, also read the selected scope's
-  `method_summaries` entry: its abstraction, precondition, assumptions, limits,
-  dependencies and inspection obligation are not established by the inline
-  relation/source excerpt. Follow competing writers and real caller storage.
+- For a declared synchronization primitive, also read its primitive manifest:
+  its operation roles, kind actions, waits, preconditions, guarantees,
+  assumptions, limits, dependencies and inspection obligation are not
+  established by the inline model/source excerpt. Follow competing writers and real caller storage.
   Keep publication, action dispatch, settlement, cleanup and completion
   distinct; a resolved whole-member attachment does not make the method atomic.
 

@@ -21,7 +21,7 @@ public static class CoreTests
         ReferenceObligationTests.Register(test, work);
         CleanupInstrumentationTests.Register(test, work);
         ProjectCompositionTests.RegisterCore(test, work);
-        MethodSummaryTests.RegisterCore(test, work);
+        PrimitiveManifestTests.RegisterCore(test, work);
         test("suite fixtures are released after success and failure without removing shared assets", () =>
         {
             string parent = Directory.CreateDirectory(Path.Combine(work, "suite-cleanup")).FullName;
@@ -56,7 +56,7 @@ public static class CoreTests
                 [new("scope", "Synthetic scope review.", [], ["input.cs"])], "reviews");
             string projectPath = Path.Combine(root, "project.json");
             File.WriteAllText(projectPath, System.Text.Json.JsonSerializer.Serialize(project, Files.Json));
-            ProjectAcceptance.RecordReview(projectPath, project, new(["record-review", "--obligation", "scope",
+            ProjectAcceptance.RecordReview(projectPath, project, new(Schema.Version, "acceptance-policy", project.Id, []), new(["record-review", "--obligation", "scope",
                 "--reviewer", "test-only", "--rationale", "Synthetic relocation control.",
                 "--evidence", Path.Combine(root, "evidence.json"), "--evidence", @".\evidence.json",
                 "--evidence", Path.Combine(root, "input.cs")]));

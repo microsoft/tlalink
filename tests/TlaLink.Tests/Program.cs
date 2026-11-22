@@ -19,13 +19,13 @@ public static class Program
         }
         string root = FilePaths.Full(args.FirstOrDefault() ?? Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\.."));
         string[] testArguments = args.Skip(1).ToArray();
-        string[] selections = ["--core", "--trace", "--apalache", "--p", "--diagnostics", "--integrated", "--workflow", "--evidence", "--summaries", "--symbols", "--links", "--frontend"];
+        string[] selections = ["--core", "--trace", "--apalache", "--p", "--diagnostics", "--integrated", "--workflow", "--evidence", "--primitives", "--symbols", "--links", "--frontend"];
         if (testArguments.Length > 2 ||
             testArguments.Count(a => a.StartsWith("--", StringComparison.Ordinal)) > 1 ||
             testArguments.Count(a => !a.StartsWith("--", StringComparison.Ordinal)) > 1 ||
             testArguments.Any(a => a.StartsWith("--", StringComparison.Ordinal) && !selections.Contains(a)))
         {
-            Console.Error.WriteLine("Usage: TlaLink.Tests [root [report.json] [--core|--trace|--apalache|--p|--diagnostics|--integrated|--workflow|--evidence|--summaries|--symbols|--links|--frontend]]");
+            Console.Error.WriteLine("Usage: TlaLink.Tests [root [report.json] [--core|--trace|--apalache|--p|--diagnostics|--integrated|--workflow|--evidence|--primitives|--symbols|--links|--frontend]]");
             return 2;
         }
         string? selection = testArguments.SingleOrDefault(a => a.StartsWith("--", StringComparison.Ordinal));
@@ -94,10 +94,11 @@ public static class Program
                 Suite("symbols", directory => SourceSymbolTests.Register(Test, directory));
                 return Finish();
             }
-            if (selection == "--summaries")
+            if (selection == "--primitives")
             {
-                Suite("summaries-core", directory => MethodSummaryTests.RegisterCore(Test, directory));
-                Suite("summaries-native", directory => MethodSummaryTests.RegisterNative(Test, root, directory));
+                Suite("primitives-core", directory => PrimitiveManifestTests.RegisterCore(Test, directory));
+                Suite("primitives-native", directory => PrimitiveManifestTests.RegisterNative(Test, root, directory));
+                Suite("primitive-kinds-native", directory => PrimitiveKindTests.RegisterNative(Test, root, directory));
                 return Finish();
             }
             if (selection == "--evidence")
@@ -142,7 +143,8 @@ public static class Program
             {
                 Suite("paired-native", directory => PairedCorrespondenceTests.RegisterNative(Test, root, directory));
                 Suite("links-native", directory => FormalOwnedLinksTests.RegisterNative(Test, root, directory));
-                Suite("summaries-native", directory => MethodSummaryTests.RegisterNative(Test, root, directory));
+                Suite("primitives-native", directory => PrimitiveManifestTests.RegisterNative(Test, root, directory));
+                Suite("primitive-kinds-native", directory => PrimitiveKindTests.RegisterNative(Test, root, directory));
                 Suite("arguments-core", directory => ActionArgumentTests.Register(Test, directory));
                 Suite("entities", directory => EntityTraceTests.Register(Test, root, directory));
                 Suite("arguments-native", directory => ActionArgumentTests.RegisterNative(Test, root, directory));
@@ -178,6 +180,8 @@ public static class Program
             Suite("entities", directory => EntityTraceTests.Register(Test, root, directory));
             Suite("prepare-native", directory => SourcePreparationTests.RegisterNative(Test, directory, TestTools.Jar(root)));
             Suite("arguments-native", directory => ActionArgumentTests.RegisterNative(Test, root, directory));
+            Suite("primitives-native", directory => PrimitiveManifestTests.RegisterNative(Test, root, directory));
+            Suite("primitive-kinds-native", directory => PrimitiveKindTests.RegisterNative(Test, root, directory));
             Test("Java/SANY/PlusCal backend parity controls", () =>
                 TlaBackendTests.Run(TestTools.Jar(root),
                     (condition, message) => { if (!condition) throw new InvalidOperationException(message); }));

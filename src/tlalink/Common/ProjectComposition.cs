@@ -14,7 +14,7 @@ public sealed record StageAuthoring(string Id, string Kind, List<string>? Depend
     int? TimeoutSeconds = null, string? Bindings = null, List<string>? Sources = null,
     List<string>? Models = null, string? Config = null, List<string>? Arguments = null,
     TlcResources? Resources = null, string? Profile = null, int? Fingerprint = null,
-    string? Scope = null, string? Target = null, List<MethodSummaryUse>? MethodSummaries = null);
+    string? Scope = null, string? Target = null, List<PrimitiveUse>? Primitives = null);
 public sealed record ReviewAuthoring(string Id, string Claim, List<string> Assumptions,
     List<string>? Inputs = null, List<string>? InputSets = null, ReviewOrigin Origin = ReviewOrigin.Human);
 public sealed record ProjectComponent(int SchemaVersion, string Kind, string Id, List<StageAuthoring> Stages,
@@ -288,7 +288,7 @@ public static class ProjectComposition
                 source.Models?.Select(p => Rebase(file, p)).ToList(),
                 source.Config == null ? null : Rebase(file, source.Config), source.Arguments, resources, source.Fingerprint,
                 source.Scope == null ? null : Rebase(file, source.Scope), source.Target,
-                source.MethodSummaries?.Select(s => s with { Scope = Rebase(file, s.Scope) }).ToList());
+                source.Primitives?.Select(s => s with { Scope = Rebase(file, s.Scope) }).ToList());
         }
 
         private ReviewObligation Review(string file, ReviewAuthoring source)

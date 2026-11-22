@@ -129,36 +129,45 @@ Int32 and Boolean, matching the supported C#/Dafny signatures. They are not trac
 identities or arbitrary JSON values; unsupported scalar kinds and numeric
 encodings fail explicitly rather than being coerced.
 
-### Reviewed method summaries
+### Synchronization primitives
 
-TLA+ method summaries are stateless parameterized relations paired with one
-C# method through existing binding IDs. Explicit correspondence-scope metadata
-declares pure/atomic intent, selected source files, assumptions, limits,
-optional native preconditions and acyclic same-scope summary dependencies.
-Source resolution accepts selected concrete synchronous, nonvirtual methods
-and constructors; native resolution uses SANY, not expression parsing.
-Neither shape validation nor an abstraction label proves purity or linearizability.
+A primitive manifest declares one C# type, its explicit sources, an abstract
+kind and a mapping of every public/internal member to kind actions, wait
+predicates and caller preconditions. Kinds are TLA+ modules shipped with the
+tool under one fixed interface; `custom` primitives name an author module with
+the same shape. This replaces reviewed method summaries: a stateless helper is
+a `custom` primitive with `pure` operations, and the summary inspection, origin
+and staleness rules carry over.
 
-TLC/trace stages explicitly reference summaries. Preflight resolves their
-endpoints and requires their modules in the consumer's native import closure.
-Import presence does not prove that the authored caller actually invokes the
-relation correctly. Caller preconditions and the relation between abstract
-arguments/results and C# remain authored checking/review obligations.
+Validation uses existing authorities only. Roslyn resolves the type with the
+project compiler profile and checks operation completeness; SANY, through the
+existing native index, resolves each named operator in the kind module. There
+is no expression parsing and no inferred member mapping. Asynchronous members
+are accepted because a wait is modeled as the caller's action guarded by the
+kind's wait predicate.
 
-The existing append-only review decision carries human/agent origin and
-summary-support fingerprints. Accepted inspection recording resolves the
-summary and pins its source/compiler context, formal imports and tools.
-Changes make support stale independently of the caller's native result.
-Acceptance requires current support for the transitive declared dependencies;
-agent decisions cannot satisfy human-origin obligations. Reports retain this
-conditional basis, not a generic composed C# correctness claim.
+Primitives are declared by a correspondence scope's `synchronization` section
+and used by TLC/trace stages. Only those stages get the shipped library on the
+SANY/TLC module search path; standalone link and review commands over a scope
+that declares primitives get it too, so model-owned links stay checkable. A
+stage's kind modules must appear, at their resolved paths, in the consumer's
+native import closure, so module bytes are pinned, archived and part of
+result-store keys like any model input, and an author module cannot shadow a
+shipped one.
 
-No helper PC/retry state is generated into caller models. Relations take
-explicit abstract state and outcomes; callers supply separate storage for
-independent instances and preserve unrelated state. Atomic summaries describe
-logical effects, not call duration, fairness, termination or hidden partial
-effects. Formal traces, safety results and inspection remain distinct evidence.
-Existing TLC result-store keys and reuse semantics are unchanged.
+Support is evidence about a primitive, not a cached result. A primitive is
+verified once by the scenarios its manifest names; those scenarios do not
+require its support. Other scenarios require, transitively over `depends_on`,
+a current accepted inspection whose review records one acceptance receipt per
+verification scenario, and each recorded verification run must be accepted
+when re-evaluated. Source, manifest, scope, module, compiler-context and tool
+changes stale the inspection; verification-input changes fail re-evaluation.
+Agent decisions cannot satisfy human obligations.
+
+Guarantees are validated vocabulary carried into plans, acceptance and reports
+as outstanding obligations until a later increment discharges them. Support is
+a finite check of a harness against the kind plus inspection; it is not a
+machine-checked refinement proof of the C# type.
 
 ### Source and native correspondence
 
@@ -414,6 +423,8 @@ and freshness handling are in a separate partial frontend under `PlusCal`.
 | `SourcePreparation.cs` | Byte-pinned source copies, Roslyn/SANY annotation targets, explicit C# control mutations and readonly copy validation |
 | `TlaBackend.cs` | Bounded fresh Java processes, normalized spans, dependencies and freshness |
 | `TlaIndex.java` | Authoritative SANY/PlusCal adapter |
+| `Tla/Primitives/TlaLink*.tla` | Shipped primitive kind modules, deployed under `primitives` |
+| `Primitives.cs` | Primitive manifests, stage selection, Roslyn completeness, SANY operator resolution and support pins |
 | `ModelScope.cs` | Model annotations, explicit label bindings and operator arities |
 | `Review.cs` | Scoped uniqueness/link/coverage diagnostics and review questions |
 | `Instrumentation.cs` | Validated, separately generated source captures and binding manifest |
@@ -1027,7 +1038,7 @@ New runs do not add required review inputs to their execution fingerprints.
 For a completed run with broad input pins, acceptance can classify an input as
 review-only only when a required review explicitly declares it and validated
 stage evidence establishes the execution closure. Authoring documents, compiler
-references, stage declarations, method-summary support and backend fingerprints
+references, stage declarations, primitive inputs and backend fingerprints
 remain execution dependencies; execution wins when roles overlap. Stored TLC
 keys supply its complete execution inputs. Missing, inconsistent or unknown
 closures keep current-byte checks conservative. Every original archived input
@@ -1058,7 +1069,7 @@ of archive integrity validation.
 Only equivalent execution and checker projections permit automatic current-policy
 reassessment in the existing accept/explain/report flow. The resulting typed
 policy comparison links recorded/current project, policy and authoring hashes,
-compatibility judgments and changed areas. Native stage/compiler/summary input
+compatibility judgments and changed areas. Native stage/compiler/primitive input
 roles override this exemption, including when a stage consumed authoring bytes.
 Incomplete evidence or an unknown execution closure cannot turn a changed
 project into current execution. All original archived inputs and artifacts are

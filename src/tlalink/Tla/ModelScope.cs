@@ -9,12 +9,13 @@ public sealed class ModelScope
     public List<Endpoint> Inventory { get; } = [];
     public Dictionary<string, string> Fingerprints { get; } = new(FilePaths.Comparer);
 
-    public static ModelScope Load(List<string> paths, string jar, int timeout, bool annotations = true)
+    public static ModelScope Load(List<string> paths, string jar, int timeout, bool annotations = true,
+        IReadOnlyList<string>? modulePath = null)
     {
         ModelScope result = new();
         foreach (string path in paths.Distinct(FilePaths.Comparer))
         {
-            TlaDocument document = TlaBackend.Parse(path, jar, timeout);
+            TlaDocument document = TlaBackend.Parse(path, jar, timeout, modulePath);
             result.Documents.Add(document);
             result.Inventory.AddRange(document.Endpoints.Select(endpoint => new Endpoint(endpoint.Name, endpoint.Scope, endpoint.Kind,
                 new(path, endpoint.Line, endpoint.EndLine, endpoint.Column), document.Text[endpoint.Start..endpoint.End])));

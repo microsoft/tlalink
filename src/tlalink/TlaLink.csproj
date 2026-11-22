@@ -36,6 +36,7 @@
     <Reference Include="Microsoft.CodeAnalysis" HintPath="$(MSBuildSDKsPath)\..\Roslyn\bincore\Microsoft.CodeAnalysis.dll" />
     <Reference Include="Microsoft.CodeAnalysis.CSharp" HintPath="$(MSBuildSDKsPath)\..\Roslyn\bincore\Microsoft.CodeAnalysis.CSharp.dll" />
     <None Update="Tla\TlaIndex.java" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" TargetPath="TlaIndex.java" />
+    <None Update="Tla\Primitives\TlaLink*.tla" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" TargetPath="primitives\%(Filename)%(Extension)" />
     <None Include="Common\Runtime\TraceRuntime.cs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" TargetPath="TraceRuntime.source.cs" />
   </ItemGroup>
 </Project>

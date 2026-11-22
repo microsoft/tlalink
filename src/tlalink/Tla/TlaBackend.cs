@@ -42,8 +42,9 @@ public sealed record TlaDocument(
 /// <summary>Read-only SANY/PlusCal bridge; offsets are UTF-16, end-exclusive.</summary>
 public static partial class TlaBackend
 {
-    public static TlaDocument Parse(string path, string jar, int timeoutSeconds)
+    public static TlaDocument Parse(string path, string jar, int timeoutSeconds, IReadOnlyList<string>? modulePath = null)
     {
+        string[] library = modulePath is { Count: > 0 } ? ["-DTLA-Library=" + string.Join(System.IO.Path.PathSeparator, modulePath)] : [];
         string text = "", hash = "";
         var endpoints = new List<TlaEndpoint>();
         var diagnostics = new List<TlaBackendDiagnostic>();
@@ -69,11 +70,11 @@ public static partial class TlaBackend
             Directory.CreateDirectory(work);
             Run("javac", ["-J-Djava.io.tmpdir=" + work, "-encoding", "UTF-8",
                 "-cp", jar, "-d", work, adapter], work, timeoutSeconds);
-            TlaNativeParse parsed = Index(path, text, jar, work, timeoutSeconds);
+            TlaNativeParse parsed = Index(path, text, jar, work, timeoutSeconds, library);
             index = parsed.Entries.AsReadOnly();
             AddIndex(index, path, text, true, endpoints, diagnostics, dependencies);
             (module, stateVariables) = AddMetadata(parsed.Metadata, endpoints);
-            CheckImports(path, jar, work, timeoutSeconds, endpoints, diagnostics, dependencies);
+            CheckImports(path, jar, work, timeoutSeconds, library, endpoints, diagnostics, dependencies);
             foreach (var pin in java.Fingerprints) Files.Pin(dependencies, pin.Key, pin.Value);
             CheckFingerprints(dependencies);
             if (Digest(path) != hash)
@@ -115,7 +116,7 @@ public static partial class TlaBackend
             .Select(v => v ?? throw new BackendFailure("Invalid state variable.")).ToArray()));
     }
 
-    private static void CheckImports(string root, string jar, string work, int timeout,
+    private static void CheckImports(string root, string jar, string work, int timeout, string[] library,
         List<TlaEndpoint> endpoints, List<TlaBackendDiagnostic> diagnostics,
         Dictionary<string, string> dependencies)
     {
@@ -133,7 +134,7 @@ public static partial class TlaBackend
             if (hash != dependencies[path])
                 throw new BackendFailure($"Dependency changed while parsing: {path}");
             if (AlgorithmArguments(text).Length > 0)
-                AddIndex(Index(path, text, jar, work, timeout).Entries, path, text, false,
+                AddIndex(Index(path, text, jar, work, timeout, library).Entries, path, text, false,
                     endpoints, diagnostics, dependencies);
         }
     }
@@ -145,9 +146,9 @@ public static partial class TlaBackend
                 throw new BackendFailure($"Dependency changed while parsing: {path}");
     }
 
-    private static TlaNativeParse Index(string path, string text, string jar, string work, int timeout)
+    private static TlaNativeParse Index(string path, string text, string jar, string work, int timeout, string[] library)
     {
-        string[] arguments = ["-Dfile.encoding=UTF-8", "-Djava.io.tmpdir=" + work,
+        string[] arguments = ["-Dfile.encoding=UTF-8", "-Djava.io.tmpdir=" + work, .. library,
             "-cp", work + System.IO.Path.PathSeparator + jar, "pcal.TlaIndex", path,
             .. AlgorithmArguments(text)];
         string json = Run("java", arguments, System.IO.Path.GetDirectoryName(path)!, timeout);

@@ -12,8 +12,10 @@ public static class ProjectAcceptance
         return evaluation.ExitCode;
     }
 
-    internal static (AcceptanceResult Report, int ExitCode, AcceptanceWorklist Worklist) Evaluate(string path, AnalysisProject project, AcceptancePolicy policy, string directory)
+    internal static (AcceptanceResult Report, int ExitCode, AcceptanceWorklist Worklist) Evaluate(string path, AnalysisProject project, AcceptancePolicy policy, string directory,
+        HashSet<string>? supporting = null)
     {
+        supporting ??= new(StringComparer.Ordinal);
         string runPath = Path.Combine(directory, "run.json");
         WorkflowRun run = ProjectInputs.Read<WorkflowRun>(runPath);
         if (run.SchemaVersion != Schema.Version || run.Kind != "analysis-run")
@@ -47,22 +49,27 @@ public static class ProjectAcceptance
                 string.Join(", ", comparison.Report.ChangedAreas) + ".");
         AnalysisScenario? scenario = project.Scenarios.SingleOrDefault(s => s.Id == run.Scenario);
         if (scenario == null) throw new InputException(ErrorCode.WorkflowProjectChanged, "Run scenario does not exist in this project.");
-        List<SelectedMethodSummary> selectedSummaries = MethodSummaries.Select(path, project, scenario.Stages);
-        string RecordedSummaryPath(string file) => FilePaths.Full(MethodSummaries.ReviewPath(path, file), run.ProjectDirectory);
-        if (run.MethodSummaries.Count != selectedSummaries.Count ||
-            selectedSummaries.Any(s => run.MethodSummaries.Count(r =>
-                FilePaths.Comparer.Equals(r.Scope, RecordedSummaryPath(s.Scope)) &&
-                FilePaths.Comparer.Equals(r.Specification.Location.Path, RecordedSummaryPath(CorrespondenceInputs.Target(
-                    s.Configuration, Markup.Name(s.Summary.Binding).Alias, "tla").Inputs.Single())) &&
-                Schema.Hash(r.Summary) == Schema.Hash(s.Summary)) != 1))
-            Error(ErrorCode.WorkflowStageInconsistent, "Run method summaries differ from the declared dependencies.");
-        foreach (SelectedMethodSummary summary in selectedSummaries)
+        List<SelectedPrimitive> selectedPrimitives = Primitives.Select(path, project, scenario.Stages);
+        string RecordedPath(string file) => FilePaths.Full(Primitives.ReviewPath(path, file), run.ProjectDirectory);
+        if (run.Primitives.Count != selectedPrimitives.Count ||
+            selectedPrimitives.Any(s => run.Primitives.Count(r =>
+                FilePaths.Comparer.Equals(r.Scope, RecordedPath(s.Scope)) &&
+                FilePaths.Comparer.Equals(r.Manifest, RecordedPath(s.Manifest)) &&
+                FilePaths.Comparer.Equals(r.Module, RecordedPath(s.Module)) &&
+                Schema.Hash(r.Primitive) == Schema.Hash(s.Primitive)) != 1))
+            Error(ErrorCode.WorkflowStageInconsistent, "Run primitives differ from the declared primitive uses.");
+        foreach (SelectedPrimitive primitive in selectedPrimitives)
+            foreach (string input in Primitives.Inputs(primitive))
+                if (!recordedPaths.ContainsKey(RecordedPath(input)))
+                    Error(ErrorCode.WorkflowProvenanceInconsistent, "Run is missing a primitive input pin: " + input);
+        Dictionary<string, List<PrimitiveVerificationStatus>> verifications = new(StringComparer.Ordinal);
+        List<PrimitiveVerificationStatus> Verified(SelectedPrimitive primitive)
         {
-            FormalTarget target = CorrespondenceInputs.Target(summary.Configuration, Markup.Name(summary.Summary.Binding).Alias, "tla");
-            foreach (string input in summary.Summary.Sources.Select(p => ProjectInputs.Resolve(summary.Scope, p))
-                .Concat(target.Inputs).Append(summary.Scope))
-                if (!recordedPaths.ContainsKey(RecordedSummaryPath(input)))
-                    Error(ErrorCode.WorkflowProvenanceInconsistent, "Run is missing a method-summary input pin: " + input);
+            string inspection = primitive.Primitive.Verification.Inspection;
+            if (!verifications.TryGetValue(inspection, out List<PrimitiveVerificationStatus>? known))
+                verifications.Add(inspection, known = ReviewStatus(path, project, inspection) == "accepted"
+                    ? Verification(path, project, policy, inspection, supporting) : []);
+            return known;
         }
         AcceptanceWorklist worklist = new(run, scenario, policy.Requirements.Where(r => r.Scenario == run.Scenario).ToList(), issues, groupedDiagnostics);
         List<CheckCoverage> coverage = ProjectInputs.Coverage(project, policy, [run.Scenario]);
@@ -170,7 +177,7 @@ public static class ProjectAcceptance
             evidence[stage.Id] = result;
         }
         HashSet<string> reviewOnly = issues.Count == 0
-            ? WorkflowInputRoles.ReviewOnly(path, project, policy, run, directory, evidence, selectedSummaries,
+            ? WorkflowInputRoles.ReviewOnly(path, project, policy, run, directory, evidence, selectedPrimitives,
                 comparison.ReviewInputs)
             : new(FilePaths.Comparer);
         List<string> changedReviewInputs = [];
@@ -262,7 +269,8 @@ public static class ProjectAcceptance
                         Missing("exact selected test IDs");
                 }
             }
-            foreach (string review in (requirement.Reviews ?? []).Concat(MethodSummaries.Inspections(path, project, [selected]))
+            List<SelectedPrimitive> requiredPrimitives = Primitives.Required(path, project, run.Scenario, [selected]);
+            foreach (string review in (requirement.Reviews ?? []).Concat(requiredPrimitives.Select(p => p.Primitive.Verification.Inspection))
                 .Distinct(StringComparer.Ordinal))
             {
                 string status = ReviewStatus(path, project, review);
@@ -272,24 +280,43 @@ public static class ProjectAcceptance
                     worklist.Review(review, status, requirement);
                 }
             }
+            foreach (SelectedPrimitive primitive in requiredPrimitives)
+                foreach (PrimitiveVerificationStatus verification in Verified(primitive).Where(v => v.Status != "accepted"))
+                    Missing("accepted verification scenario " + verification.Scenario + " for primitive " + primitive.Primitive.Id +
+                        " (" + verification.Status + ")");
             worklist.Requirement(requirement, actionable);
             if (missing.Count > 0) Error(ErrorCode.WorkflowRequirementUnsatisfied, requirement.Id + ": missing " + string.Join(", ", missing), true);
             requirements.Add(new RequirementResult(requirement.Id, missing.Count == 0 ? "satisfied" : "unsatisfied", missing));
         }
         if (requirements.Count == 0) Error(ErrorCode.WorkflowRequirementUnsatisfied, "No requirements for this scenario.");
         bool accepted = issues.All(i => i.Severity != "error");
+        Dictionary<string, string> supportStatus = new(StringComparer.Ordinal);
+        string Support(SelectedPrimitive primitive)
+        {
+            if (supportStatus.TryGetValue(primitive.Primitive.Id, out string? known)) return known;
+            bool current = ReviewStatus(path, project, primitive.Primitive.Verification.Inspection) == "accepted" &&
+                Verified(primitive).All(v => v.Status == "accepted") &&
+                (primitive.Primitive.DependsOn ?? []).All(id => Support(selectedPrimitives.Single(p => p.Primitive.Id == id)) == "current");
+            supportStatus.Add(primitive.Primitive.Id, current ? "current" : "not-current");
+            return supportStatus[primitive.Primitive.Id];
+        }
+        List<string> requiredInspections = Primitives.Inspections(path, project, run.Scenario, scenario.Stages).ToList();
         AcceptanceResult report = new(Schema.Version, "acceptance-result", project.Id, run.Scenario,
             directory, Files.Hash(runPath), run.ExecutionStatus,
             issues.Any(i => i.Code == ErrorCode.WorkflowProvenanceInconsistent.Id()) ? "inconsistent" : "consistent",
             issues.Any(i => i.Is(ErrorCode.WorkflowProjectChanged, ErrorCode.WorkflowEvidenceStale)) ? "stale" : "current",
             accepted ? "accepted" : "not-accepted", requirements, issues, coverage,
-            selectedSummaries.Select(s => new AcceptanceMethodSummary(
-                s.Scope, s.Summary.Binding, s.Summary.Abstraction, s.Summary.Assumptions, s.Summary.Limits,
-                s.Summary.Inspection, ReviewStatus(path, project, s.Summary.Inspection),
-                "Caller result is conditional on this reviewed abstraction; not machine-checked C# refinement."
-            )).ToList(),
+            selectedPrimitives.Select(p => {
+                bool verifiedHere = p.Primitive.Verification.Scenarios.Contains(run.Scenario, StringComparer.Ordinal);
+                return new AcceptancePrimitive(p.Scope, p.Primitive.Id, p.Primitive.PrimitiveKind, p.Primitive.Type,
+                    verifiedHere ? "verified-by-this-scenario" : "required",
+                    p.Primitive.Verification.Inspection, ReviewStatus(path, project, p.Primitive.Verification.Inspection),
+                    verifiedHere ? [] : Verified(p), verifiedHere ? "established-by-this-scenario" : Support(p),
+                    p.Primitive.DependsOn ?? [], p.Primitive.Guarantees ?? [], p.Primitive.Assumptions, p.Primitive.Limits,
+                    "Caller results are conditional on this primitive's verification scenarios and inspection; listed guarantees are outstanding obligations; not machine-checked C# refinement.");
+            }).ToList(),
             policy.Requirements.Where(r => r.Scenario == run.Scenario).SelectMany(r => r.Reviews ?? [])
-                .Concat(selectedSummaries.Select(s => s.Summary.Inspection))
+                .Concat(requiredInspections)
                 .Distinct().Select(id => new ReviewResult(id, ReviewStatus(path, project, id),
                     LatestReview(path, project, id))).ToList(),
             issues.Select(i => i.Message).Distinct().ToList(),
@@ -308,7 +335,7 @@ public static class ProjectAcceptance
         if (review == null) return "pending";
         if (review.ObligationSha256 != Schema.Hash(obligation)) return "stale";
         if (review.Origin != obligation.Origin) return "origin-mismatch";
-        List<string> required = obligation.Inputs.Concat(review.Evidence).Concat(review.SummarySupport?.Inputs ?? [])
+        List<string> required = obligation.Inputs.Concat(review.Evidence).Concat(review.PrimitiveSupport?.Inputs ?? [])
             .Select(p => ProjectInputs.Resolve(path, p))
             .Distinct(FilePaths.Comparer).ToList();
         Dictionary<string, string> fingerprints = new(FilePaths.Comparer);
@@ -320,19 +347,52 @@ public static class ProjectAcceptance
             if (!fingerprints.TryGetValue(input, out string? hash) ||
                 !File.Exists(input) || Files.Hash(input) != hash)
                 return "stale";
-        Dictionary<string, string> summaryPins = new(FilePaths.Comparer);
-        MethodSummarySupport? currentSupport = MethodSummaries.Support(path, project, id, summaryPins, validate: false);
-        if (currentSupport != null && (review.SummarySupport == null ||
-            currentSupport.SelectionSha256 != review.SummarySupport.SelectionSha256 ||
-            currentSupport.SourceContextSha256 != review.SummarySupport.SourceContextSha256 ||
-            currentSupport.Inputs.Any(p => !review.SummarySupport.Inputs
-                .Select(i => ProjectInputs.Resolve(path, i)).Contains(ProjectInputs.Resolve(path, p), FilePaths.Comparer))) ||
-            currentSupport == null && review.SummarySupport != null)
+        Dictionary<string, string> supportPins = new(FilePaths.Comparer);
+        CurrentPrimitiveSupport? currentSupport = Primitives.Support(path, project, id, supportPins, validate: false);
+        PrimitiveSupport? recorded = review.PrimitiveSupport;
+        if (currentSupport != null && (recorded == null ||
+            currentSupport.SelectionSha256 != recorded.SelectionSha256 ||
+            currentSupport.SourceContextSha256 != recorded.SourceContextSha256 ||
+            currentSupport.Inputs.Any(p => !recorded.Inputs
+                .Select(i => ProjectInputs.Resolve(path, i)).Contains(ProjectInputs.Resolve(path, p), FilePaths.Comparer)) ||
+            review.Disposition == "accepted" && (
+                !recorded.Verification.Select(v => v.Scenario).Order(StringComparer.Ordinal).SequenceEqual(currentSupport.Scenarios) ||
+                recorded.Verification.Any(v => !review.Evidence.Contains(v.Receipt, FilePaths.Comparer)))) ||
+            currentSupport == null && recorded != null)
             return "stale";
         return review.Disposition;
     }
 
-    public static int RecordReview(string path, AnalysisProject project, CliOptions options)
+    /// <summary>Re-evaluates the acceptance receipts recorded with a primitive inspection; nothing is cached.</summary>
+    internal static List<PrimitiveVerificationStatus> Verification(string path, AnalysisProject project, AcceptancePolicy policy,
+        string inspection, HashSet<string> supporting)
+    {
+        List<PrimitiveVerificationStatus> result = [];
+        foreach (PrimitiveVerificationEvidence item in LatestReview(path, project, inspection)?.PrimitiveSupport?.Verification ?? [])
+        {
+            string status;
+            if (!supporting.Add(inspection)) status = "cyclic";
+            else
+            {
+                try
+                {
+                    AcceptanceResult receipt = ProjectInputs.Read<AcceptanceResult>(ProjectInputs.Resolve(path, item.Receipt));
+                    AcceptanceResult current = Evaluate(path, project, policy, receipt.Run, supporting).Report;
+                    status = receipt.Scenario != item.Scenario || current.Scenario != item.Scenario ||
+                        current.RunSha256 != receipt.RunSha256 ? "inconsistent" : current.AcceptanceStatus;
+                }
+                catch (Exception error) when (error is InputException or IOException or UnauthorizedAccessException or JsonException)
+                {
+                    status = "unavailable";
+                }
+                finally { supporting.Remove(inspection); }
+            }
+            result.Add(new(item.Scenario, item.Receipt, status));
+        }
+        return result;
+    }
+
+    public static int RecordReview(string path, AnalysisProject project, AcceptancePolicy policy, CliOptions options)
     {
         string id = options.Required("obligation");
         ReviewObligation obligation = project.Obligations.SingleOrDefault(o => o.Id == id)
@@ -354,18 +414,35 @@ public static class ProjectAcceptance
         Dictionary<string, string> fingerprints = new(FilePaths.Comparer);
         foreach (string input in obligation.Inputs.Concat(evidence).Select(p => FilePaths.Relative(p, directory)).Distinct(FilePaths.Comparer))
             fingerprints.Add(input, Files.Hash(ProjectInputs.Resolve(path, input)));
-        Dictionary<string, string> summaryPins = new(FilePaths.Comparer);
-        MethodSummarySupport? support = MethodSummaries.Support(path, project, id, summaryPins, validate: true);
-        foreach (var pin in summaryPins)
+        Dictionary<string, string> supportPins = new(FilePaths.Comparer);
+        CurrentPrimitiveSupport? current = Primitives.Support(path, project, id, supportPins, validate: true);
+        List<PrimitiveVerificationEvidence> verification = [];
+        if (current != null && disposition == "accepted")
+            foreach (string scenario in current.Scenarios)
+            {
+                List<(string Path, AcceptanceResult Receipt)> receipts = evidence.Select(p => (Path: p, Receipt: Receipt(ProjectInputs.Resolve(path, p))))
+                    .Where(r => r.Receipt?.Scenario == scenario).Select(r => (r.Path, r.Receipt!)).ToList();
+                if (receipts.Count != 1)
+                    throw new InputException(ErrorCode.InvalidWorkflowInput,
+                        "Accepted primitive inspection needs exactly one acceptance receipt as evidence for verification scenario " + scenario + ".");
+                AcceptanceResult receipt = receipts[0].Receipt;
+                HashSet<string> supporting = new(StringComparer.Ordinal) { id };
+                AcceptanceResult evaluation = Evaluate(path, project, policy, receipt.Run, supporting).Report;
+                if (receipt.Project != project.Id || receipt.AcceptanceStatus != "accepted" ||
+                    evaluation.AcceptanceStatus != "accepted" || evaluation.RunSha256 != receipt.RunSha256)
+                    throw new InputException(ErrorCode.InvalidWorkflowInput,
+                        "Verification scenario " + scenario + " is not currently accepted for the recorded run: " + receipt.Run);
+                verification.Add(new(scenario, receipts[0].Path));
+            }
+        foreach (var pin in supportPins)
         {
             string key = fingerprints.Keys.SingleOrDefault(k =>
                 FilePaths.Comparer.Equals(ProjectInputs.Resolve(path, k), ProjectInputs.Resolve(path, pin.Key))) ?? pin.Key;
             Files.Pin(fingerprints, key, pin.Value);
         }
-        if (support != null) support = support with {
-            Inputs = support.Inputs.Select(p => fingerprints.Keys.Single(k =>
-                FilePaths.Comparer.Equals(ProjectInputs.Resolve(path, k), ProjectInputs.Resolve(path, p)))).ToList()
-        };
+        PrimitiveSupport? support = current == null ? null : new(current.SelectionSha256, current.SourceContextSha256,
+            current.Inputs.Select(p => fingerprints.Keys.Single(k =>
+                FilePaths.Comparer.Equals(ProjectInputs.Resolve(path, k), ProjectInputs.Resolve(path, p)))).ToList(), verification);
         ReviewDecision review = new(Schema.Version, "review-decision", id, Schema.Hash(obligation), disposition, reviewer,
             rationale, DateTimeOffset.UtcNow, fingerprints, evidence, origin, support);
         directory = Path.Combine(ProjectInputs.Resolve(path, project.ReviewDirectory), id);
@@ -390,13 +467,30 @@ public static class ProjectAcceptance
                 review.Disposition is not ("accepted" or "rejected" or "pending") || review.Fingerprints.Count == 0 ||
                 review.Evidence.Count == 0 || string.IsNullOrWhiteSpace(review.Reviewer) || string.IsNullOrWhiteSpace(review.Rationale))
                 throw new InputException(ErrorCode.InvalidWorkflowInput, "Invalid review decision: " + file);
-            if (review.SummarySupport is { } support && (support.Inputs.Count == 0 ||
+            if (review.PrimitiveSupport is { } support && (support.Inputs.Count == 0 ||
                 support.Inputs.Distinct(FilePaths.Comparer).Count() != support.Inputs.Count ||
+                support.Verification.Any(v => v == null || !Schema.IsStableId(v.Scenario) || !review.Evidence.Contains(v.Receipt, FilePaths.Comparer)) ||
+                support.Verification.Select(v => v.Scenario).Distinct(StringComparer.Ordinal).Count() != support.Verification.Count ||
                 new[] { support.SelectionSha256, support.SourceContextSha256 }.Any(h => h.Length != 64 || h.Any(c => !char.IsAsciiHexDigit(c)))))
-                throw new InputException(ErrorCode.InvalidWorkflowInput, "Invalid method-summary support in review: " + file);
+                throw new InputException(ErrorCode.InvalidWorkflowInput, "Invalid primitive support in review: " + file);
             decisions.Add(review);
         }
         return decisions.OrderByDescending(r => r.RecordedAt).FirstOrDefault();
+    }
+
+    private static AcceptanceResult? Receipt(string file)
+    {
+        if (!Path.GetExtension(file).Equals(".json", StringComparison.OrdinalIgnoreCase) || !File.Exists(file)) return null;
+        try
+        {
+            JsonElement root = JsonSerializer.Deserialize<JsonElement>(Files.Read(file), ProjectInputs.Json);
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("kind", out JsonElement kind) ||
+                kind.ValueKind != JsonValueKind.String || kind.GetString() != "acceptance-result")
+                return null;
+            Files.RequireSchema(root, "acceptance-result");
+            return root.Deserialize<AcceptanceResult>(ProjectInputs.Json);
+        }
+        catch (JsonException) { return null; }
     }
 
     internal static string SafePath(string root, string relative)

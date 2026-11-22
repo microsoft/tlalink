@@ -16,7 +16,7 @@ public sealed record CompilerProfile(string TargetFramework, string LanguageVers
 public sealed record AnalysisStage(string Id, string Kind, List<string> DependsOn, int TimeoutSeconds,
     string? Bindings = null, List<string>? Sources = null, List<string>? Models = null,
     string? Config = null, List<string>? Arguments = null, TlcResources? Resources = null, int? Fingerprint = null,
-    string? Scope = null, string? Target = null, List<MethodSummaryUse>? MethodSummaries = null);
+    string? Scope = null, string? Target = null, List<PrimitiveUse>? Primitives = null);
 public sealed record AnalysisScenario(string Id, List<AnalysisStage> Stages);
 public enum ReviewOrigin { Human, Agent }
 public sealed record ReviewObligation(string Id, string Claim, List<string> Assumptions, List<string> Inputs,
@@ -27,7 +27,7 @@ public sealed record CheckCoverage(string Id, string Kind, string Scenario, stri
 public sealed record ReviewDecision(int SchemaVersion, string Kind, string Obligation, string ObligationSha256,
     string Disposition, string Reviewer, string Rationale, DateTimeOffset RecordedAt,
     Dictionary<string, string> Fingerprints, List<string> Evidence, ReviewOrigin Origin = ReviewOrigin.Human,
-    MethodSummarySupport? SummarySupport = null);
+    PrimitiveSupport? PrimitiveSupport = null);
 public sealed record AnalysisProject(int SchemaVersion, string Kind, string Id, ProjectTools Tools,
     CompilerProfile Compiler, string Requirements, List<AnalysisScenario> Scenarios,
     List<ReviewObligation> Obligations, string ReviewDirectory, List<CheckObligation>? CheckObligations = null,
@@ -64,7 +64,7 @@ public sealed class WorkflowRun
     public Dictionary<string, string> Fingerprints { get; init; } = new(FilePaths.Comparer);
     public Dictionary<string, string> Artifacts { get; init; } = new(StringComparer.Ordinal);
     public List<Issue> Diagnostics { get; init; } = [];
-    public List<MethodSummaryResolution> MethodSummaries { get; init; } = [];
+    public List<PrimitiveResolution> Primitives { get; init; } = [];
 }
 
 public static class ProjectInputs
@@ -236,7 +236,7 @@ public static class ProjectInputs
                 throw new InputException(ErrorCode.InvalidWorkflowInput, "Review obligations require a claim, explicit inputs and nonempty assumptions.");
             foreach (string input in obligation.Inputs) _ = Resolve(path, input);
         }
-        MethodSummaries.Select(path, project, project.Scenarios.SelectMany(s => s.Stages));
+        Primitives.Select(path, project, project.Scenarios.SelectMany(s => s.Stages));
         if (string.IsNullOrWhiteSpace(project.ReviewDirectory))
             throw new InputException(ErrorCode.InvalidWorkflowInput, "A review directory must be explicitly selected.");
         if (project.ResultStore != null && string.IsNullOrWhiteSpace(project.ResultStore))

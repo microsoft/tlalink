@@ -26,7 +26,8 @@ public static class ProjectEditorSchema
             ("component", "project-component", typeof(ProjectComponent)),
             ("inputSets", "project-input-sets", typeof(ProjectInputSets)),
             ("executionProfiles", "project-execution-profiles", typeof(ProjectExecutionProfiles)),
-            ("correspondenceScope", "correspondence-scope", typeof(CorrespondenceConfiguration))
+            ("correspondenceScope", "correspondence-scope", typeof(CorrespondenceConfiguration)),
+            ("primitive", "primitive", typeof(PrimitiveManifest))
         ];
         foreach (var document in documents)
         {
@@ -103,22 +104,33 @@ public static class ProjectEditorSchema
                     timeout["minimum"] = 1;
                     timeout["maximum"] = 7200;
                 }
-                if (properties["method_summaries"] is JsonObject summaries)
-                    summaries["maxItems"] = 1000;
-                if (properties.ContainsKey("abstraction") && properties.ContainsKey("inspection"))
+                if (properties["primitives"] is JsonObject primitives)
                 {
-                    properties["abstraction"]!["enum"] = new JsonArray("pure", "atomic");
+                    primitives["minItems"] = 1;
+                    primitives["maxItems"] = 1000;
+                }
+                if (properties.ContainsKey("primitive_kind") && properties.ContainsKey("operations"))
+                {
+                    properties["primitive_kind"]!["enum"] = new JsonArray(Primitives.Kinds.Select(k => (JsonNode?)JsonValue.Create(k)).ToArray());
                     properties["sources"]!["minItems"] = 1;
                     properties["sources"]!["maxItems"] = 1000;
                     properties["sources"]!["uniqueItems"] = true;
+                    properties["operations"]!["minItems"] = 1;
+                    properties["operations"]!["maxItems"] = 1000;
                     properties["limits"]!["minItems"] = 1;
                     properties["depends_on"]!["uniqueItems"] = true;
+                    properties["guarantees"]!["uniqueItems"] = true;
+                    properties["guarantees"]!["items"] = new JsonObject {
+                        ["enum"] = new JsonArray(Primitives.Guarantees.Select(g => (JsonNode?)JsonValue.Create(g)).ToArray())
+                    };
                 }
-                if (properties.ContainsKey("scope") && properties.ContainsKey("bindings") && !properties.ContainsKey("kind"))
+                if (properties.ContainsKey("member") && properties.ContainsKey("role"))
+                    properties["role"]!["enum"] = new JsonArray(Primitives.Roles.Select(r => (JsonNode?)JsonValue.Create(r)).ToArray());
+                if (properties.ContainsKey("scope") && properties.ContainsKey("ids"))
                 {
-                    properties["bindings"]!["minItems"] = 1;
-                    properties["bindings"]!["maxItems"] = 1000;
-                    properties["bindings"]!["uniqueItems"] = true;
+                    properties["ids"]!["minItems"] = 1;
+                    properties["ids"]!["maxItems"] = 1000;
+                    properties["ids"]!["uniqueItems"] = true;
                 }
                 if (properties.ContainsKey("timeout_seconds") && properties["kind"] is JsonObject kind)
                     kind["enum"] = new JsonArray(ProjectInputs.StageKinds.Select(k => (JsonNode?)JsonValue.Create(k)).ToArray());

@@ -48,7 +48,12 @@ public static class Program
             if (target != null && options.Many("model").Count != 0 &&
                 !Files.Discover(options.Many("model"), ".tla").SequenceEqual(target.Inputs, FilePaths.Comparer))
                 throw new InputException(ErrorCode.InvalidModelBinding, "--model contradicts the selected correspondence target.");
-            ModelScope models = ModelScope.Load(modelPaths, jar, options.Timeout, annotations: options.Command != "inputs");
+            // Project trace stages pass the search path of their declared primitive uses explicitly.
+            List<string> modulePath = options.Command is "instrument" or "validate-trace"
+                ? options.Many("module-path").Select(p => FilePaths.Full(p)).ToList()
+                : correspondence == null ? [] : Primitives.ModulePath(FilePaths.Full(options.Required("scope")), correspondence, scopePins);
+            ModelScope models = ModelScope.Load(modelPaths, jar, options.Timeout, annotations: options.Command != "inputs",
+                modulePath: modulePath);
             foreach (var pin in scopePins) Files.Pin(models.Fingerprints, pin.Key, pin.Value);
             PinTool(models.Fingerprints);
             Files.Pin(models.Fingerprints, jar, Files.Hash(jar));

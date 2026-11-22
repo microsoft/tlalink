@@ -17,6 +17,9 @@
     },
     {
       "$ref": "#/$defs/correspondenceScope"
+    },
+    {
+      "$ref": "#/$defs/primitive"
     }
   ],
   "$defs": {
@@ -387,7 +390,7 @@
                       ],
                       "default": null
                     },
-                    "method_summaries": {
+                    "primitives": {
                       "type": [
                         "array",
                         "null"
@@ -401,7 +404,7 @@
                           "scope": {
                             "type": "string"
                           },
-                          "bindings": {
+                          "ids": {
                             "type": "array",
                             "items": {
                               "type": [
@@ -416,11 +419,12 @@
                         },
                         "required": [
                           "scope",
-                          "bindings"
+                          "ids"
                         ],
                         "additionalProperties": false
                       },
                       "default": null,
+                      "minItems": 1,
                       "maxItems": 1000
                     }
                   },
@@ -887,7 +891,7 @@
                 ],
                 "default": null
               },
-              "method_summaries": {
+              "primitives": {
                 "type": [
                   "array",
                   "null"
@@ -901,7 +905,7 @@
                     "scope": {
                       "type": "string"
                     },
-                    "bindings": {
+                    "ids": {
                       "type": "array",
                       "items": {
                         "type": [
@@ -916,11 +920,12 @@
                   },
                   "required": [
                     "scope",
-                    "bindings"
+                    "ids"
                   ],
                   "additionalProperties": false
                 },
                 "default": null,
+                "minItems": 1,
                 "maxItems": 1000
               }
             },
@@ -1520,70 +1525,152 @@
           },
           "maxItems": 1000
         },
-        "method_summaries": {
+        "synchronization": {
           "type": [
-            "array",
+            "object",
             "null"
           ],
+          "properties": {
+            "primitives": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 1000
+            }
+          },
+          "required": [
+            "primitives"
+          ],
+          "additionalProperties": false,
+          "default": null
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "annotation_version",
+        "targets",
+        "omissions"
+      ],
+      "additionalProperties": false
+    },
+    "primitive": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 4
+        },
+        "kind": {
+          "type": "string",
+          "const": "primitive"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,100}$",
+          "not": {
+            "enum": [
+              ".",
+              ".."
+            ]
+          }
+        },
+        "type": {
+          "type": "string"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 1000,
+          "uniqueItems": true
+        },
+        "primitive_kind": {
+          "type": "string",
+          "enum": [
+            "register",
+            "latch",
+            "once",
+            "admission-gate",
+            "counting-resource",
+            "channel",
+            "cancellation-source",
+            "custom"
+          ]
+        },
+        "operations": {
+          "type": "array",
           "items": {
             "type": [
               "object",
               "null"
             ],
             "properties": {
-              "binding": {
+              "member": {
                 "type": "string"
               },
-              "abstraction": {
+              "role": {
                 "type": "string",
                 "enum": [
-                  "pure",
-                  "atomic"
+                  "create",
+                  "query",
+                  "acquire",
+                  "try-acquire",
+                  "release",
+                  "signal",
+                  "wait",
+                  "close",
+                  "complete",
+                  "enqueue",
+                  "dequeue",
+                  "pure"
                 ]
               },
-              "sources": {
-                "type": "array",
+              "actions": {
+                "type": [
+                  "array",
+                  "null"
+                ],
                 "items": {
                   "type": [
                     "string",
                     "null"
                   ]
                 },
-                "minItems": 1,
-                "maxItems": 1000,
-                "uniqueItems": true
+                "default": null
               },
-              "inspection": {
-                "type": "string"
-              },
-              "assumptions": {
-                "type": "array",
-                "items": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                }
-              },
-              "limits": {
-                "type": "array",
+              "fails": {
+                "type": [
+                  "array",
+                  "null"
+                ],
                 "items": {
                   "type": [
                     "string",
                     "null"
                   ]
                 },
-                "minItems": 1
+                "default": null
               },
-              "depends_on": {
-                "type": "array",
-                "items": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "uniqueItems": true
+              "wait": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "default": null
               },
               "precondition": {
                 "type": [
@@ -1594,26 +1681,112 @@
               }
             },
             "required": [
-              "binding",
-              "abstraction",
-              "sources",
-              "inspection",
-              "assumptions",
-              "limits",
-              "depends_on"
+              "member",
+              "role"
             ],
             "additionalProperties": false
           },
-          "default": null,
+          "minItems": 1,
           "maxItems": 1000
+        },
+        "verification": {
+          "type": "object",
+          "properties": {
+            "scenarios": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "inspection": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scenarios",
+            "inspection"
+          ],
+          "additionalProperties": false
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "limits": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "minItems": 1
+        },
+        "module": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "guarantees": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "enum": [
+              "signals-async",
+              "non-blocking",
+              "fifo-waiters",
+              "cancellable-wait",
+              "inline-callbacks"
+            ]
+          },
+          "default": null,
+          "uniqueItems": true
+        },
+        "depends_on": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default": null,
+          "uniqueItems": true
+        },
+        "$schema": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
         }
       },
       "required": [
         "schema_version",
         "kind",
-        "annotation_version",
-        "targets",
-        "omissions"
+        "id",
+        "type",
+        "sources",
+        "primitive_kind",
+        "operations",
+        "verification",
+        "assumptions",
+        "limits"
       ],
       "additionalProperties": false
     }

@@ -1,0 +1,67 @@
+{
+  "$schema": "../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "analysis-project",
+  "annotation_version": 4,
+  "id": "primitives",
+  "tools": {
+    "jar": {
+      "path": "..\\..\\.tools\\tla\\v1.8.0\\tla2tools.jar",
+      "sha256": "D15655EEAFF4B3F7B3D65C46B838BC0F35D131B2EF4B1E473689B62C98D4726F"
+    }
+  },
+  "compiler": {
+    "target_framework": "net10.0",
+    "language_version": "14",
+    "nullable": "enable",
+    "checked": false,
+    "allow_unsafe": true,
+    "references": []
+  },
+  "requirements": "verification\\requirements.json",
+  "review_directory": "..\\..\\Results\\primitives\\reviews",
+  "result_store": "..\\..\\Results\\primitives\\store",
+  "components": ["components\\uploader.json"],
+  "obligations": [
+    {
+      "id": "permit-gate-inspection",
+      "claim": "PermitGate implements the counting-resource operations declared in its primitive manifest under the declared assumptions.",
+      "assumptions": ["The primitive manifest assumptions hold for every caller of PermitGate."],
+      "inputs": ["src\\PermitGate.cs", "primitives\\permit-gate\\primitive.json", "primitives\\permit-gate\\inspection.md"],
+      "origin": "agent"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "permit-gate",
+      "stages": [
+        {
+          "id": "permit-gate-harness",
+          "kind": "tlc",
+          "timeout_seconds": 60,
+          "models": ["primitives\\permit-gate\\PermitGateHarness.tla"],
+          "config": "primitives\\permit-gate\\PermitGateHarness.cfg",
+          "resources": {"workers": 1, "max_heap_mib": 256},
+          "primitives": [
+            {"scope": "verification\\scope.json", "ids": ["permit-gate"]}
+          ]
+        },
+        {
+          "id": "permit-gate-lost-release",
+          "kind": "tlc",
+          "timeout_seconds": 60,
+          "models": ["primitives\\permit-gate\\PermitGateHarness.tla"],
+          "config": "primitives\\permit-gate\\PermitGateLostRelease.cfg",
+          "resources": {"workers": 1, "max_heap_mib": 256},
+          "primitives": [
+            {"scope": "verification\\scope.json", "ids": ["permit-gate"]}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "uploader",
+      "components": ["uploader"]
+    }
+  ]
+}

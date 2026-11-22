@@ -12,13 +12,14 @@ public static class CommandSummary
             AcceptanceResult acceptance => Acceptance(acceptance, worklist),
             WorkflowRun run => Workflow(run),
             ProjectPlan plan => new ProjectPlanSummary(plan.Kind, plan.Project, plan.Status, plan.AnnotationVersion,
-                plan.MethodSummaries.Select(s => new PlannedMethodSummaryView(s.Scope, s.Summary, s.Method,
-                    s.InspectionStatus, s.InspectionOrigin, s.Boundary,
-                    s.Precondition is { } p ? new(p.Name, p.Scope, p.Kind, p.Location) : null)).ToList(),
+                plan.Primitives.Select(p => new PlannedPrimitiveView(p.Scope, p.Primitive.Id, p.Primitive.PrimitiveKind,
+                    p.Primitive.Type, p.Module, p.Primitive.Operations.Count, p.Primitive.Verification.Scenarios,
+                    p.Primitive.Verification.Inspection, p.InspectionStatus, p.InspectionOrigin, p.Primitive.DependsOn ?? [],
+                    p.OutstandingGuarantees, p.Boundary)).ToList(),
                 plan.CheckCoverage.Select(Coverage).ToList(), plan.Diagnostics,
                 plan.Scenarios.Select(s => new PlannedScenarioSummary(s.Id, s.Stages.Select(stage =>
                     new PlannedStageSummary(stage.Id, stage.Kind, stage.DependsOn, stage.RequestedResources,
-                        stage.Resources, stage.Fingerprint, stage.Stored, stage.MethodSummaries)).ToList())).ToList(),
+                        stage.Resources, stage.Fingerprint, stage.Stored, stage.Primitives)).ToList())).ToList(),
                 plan.ReviewStatus, plan.Boundary),
             SourceInventoryResult inventory => new SourceInventorySummary(inventory.Status, inventory.AnnotationVersion,
                 inventory.SourceCount, inventory.MemberCount, inventory.CallCount, inventory.AwaitCount,
@@ -121,7 +122,7 @@ public static class CommandSummary
         AcceptanceSummary summary = new(result.Project, result.Scenario, result.ExecutionStatus,
             result.ArchiveStatus, result.CurrentApplicability, result.AcceptanceStatus,
             result.Requirements.Select(r => new RequirementSummary(r.Id, r.Status, r.Missing)).ToList(),
-            result.Diagnostics, result.CheckCoverage.Select(Coverage).ToList(), result.MethodSummaries,
+            result.Diagnostics, result.CheckCoverage.Select(Coverage).ToList(), result.Primitives,
             result.Reviews.Select(r => new ReviewSummary(r.Obligation, r.Status, r.Decision?.Disposition,
                 r.Decision?.Reviewer, r.Decision?.Rationale, r.Decision?.RecordedAt, r.Decision?.Origin)).ToList(),
             result.NextActions, result.Boundary) { Run = result.Run, ChangedReviewInputs = result.ChangedReviewInputs,
@@ -137,8 +138,8 @@ public static class CommandSummary
         int reused = stages.Count(s => s.Reused);
         return new(run.Project, run.Scenario, run.ExecutionStatus, run.AcceptanceStatus, stages,
             run.Diagnostics, new(reused, stages.Count - reused),
-            run.MethodSummaries.Select(s => new ResolvedMethodSummaryView(s.Scope, s.Summary, s.Method,
-                s.Precondition is { } p ? new(p.Name, p.Scope, p.Kind, p.Location) : null)).ToList());
+            run.Primitives.Select(p => new ResolvedPrimitiveView(p.Scope, p.Primitive.Id, p.Primitive.PrimitiveKind,
+                p.Primitive.Type, p.Module, p.Primitive.Operations.Count)).ToList());
     }
 
     private static GcPlanSummary GarbageCollection(GcPlan plan)

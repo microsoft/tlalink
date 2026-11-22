@@ -1,0 +1,30 @@
+{
+  "schema_version": 4,
+  "kind": "acceptance-policy",
+  "project": "primitives",
+  "requirements": [
+    {
+      "id": "permit-gate-harness-safe",
+      "scenario": "permit-gate",
+      "stage": "permit-gate-harness",
+      "expected": "passed",
+      "config_sha256": "AD5BB0A9E6050BA84ED5DFAD69A3E016B1D5D0E4E5FD702484EA0D1F7F926727"
+    },
+    {
+      "id": "permit-gate-lost-release-rejected",
+      "scenario": "permit-gate",
+      "stage": "permit-gate-lost-release",
+      "expected": "rejected",
+      "diagnostic": "TLC2110",
+      "diagnostic_text": "Invariant Accounting is violated.",
+      "config_sha256": "73D01DEF2A85327C7230AE19C8E0F69B6EF5DE8A3FB6E2DF2585CC52B000630B"
+    },
+    {
+      "id": "uploader-safe",
+      "scenario": "uploader",
+      "stage": "uploader",
+      "expected": "passed",
+      "config_sha256": "8D4DA8B8E0E5F734F7F7117428B4E2EE60AB763E2089D41C38B66F0544A3FB03"
+    }
+  ]
+}

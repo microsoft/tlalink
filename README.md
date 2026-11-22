@@ -178,9 +178,10 @@ TlaLink does not model a whole program at once. For a larger system:
   rather than relying on implementation details.
 - **Keep checks beside their code.** [Component manifests](examples/Components/README.md)
   let each part of the codebase own its checks, combined into one project.
-- **Reuse reviewed method summaries.** [Small TLA+ relations](examples/MethodSummaries/README.md)
-  let caller models omit helper internals. Source-pinned agent inspection
-  supports the abstraction; caller results remain conditional on it.
+- **Verify synchronization primitives once.** [Primitive manifests](examples/Primitives/README.md)
+  map a C# gate, latch or queue onto a shipped TLA+ kind contract that caller
+  models instance. A verification scenario and source-pinned inspection support
+  it; caller results remain conditional on that support.
 - **Only re-check what changed.** With a declared result store, completed
   TLC searches are reused while their models and configurations are unchanged,
   like an incremental build. Expensive searches can run once, separately,

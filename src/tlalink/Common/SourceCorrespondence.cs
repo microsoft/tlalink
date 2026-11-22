@@ -10,7 +10,7 @@ public sealed record FormalTarget(string Id, string Language, List<string> Input
 public sealed record OmissionRule(string Id, List<string> Targets, List<string> Calls, string Reason,
     List<string> Assumptions);
 public sealed record CorrespondenceConfiguration(int SchemaVersion, string Kind, int AnnotationVersion,
-    List<FormalTarget> Targets, List<OmissionRule> Omissions, List<MethodSummary>? MethodSummaries = null);
+    List<FormalTarget> Targets, List<OmissionRule> Omissions, SynchronizationDeclaration? Synchronization = null);
 public sealed record SourceDisposition(string Id, string Target, string Status, string Reason, Place Location,
     List<string> Assumptions, List<Boundary> Boundaries);
 public sealed record OmissionRuleMatch(string Id, string Target, int MatchedSites);
@@ -74,7 +74,9 @@ public static class CorrespondenceInputs
                 throw new InputException(ErrorCode.InvalidAnnotation, "Omissions require exact method declaration IDs, explicit unique targets, a reason and boundary assumptions.");
         }
         config = config with { Targets = targets };
-        MethodSummaries.Validate(config);
+        Primitives.Validate(config.Synchronization);
+        if (config.Synchronization?.Primitives.Any(p => !File.Exists(FilePaths.Full(p, root))) == true)
+            throw new InputException(ErrorCode.InvalidAnnotation, "Declared primitive manifests must exist.");
         return config;
     }
 

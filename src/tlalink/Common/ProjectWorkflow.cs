@@ -19,7 +19,7 @@ public static partial class ProjectWorkflow
             return 0;
         }
         var (project, policy) = ProjectInputs.Load(path);
-        if (options.Command == "record-review") return ProjectAcceptance.RecordReview(path, project, options);
+        if (options.Command == "record-review") return ProjectAcceptance.RecordReview(path, project, policy, options);
         if (options.Command is "accept" or "explain") return ProjectAcceptance.Run(path, project, policy, options);
         if (options.Command == "check-stage") return CheckStage(path, project, policy, options);
         List<AnalysisScenario> scenarios = options.Optional("scenario") is string selected
@@ -27,8 +27,8 @@ public static partial class ProjectWorkflow
                 ?? throw new InputException(ErrorCode.InvalidWorkflowInput, "Unknown scenario: " + selected)]
             : project.Scenarios;
         Dictionary<string, TlaDocument> parsed = new(FilePaths.Comparer);
-        List<MethodSummaryResolution> summaries = [];
-        Dictionary<string, string> pins = Pins(path, project, policy, scenarios, parsed, summaries);
+        List<PrimitiveResolution> primitives = [];
+        Dictionary<string, string> pins = Pins(path, project, policy, scenarios, parsed, primitives);
         List<CheckCoverage> coverage = ProjectInputs.Coverage(project, policy, scenarios.Select(s => s.Id));
         List<Issue> coverageIssues = coverage.SelectMany(o => o.Gaps.Select(gap =>
             new Issue(ErrorCode.WorkflowPrerequisiteMissing, o.Id + ": " + gap))).ToList();
@@ -38,16 +38,16 @@ public static partial class ProjectWorkflow
                 Schema.Version, options.Command == "doctor" ? "project-preflight" : "analysis-plan",
                 project.Id, coverageIssues.Count == 0 ? "ready" : "incomplete", project.Compiler,
                 project.AnnotationVersion,
-                summaries.Select(s => new PlannedMethodSummary(
-                    s.Scope, s.Summary, s.Method, s.Implementation, s.Specification, s.Precondition,
-                    ProjectAcceptance.ReviewStatus(path, project, s.Summary.Inspection),
-                    project.Obligations.Single(o => o.Id == s.Summary.Inspection).Origin,
-                    "Resolved abstraction with separately recorded inspection; not machine-checked C# refinement."
+                primitives.Select(p => new PlannedPrimitive(p.Scope, p.Manifest, p.Primitive, p.Module,
+                    ProjectAcceptance.ReviewStatus(path, project, p.Primitive.Verification.Inspection),
+                    project.Obligations.Single(o => o.Id == p.Primitive.Verification.Inspection).Origin,
+                    p.Primitive.Guarantees ?? [],
+                    "Resolved declaration: complete operations, kind-module operators and Roslyn type. Support needs accepted verification scenarios and current inspection; listed guarantees are outstanding obligations; not machine-checked C# refinement."
                 )).ToList(),
                 coverage, coverageIssues,
                 pins, scenarios.Select(s => new PlannedScenario(
                     s.Id, ProjectInputs.Order(s).Select(stage => new PlannedStage(
-                        stage.Id, stage.Kind, stage.DependsOn, stage.TimeoutSeconds, stage.MethodSummaries,
+                        stage.Id, stage.Kind, stage.DependsOn, stage.TimeoutSeconds, stage.Primitives,
                         stage.Resources,
                         stage.Kind is "tlc" or "trace" ? TlcResources.Effective(stage.Kind, stage.Resources) : null,
                         stage.Kind == "oracle" ? "synchronous-int-bool-adapter; native signature resolution required" :
@@ -81,7 +81,7 @@ public static partial class ProjectWorkflow
         WorkflowRun run = new() {
             Project = project.Id, ProjectDirectory = Path.GetDirectoryName(path)!, Scenario = scenarios[0].Id, Fingerprints = pins,
             ProjectSha256 = Files.Hash(path), RequirementsSha256 = Files.Hash(ProjectInputs.Resolve(path, project.Requirements)),
-            MethodSummaries = summaries
+            Primitives = primitives
         };
         Files.WriteNew(Path.Combine(output, "expanded-project.json"), ProjectComposition.Expansion(path, project));
         foreach (AnalysisStage stage in ProjectInputs.Order(scenarios[0]))
@@ -137,7 +137,7 @@ public static partial class ProjectWorkflow
     }
 
     private static Dictionary<string, string> Pins(string path, AnalysisProject project, AcceptancePolicy policy, List<AnalysisScenario> scenarios,
-        Dictionary<string, TlaDocument>? parsed = null, List<MethodSummaryResolution>? summaries = null)
+        Dictionary<string, TlaDocument>? parsed = null, List<PrimitiveResolution>? primitives = null)
     {
         Dictionary<string, string> pins = new(FilePaths.Comparer);
         foreach (var pin in project.Authoring!.Fingerprints) Files.Pin(pins, pin.Key, pin.Value);
@@ -145,8 +145,8 @@ public static partial class ProjectWorkflow
         Pin(path);
         Pin(ProjectInputs.Resolve(path, project.Requirements));
         Program.PinTool(pins);
-        List<SelectedMethodSummary> selectedSummaries = MethodSummaries.Select(path, project, scenarios.SelectMany(s => s.Stages));
-        bool needDafny = false, needJar = selectedSummaries.Count > 0, needP = false, needApalache = false;
+        List<SelectedPrimitive> selectedPrimitives = Primitives.Select(path, project, scenarios.SelectMany(s => s.Stages));
+        bool needDafny = false, needJar = selectedPrimitives.Count > 0, needP = false, needApalache = false;
         List<(ApalacheAnalysis Config, int Timeout)> apalache = [];
         foreach (string reference in project.Compiler.References) Pin(ProjectInputs.Resolve(path, reference));
         foreach (var entry in scenarios.SelectMany(s => s.Stages.Select(stage => (Scenario: s.Id, Stage: stage))))
@@ -213,38 +213,40 @@ public static partial class ProjectWorkflow
         if (needJar)
             foreach (var pin in JavaToolchain.Resolve().Fingerprints) Files.Pin(pins, pin.Key, pin.Value);
         Dictionary<string, TlaDocument> parsedModels = parsed ?? new(FilePaths.Comparer);
-        TlaDocument ParsedModel(string file, int timeout)
+        TlaDocument ParsedModel(string file, int timeout, IReadOnlyList<string> modulePath)
         {
-            if (!parsedModels.TryGetValue(file, out TlaDocument? model))
+            string key = ParseKey(file, modulePath);
+            if (!parsedModels.TryGetValue(key, out TlaDocument? model))
             {
-                model = TlaBackend.Parse(file, ProjectInputs.Resolve(path, project.Tools.Jar!.Path), timeout);
+                model = TlaBackend.Parse(file, ProjectInputs.Resolve(path, project.Tools.Jar!.Path), timeout, modulePath);
                 foreach (var pin in model.DependencyFingerprints) Files.Pin(pins, pin.Key, pin.Value);
-                parsedModels.Add(file, model);
+                parsedModels.Add(key, model);
             }
             return model;
         }
         foreach (var analysis in apalache)
-            ApalacheBackend.RequireSupportedModel(ParsedModel(analysis.Config.Model, analysis.Timeout), analysis.Config);
+            ApalacheBackend.RequireSupportedModel(ParsedModel(analysis.Config.Model, analysis.Timeout, []), analysis.Config);
         foreach (AnalysisStage stage in scenarios.SelectMany(s => s.Stages).Where(s => s.Kind == "tlc"))
-            RequireTlcModel(ParsedModel(ProjectInputs.Resolve(path, stage.Models![0]), stage.TimeoutSeconds));
-        List<MethodSummaryResolution> resolvedSummaries = MethodSummaries.Inspect(path, project, selectedSummaries, pins,
-            model => ParsedModel(model, scenarios.SelectMany(s => s.Stages).Max(s => s.TimeoutSeconds)));
-        summaries?.AddRange(resolvedSummaries);
-        foreach (AnalysisStage stage in scenarios.SelectMany(s => s.Stages).Where(s => s.MethodSummaries != null))
+            RequireTlcModel(ParsedModel(ProjectInputs.Resolve(path, stage.Models![0]), stage.TimeoutSeconds,
+                Primitives.ModulePath(path, project, stage)));
+        List<PrimitiveResolution> resolved = Primitives.Inspect(path, project, selectedPrimitives, pins,
+            (model, modulePath) => ParsedModel(model, scenarios.SelectMany(s => s.Stages).Max(s => s.TimeoutSeconds), modulePath));
+        primitives?.AddRange(resolved);
+        foreach (AnalysisStage stage in scenarios.SelectMany(s => s.Stages).Where(s => s.Primitives != null))
         {
-            TlaDocument consumer = ParsedModel(ProjectInputs.Resolve(path, stage.Models![0]), stage.TimeoutSeconds);
-            foreach (SelectedMethodSummary summary in MethodSummaries.Select(path, project, [stage]))
-            {
-                string model = CorrespondenceInputs.Target(summary.Configuration,
-                    Markup.Name(summary.Summary.Binding).Alias, "tla").Inputs.Single();
-                if (!consumer.DependencyFingerprints.ContainsKey(model))
+            TlaDocument consumer = ParsedModel(ProjectInputs.Resolve(path, stage.Models![0]), stage.TimeoutSeconds,
+                Primitives.ModulePath(path, project, stage));
+            foreach (string module in Primitives.Direct(path, project, stage))
+                if (!consumer.DependencyFingerprints.ContainsKey(module))
                     throw new InputException(ErrorCode.InvalidWorkflowInput,
-                        "Consumer model must import its declared summary module: " + stage.Id + ": " + summary.Summary.Binding);
-            }
+                        "Consumer model must import the kind module of each primitive it uses: " + stage.Id + ": " + module);
         }
         IntegratedInputs.CheckPins(pins);
         return pins;
     }
+
+    internal static string ParseKey(string model, IReadOnlyList<string> modulePath) =>
+        modulePath.Count == 0 ? model : model + "|" + string.Join("|", modulePath);
 
     internal static string Executable(string name)
     {
@@ -333,6 +335,8 @@ public static partial class ProjectWorkflow
             "--scope", ProjectInputs.Resolve(path, stage.Scope!), "--target", stage.Target!,
             "--model", ProjectInputs.Resolve(path, stage.Models![0]), "--timeout", stage.TimeoutSeconds.ToString()];
         foreach (string source in stage.Sources!) args.AddRange(["--source", ProjectInputs.Resolve(path, source)]);
+        List<string> modulePath = Primitives.ModulePath(path, project, stage);
+        foreach (string directory in modulePath) args.AddRange(["--module-path", directory]);
         foreach (string reference in project.Compiler.References) args.AddRange(["--reference", ProjectInputs.Resolve(path, reference)]);
         foreach (string define in project.Compiler.Defines ?? []) args.AddRange(["--define", define]);
         args.AddRange(["--language-version", project.Compiler.LanguageVersion]);
@@ -382,6 +386,7 @@ public static partial class ProjectWorkflow
             "--timeout", stage.TimeoutSeconds.ToString()];
         if (stage.Resources is { } resources)
             validation.AddRange(["--workers", resources.WorkerArgument, "--max-heap-mib", resources.MaxHeapMib.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
+        foreach (string directory in modulePath) validation.AddRange(["--module-path", directory]);
         IAnalysisResult result = AnalysisDocuments.Read(InvokeCli(validation, Path.Combine(output, "validate"), stage.TimeoutSeconds * 4));
         MergePins(result, pins);
         return result;
@@ -497,6 +502,8 @@ public static partial class ProjectWorkflow
                             if (stage.DependsOn.Count > 0) Console.WriteLine("    requires: " + string.Join(", ", stage.DependsOn));
                         }
                     }
+                    foreach (PlannedPrimitiveView primitive in plan.Primitives)
+                        Console.WriteLine($"primitive {primitive.Id}: {primitive.PrimitiveKind}; inspection {primitive.InspectionStatus}");
                     foreach (PlannedReview review in plan.ReviewStatus) Console.WriteLine($"review {review.Id}: {review.Status}");
                     break;
                 case WorkflowRunSummary run:
@@ -515,6 +522,8 @@ public static partial class ProjectWorkflow
                     Field("changed_review_inputs", acceptance.ChangedReviewInputs.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
                     foreach (RequirementSummary requirement in acceptance.Requirements)
                         Console.WriteLine($"requirement {requirement.Id}: {requirement.Status}");
+                    foreach (AcceptancePrimitive primitive in acceptance.Primitives)
+                        Console.WriteLine($"primitive {primitive.Id}: {primitive.SupportStatus}");
                     break;
                 case EvidenceInspectionSummary inspection:
                     Field("archive_status", inspection.ArchiveStatus); Field("current_applicability", inspection.CurrentApplicability);

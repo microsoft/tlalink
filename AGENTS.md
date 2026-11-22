@@ -27,7 +27,7 @@ Breaking changes do not authorize weakening claims, requirements or checks,
 rewriting historical outcomes, or carrying forward review approval.
 
 When assessing the state of the art or designing modeling, abstraction,
-method-summary or agent-workflow features, consult the
+synchronization-primitive or agent-workflow features, consult the
 [Specula research](docs/research/specula/README.md) before introducing new
 machinery. Use its overlap analysis and pinned sources to identify reusable
 ideas; recheck upstream for current claims rather than treating the research
@@ -148,15 +148,18 @@ Skills do not install tools, approve correspondence or discharge human gates.
   lexical-versus-runtime context, implicit effects and required human review
   visible. Save generated inspection reports separately from authored models;
   never treat them as another binding catalogue or approval receipt.
-- Reusable method summaries use paired method/TLA+ bindings and the existing
-  correspondence-scope `method_summaries` metadata, not a new annotation or
-  contract language. TLC/trace consumers declare summary dependencies explicitly.
-  Keep relations stateless and justify pure/atomic abstractions through
-  source-pinned inspection, including competing accesses, failures and relevant
-  callees. Never hide relevant interleavings or imply termination by removing
-  retries. Check caller preconditions explicitly, not merely as disabling guards.
-  Record agent inspection with `origin=agent`; it cannot discharge a human
-  obligation. See [method summaries](REFERENCE.md#reviewed-method-summaries).
+- Reusable synchronization contracts are primitive manifests checked against
+  the shipped kind modules (`src/tlalink/Tla/Primitives`), declared under a
+  correspondence scope's `synchronization.primitives`. TLC/trace consumers
+  declare `primitives` uses explicitly and instance the kind module. Declare
+  every public/internal member; map multi-step operations to every visible kind
+  action instead of collapsing interleavings. Verify each primitive once in its
+  own scenario with negative controls, then justify it through source-pinned
+  inspection, including competing accesses, failures and inline effects. Check
+  caller preconditions explicitly, not merely as disabling guards. Guarantees
+  remain outstanding obligations until checks discharge them. Record agent
+  inspection with `origin=agent`; it cannot discharge a human obligation. See
+  [synchronization primitives](REFERENCE.md#synchronization-primitives).
 - Use annotation version 4 with standard JSON inside native `@link` comments:
   typed `bind`, `capture` and `exclude` arrays. Do not introduce XML, another
   tokenizer, raw JSON binding stores or version-2 acceptance branches. Formal

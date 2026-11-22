@@ -42,8 +42,9 @@ public static class ProjectCompositionTests
             string schema = System.IO.Path.Combine(f.Root, "project.schema.json");
             CoreTests.Equal(0, TestCli.Run(["project-schema", "--output", schema]).Code);
             JsonObject editor = JsonNode.Parse(File.ReadAllText(schema))!.AsObject();
-            CoreTests.Equal(5, editor["oneOf"]!.AsArray().Count);
+            CoreTests.Equal(6, editor["oneOf"]!.AsArray().Count);
             CoreTests.Equal("project-component", editor["$defs"]!["component"]!["properties"]!["kind"]!["const"]!.GetValue<string>());
+            CoreTests.Equal("primitive", editor["$defs"]!["primitive"]!["properties"]!["kind"]!["const"]!.GetValue<string>());
             void References(JsonNode node)
             {
                 if (node is JsonObject obj)

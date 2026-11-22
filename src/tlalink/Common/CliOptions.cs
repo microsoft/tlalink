@@ -58,9 +58,9 @@ public sealed class CliOptions
             ["check"] = ["source", "model", "reference", "define", "jar", "timeout", "format", "baseline", "snapshot"],
             ["review"] = ["source", "model", "reference", "define", "jar", "timeout", "format", "step", "baseline", "snapshot"],
             ["inputs"] = ["model", "jar", "timeout", "format"],
-            ["instrument"] = ["source", "model", "reference", "define", "jar", "timeout", "format", "output"],
+            ["instrument"] = ["source", "model", "reference", "define", "jar", "timeout", "format", "output", "module-path"],
             ["execute"] = ["manifest", "project", "trace", "output", "timeout", "format", "arg"],
-            ["validate-trace"] = ["model", "manifest", "trace", "config", "execution", "jar", "output", "timeout", "format", "init", "next", "workers", "max-heap-mib"],
+            ["validate-trace"] = ["model", "manifest", "trace", "config", "execution", "jar", "output", "timeout", "format", "init", "next", "workers", "max-heap-mib", "module-path"],
             ["inspect-integrated"] = ["bindings", "dafny", "jar", "reference", "define", "output", "baseline", "timeout", "format"],
             ["verify-integrated"] = ["bindings", "dafny", "jar", "reference", "define", "output", "baseline", "timeout", "format"],
             ["test-integrated"] = ["bindings", "dafny", "jar", "reference", "define", "output", "baseline", "timeout", "format"],
@@ -75,7 +75,7 @@ public sealed class CliOptions
         if (Command is "links" or "symbols" or "inspect-source" or "inspect" or "check" or "review" or "instrument" or
             "inspect-integrated" or "verify-integrated" or "test-integrated" or "inspect-p" or "check-p")
             options = [.. options, "language-version"];
-        HashSet<string> repeated = ["source", "model", "reference", "define", "arg", "evidence", "capture"];
+        HashSet<string> repeated = ["source", "model", "reference", "define", "arg", "evidence", "capture", "module-path"];
         if (Command == "toolchain") repeated.Add("tool");
         if (Command == "report") repeated.Add("run");
         if (Command == "links" && Action == "inspect")

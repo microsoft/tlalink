@@ -68,8 +68,9 @@ license/dependency review. [Source S01](sources.md#s01)
 
 ## Implementation status
 
-This research snapshot predates TlaLink's reviewed method-summary implementation.
+This research snapshot predates TlaLink's reviewed method-summary implementation,
+which synchronization primitive manifests have since replaced.
 Its original recommendation and limits are described in
 [TlaLink decisions](04-tlalink-decisions.md). For current behavior, use the
-[reference](../../../REFERENCE.md#reviewed-method-summaries) and
-[runnable example](../../../examples/MethodSummaries/README.md).
+[reference](../../../REFERENCE.md#synchronization-primitives) and
+[runnable example](../../../examples/Primitives/README.md).

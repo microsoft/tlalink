@@ -146,6 +146,14 @@ Every kind module has the same shape:
   as `state' = [state EXCEPT ![i] = ...]`; callers conjoin `UNCHANGED` for their
   other variables. Outcomes are parameters the caller binds: an action
   `TryEnter(i, limit, ok)` is enabled for exactly one value of `ok`.
+- Every action `A(i, ...)` is defined from two pure operators over a state
+  value `s`: `AEnabled(s, i, ...)` and `AApply(s, i, ...)`, as
+  `A(i, ...) == AEnabled(state, i, ...) /\ state' = AApply(state, i, ...)`.
+  Code often changes several instances of one kind in a single atomic step,
+  such as one lock region closing three gates. Models compose those steps from
+  the pure operators:
+  `gates' = Gate!CloseApply(Gate!CloseApply(gates, a), b)`.
+  `InitState` is the initial state value and `Init == state = InitState`.
 - Wait predicates `Can<Wait>(i ...)` state when a waiting operation may resume.
   Resuming is the caller's own action, guarded by that predicate.
 - `Internal(i)` is the disjunction of actions the primitive takes by itself,
@@ -178,7 +186,9 @@ Semantics the modules must make precise:
   and `Resume` consumes that grant or failure.
 - `TlaLinkChannel`: one consumer. `completion` is `"open"`, `"drain"` or
   `"abort"`. `TryEnqueue` succeeds only while open. `Complete(i, "drain")` keeps
-  queued items for the consumer; `Complete(i, "abort")` discards them.
+  queued items for the consumer; `Complete(i, "abort")` discards them, including
+  the remaining items of a channel that is still draining. Any other repeated
+  `Complete` changes nothing.
   `Dequeue(i, x)` takes the head item; `StartWait` records a consumer waiting
   on an empty open channel; `CanDequeue` holds when an item is queued or the
   channel is complete.

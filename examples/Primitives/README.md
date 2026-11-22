@@ -1,0 +1,69 @@
+# Synchronization primitives
+
+This independently synthetic example declares one C# synchronization primitive,
+verifies it once against the shipped `counting-resource` kind and reuses that
+contract in a caller component. Nothing here is a machine-checked refinement
+proof of the C# code; see [what is and is not claimed](../../REFERENCE.md#synchronization-primitives).
+
+- [`PermitGate`](src/PermitGate.cs): FIFO asynchronous permits without barging.
+- [Primitive manifest](primitives/permit-gate/primitive.json): every public
+  member mapped to `TlaLinkCountingResource` actions, a wait predicate and a
+  caller precondition.
+- [Caller harness](primitives/permit-gate/PermitGateHarness.tla) checked with
+  [positive](primitives/permit-gate/PermitGateHarness.cfg) and
+  [lost-release negative control](primitives/permit-gate/PermitGateLostRelease.cfg)
+  configurations: the `permit-gate` verification scenario.
+- [Agent inspection argument](primitives/permit-gate/inspection.md) for the
+  `permit-gate-inspection` obligation.
+- [Correspondence scope](verification/scope.json) declaring the primitive under
+  `synchronization.primitives`.
+- [`Uploader`](src/Uploader.cs), its [caller model](verification/Uploader.tla)
+  and the [caller component](components/uploader.json) whose TLC stage declares
+  the `permit-gate` use: the `uploader` scenario.
+
+Both models instance the shipped kind module, for example:
+
+```tla
+Gate == INSTANCE TlaLinkCountingResource
+    WITH Instances <- {"g"}, Waiters <- Senders, Capacity <- [i \in {"g"} |-> 1], state <- gate
+```
+
+TlaLink puts its shipped `primitives` library on the SANY/TLC module search path
+only for stages that declare primitive uses, pins the module bytes like other
+model inputs and requires the kind module in each consumer's import closure.
+
+After the separately documented tool setup, run from the repository root:
+
+```powershell
+.\TlaLink.ps1 doctor --project .\examples\Primitives\tlalink.project.json
+.\TlaLink.ps1 plan --project .\examples\Primitives\tlalink.project.json --format summary
+.\TlaLink.ps1 run --project .\examples\Primitives\tlalink.project.json --scenario permit-gate --output .\Results\primitives\runs\permit-gate-new
+.\TlaLink.ps1 accept --project .\examples\Primitives\tlalink.project.json --run .\Results\primitives\runs\permit-gate-new --output .\Results\primitives\permit-gate-new.acceptance.json --format summary
+```
+
+The verification scenario does not need the primitive's own support; it
+establishes it. Its accepted receipt is evidence for the inspection, which an
+agent records explicitly after reading the source, manifest and argument:
+
+```powershell
+.\TlaLink.ps1 record-review --project .\examples\Primitives\tlalink.project.json --obligation permit-gate-inspection --origin agent --reviewer "agent:self-review" --rationale "See the inspection argument and the accepted harness scenario." --evidence "primitives\permit-gate\inspection.md" --evidence "..\..\Results\primitives\permit-gate-new.acceptance.json"
+.\TlaLink.ps1 run --project .\examples\Primitives\tlalink.project.json --scenario uploader --output .\Results\primitives\runs\uploader-new
+.\TlaLink.ps1 accept --project .\examples\Primitives\tlalink.project.json --run .\Results\primitives\runs\uploader-new --format summary
+```
+
+Accepting `uploader` requires current primitive support: the accepted inspection
+and a fresh re-evaluation of the recorded `permit-gate` run. Changing
+`PermitGate.cs`, the manifest or the kind module makes the inspection stale;
+changing the harness makes the verification run stale. Either withdraws support
+until the primitive is verified and inspected again. This is agent inspection,
+not human approval.
+
+The manifest lists `signals-async` and `fifo-waiters`. In this release they are
+validated vocabulary carried into plans, acceptance results and reports as
+outstanding obligations; no check discharges them yet.
+
+The focused native tests copy this example into isolated directories:
+
+```powershell
+dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --primitives
+```

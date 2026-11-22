@@ -42,7 +42,8 @@ public static class LinkMigration
         bool complete = false;
         try
         {
-            NativeLinkIndex native = NativeLinkIndex.Load(targets, options, work, pins);
+            NativeLinkIndex native = NativeLinkIndex.Load(targets, options, work, pins,
+                Primitives.ModulePath(scopePath, config, pins));
             if (native.Diagnostics.Any(d => d.Severity == "error" || d.Is(ErrorCode.ToolFailure, ErrorCode.StaleTranslation)))
                 throw Invalid("Native index is incomplete: " + string.Join("; ", native.Diagnostics.Select(d => d.Message)));
             HashSet<string> aliases = targets.Select(t => t.Id).ToHashSet(StringComparer.Ordinal);

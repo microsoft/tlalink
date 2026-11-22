@@ -1,0 +1,19 @@
+{
+  "$schema": "../../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "project-component",
+  "id": "uploader",
+  "stages": [
+    {
+      "id": "uploader",
+      "kind": "tlc",
+      "timeout_seconds": 60,
+      "models": ["..\\verification\\Uploader.tla"],
+      "config": "..\\verification\\Uploader.cfg",
+      "resources": {"workers": 1, "max_heap_mib": 256},
+      "primitives": [
+        {"scope": "..\\verification\\scope.json", "ids": ["permit-gate"]}
+      ]
+    }
+  ]
+}

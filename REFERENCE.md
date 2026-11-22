@@ -21,7 +21,7 @@ root-relative because this document lives beside the README.
 - [Apalache setup and analysis](#using-apalache-with-tla)
 - [P analysis workflow](#p-analysis-workflow)
 - [Project workflow and acceptance](#project-workflow)
-- [Reviewed method summaries](#reviewed-method-summaries)
+- [Synchronization primitives](#synchronization-primitives)
 - [Evidence retention and recheck planning](#evidence-retention-and-recheck-planning)
 - [Integrated TLA+ and Dafny workflow](#integrated-tla-and-dafny-workflow)
 - [Review commands](#review-commands)
@@ -1593,7 +1593,7 @@ also recognizes review-only pins in completed runs when validated stage
 evidence supplies the execution closure; `changed_review_inputs` lists changed
 or removed files whose execution checks were exempted. Archive bytes remain
 strictly checked. A file also used by a stage, compiler context or selected
-method summary remains an execution input. Unknown or invalid closures remain
+primitive remains an execution input. Unknown or invalid closures remain
 conservative.
 This does not rerun or cache native work, renew reviews or imply acceptance.
 The existing TLC result store is still the only native execution reuse mechanism.
@@ -1613,7 +1613,7 @@ scenario, its check-coverage declarations and every requirement for that
 scenario with only its `reviews` list excluded. Review obligations, review
 storage and the policy document's path may differ; selected stages,
 dependencies, source/model/config selections, shared compiler context, tools,
-result store, resources, budgets, summary dependencies and every selected
+result store, resources, budgets, primitive uses and every selected
 non-review requirement field must remain identical. Other scenarios and their
 requirements may be added, changed, removed or reordered without invalidating
 this run. The comparison remains conservative about shared settings, list
@@ -1683,90 +1683,174 @@ match. Changed claims or inputs make reviews stale. Acceptance reports retain
 the decisions used. Reviewer names are explicit assertions, not authenticated
 identities, and accepted review is not an automatic refinement proof.
 
-### Reviewed method summaries
+### Synchronization primitives
 
-A summary is an ordinary stateless, parameterized TLA+ relation paired with one
-C# method/constructor through the existing `bind` ID. It does not declare retry
-locals or helper PC variables. The caller supplies abstract state and outcomes
-and preserves unrelated state. See the runnable
-[synthetic example](examples/MethodSummaries/README.md).
+A primitive is a C# type whose instances carry synchronization state, declared
+by one `primitive` manifest and checked against one abstract kind. Each
+primitive is verified once in its own scenarios; caller models reuse the kind
+contract by instancing its TLA+ module. Primitives replace the former reviewed
+method summaries: a stateless helper is a `custom` primitive whose operations
+are `pure`. The design and later increments (regions, instances and sites,
+environments, scale) are in the
+[proposal](docs/proposals/synchronization-primitives.md). See the runnable
+[synthetic example](examples/Primitives/README.md).
 
-The schema-4 `correspondence-scope` optionally declares:
+#### Kind library
+
+TlaLink ships one module per kind under `primitives` beside the tool
+(`src/tlalink/Tla/Primitives` in a checkout). The interface is fixed by
+[section 4.1](docs/proposals/synchronization-primitives.md#41-kind-module-interface):
+`CONSTANT Instances` plus kind constants, one `VARIABLE state`, `Init`,
+`TypeOK`, `Invariant`, actions taking the instance first, `Can<Wait>` wait
+predicates, `Internal(i)` and `Fairness`. Every action `A` also has pure
+`AEnabled(s, i, ...)` and `AApply(s, i, ...)` operators, plus `InitState`.
+
+| `primitive_kind` | Module | Actions | Waits |
+|---|---|---|---|
+| `register` | `TlaLinkRegister` | `Set`, `TrySet` | none |
+| `latch` | `TlaLinkLatch` | `TrySet`, `TryFail` | `CanWait` |
+| `once` | `TlaLinkOnce` | `Publish`, `Start`, `Settle` | `CanWait` |
+| `admission-gate` | `TlaLinkAdmissionGate` | `Enter`, `EnterRejected`, `TryEnter`, `Exit`, `Close`, `Signal` | `CanWaitDrained` |
+| `counting-resource` | `TlaLinkCountingResource` | `TryAcquire`, `Acquire`, `Release`, `Close`, `Resume` | `CanResume` |
+| `channel` | `TlaLinkChannel` | `TryEnqueue`, `Dequeue`, `StartWait`, `Complete` | `CanDequeue` |
+| `cancellation-source` | `TlaLinkCancellationSource` | `Cancel` | `CanWait` |
+| `custom` | the manifest's `module` | declared by that module | declared by that module |
+
+`critical-section` is a proposal concept for lock regions, not a manifest
+kind. Callers substitute their own variable and sets, for example
+`Gate == INSTANCE TlaLinkCountingResource WITH Instances <- {"g"}, Waiters <- Senders, Capacity <- [i \in {"g"} |-> 1], state <- gate`.
+
+#### Manifest
 
 ```json
-"method_summaries": [{
-  "binding": "permits::try-take",
-  "abstraction": "atomic",
-  "sources": ["..\\src\\PermitGate.cs"],
-  "inspection": "permit-summary",
-  "precondition": "Requires",
-  "assumptions": ["All accesses follow the selected counter protocol."],
-  "limits": ["No termination or fairness claim; inspection is not machine proof."],
-  "depends_on": []
+{
+  "$schema": "../../../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "primitive",
+  "id": "permit-gate",
+  "type": "T:PrimitivesExample.PermitGate",
+  "sources": ["..\\..\\src\\PermitGate.cs"],
+  "primitive_kind": "counting-resource",
+  "operations": [
+    { "member": "M:PrimitivesExample.PermitGate.#ctor(System.Int32)", "role": "create" },
+    { "member": "P:PrimitivesExample.PermitGate.Available", "role": "query" },
+    { "member": "M:PrimitivesExample.PermitGate.TryAcquire", "role": "try-acquire", "actions": ["TryAcquire"] },
+    { "member": "M:PrimitivesExample.PermitGate.AcquireAsync", "role": "wait", "actions": ["Acquire", "Resume"], "wait": "CanResume" },
+    { "member": "M:PrimitivesExample.PermitGate.Release", "role": "release", "actions": ["Release"], "precondition": "ReleaseEnabled" },
+    { "member": "M:PrimitivesExample.PermitGate.Close", "role": "close", "actions": ["Close"] }
+  ],
+  "guarantees": ["signals-async", "fifo-waiters"],
+  "verification": { "scenarios": ["permit-gate"], "inspection": "permit-gate-inspection" },
+  "assumptions": ["Each successful TryAcquire or completed AcquireAsync is paired with exactly one Release by its owner."],
+  "limits": ["Inspection is not machine-checked implementation refinement."]
+}
+```
+
+| Field | Rule |
+|---|---|
+| `id` | Stable ID, unique among the primitives of one correspondence scope. |
+| `type`, `sources` | A `T:` documentation ID resolved with Roslyn and the project compiler profile in 1..1000 explicit `.cs` files relative to the manifest. The type must be declared in those sources. |
+| `primitive_kind` | One kind above. `module` (a `.tla` path relative to the manifest) is required for `custom` and rejected otherwise. |
+| `operations` | Every public, internal or protected internal method, constructor, operator and property declared by the type, exactly once, by `M:`/`P:` ID. Compiler-generated members and nested types are excluded; unknown members are errors; visible non-constant fields and events are rejected. Asynchronous and `Task`-returning members are allowed. |
+| `role` | `create`, `query`, `acquire`, `try-acquire`, `release`, `signal`, `wait`, `close`, `complete`, `enqueue`, `dequeue` or `pure`. State-changing roles (`acquire` through `dequeue`, except `wait`) need at least one action. |
+| `actions`, `fails`, `wait`, `precondition` | Kind-module operator names. `actions` are in order, and a trailing `?` marks a conditional step; `fails` lists the actions modeling exceptional outcomes; `wait` names the wait predicate and is required exactly for `wait` operations; `precondition` names an operator the caller must establish. Each must resolve through SANY to a parameterized operator defined in the kind module. |
+| `guarantees` | Unique entries of `signals-async`, `non-blocking`, `fifo-waiters`, `cancellable-wait`, `inline-callbacks`. |
+| `verification` | 1..100 project scenario IDs that verify the primitive, each with a TLC/trace stage directly using it, and one existing review obligation. |
+| `depends_on` | Other primitive IDs in the same scope; unknown IDs and cycles are errors. |
+| `assumptions`, `limits` | Nonempty entries; at least one limit. Carried into acceptance results and reports. |
+
+Unknown or duplicate properties are rejected, including `state_mapping`, which
+arrives with trace capture in a later increment.
+
+A schema-4 `correspondence-scope` declares its primitives:
+
+```json
+"synchronization": {
+  "primitives": ["..\\primitives\\permit-gate\\primitive.json"]
+}
+```
+
+Only `primitives` (1..1000 unique existing manifest paths relative to the scope)
+is supported; `region`, `environments` and `locks` are rejected until their
+checks exist.
+
+#### Stage uses
+
+TLC/trace stages declare the primitives their model uses:
+
+```json
+"primitives": [{
+  "scope": "..\\verification\\scope.json",
+  "ids": ["permit-gate"]
 }]
 ```
 
-`abstraction` is `pure` or `atomic`, an authored intent rather than a checked
-semantic theorem. Sources are explicit C# files relative to the scope document,
-not directories or discovered callees. Use the project compiler profile and
-explicit references/defines. Bindings must be unique and selected in a TLA+
-target's `required_bindings`. Up to 1000 summaries are supported.
-`depends_on` selects other summaries in that same scope; unknown IDs, duplicate
-edges and cycles are errors.
+Component references resolve against the declaring file and are rebased into
+the ordinary project expansion. Uses select declared dependencies
+transitively. For a stage with uses, TlaLink adds the shipped library directory
+and the folders of directly used custom modules to the SANY and TLC module
+search path (`-DTLA-Library`); other stages do not get it. Preflight requires
+each directly used primitive's kind module, at its resolved path, in the
+consumer's native import closure, so an author module with a shipped name
+cannot shadow it. Module bytes are pinned, archived and part of TLC
+result-store keys like other model inputs. Import presence does not establish
+that the caller uses the contract correctly: check preconditions explicitly as
+authored properties at the call boundary.
 
-Preflight requires a concrete synchronous nonvirtual method/constructor without
-capture metadata. Async, Task/ValueTask-returning, iterator, extern and
-ref-return providers are unsupported. The formal binding must resolve through
-SANY to a parameterized operator in a module with no state variables. The
-optional `precondition` names another parameterized native operator in that
-module. Abstract relation arity need not equal C# argument count: explicit
-state/result correspondence is an inspection obligation, not inferred pairing.
+`doctor`/`plan` resolve every selected primitive (Roslyn type and operation
+completeness, SANY operators) and show its inspection status and outstanding
+guarantees. Pending support does not prevent exploring a model. `run` archives
+the resolved primitives and their inputs; `explain`, acceptance summaries and
+project reports show them.
 
-TLC/trace stages declare explicit uses:
+#### Support, acceptance and staleness
 
-```json
-"method_summaries": [{
-  "scope": "verification\\scope.json",
-  "bindings": ["permits::try-take"]
-}]
+A scenario listed in a primitive's `verification.scenarios` establishes that
+primitive's support and does not require it. Every other scenario requires
+current support for each primitive its stages use, transitively over
+`depends_on`:
+
+- the inspection obligation is `accepted` and current, and
+- each verification scenario's recorded run is accepted when re-evaluated now.
+
+Record the inspection after accepting each verification scenario with
+`accept --output`, passing exactly one acceptance receipt per verification
+scenario as evidence:
+
+```powershell
+.\TlaLink.ps1 record-review --project .\examples\Primitives\tlalink.project.json --obligation permit-gate-inspection --origin agent --reviewer "agent:self-review" --rationale "<review findings>" --evidence "primitives\permit-gate\inspection.md" --evidence "..\..\Results\primitives\permit-gate-new.acceptance.json"
 ```
 
-Component references resolve against the declaring component and are rebased
-into the ordinary project expansion. Preflight requires summary modules in the
-consumer's native import closure. Import presence does not establish semantic
-use or caller preconditions. Check preconditions explicitly as authored
-properties at the call boundary; using them only as action guards can hide
-misuse. Relations are reused through ordinary TLA+ imports/instantiations, not
-automatic C# translation.
+`record-review` resolves the selected primitives and rejects an accepted
+decision without currently accepted receipts. It adds source/compiler
+references, scopes, manifests, kind modules and tool pins to the review
+fingerprints. `primitive_support` records selection and compiler-context
+identities, the supplemental input list and the receipt used for each
+verification scenario. Obligations and decisions have `origin: "human"` by
+default; declare `origin: "agent"` for agent inspection and record with
+`record-review --origin agent`. The origin must match exactly; agent decisions
+cannot discharge human obligations. Origins and reviewer identities are
+assertions, not authentication.
 
-Each summary's `inspection` names an existing project review obligation.
-Obligations and decisions have `origin: "human"` by default; declare
-`origin: "agent"` for agent inspection, and record with
-`record-review --origin agent`. The origin must match the obligation exactly;
-agent decisions cannot discharge separate human requirements. Origins and
-reviewer identities are assertions, not authentication.
+Changing a primitive's sources, manifest, scope, kind module or compiler
+context makes its inspection stale. Changing an input of a verification run
+makes that re-evaluation fail. Either withdraws support until the primitive is
+verified and inspected again; caller results stay applicable to the abstraction
+but are not accepted meanwhile. An unchanged TLC search can still be reused
+through the result store. Whole-file pins invalidate conservatively; compiler
+and tool inputs outside the project retain absolute identities, so relocating
+the tool also stales support.
 
-Recording summary inspection resolves the endpoints and automatically adds
-source/compiler references, selected formal imports, scope and tool pins to the
-existing review fingerprints. `summary_support` records selection and compiler
-context identities and the supplemental input list. The rationale and explicit
-supporting evidence remain authored; there is no automatic C# refinement proof.
-Whole-file/context pins intentionally invalidate conservatively.
-Automatically selected compiler/tool inputs outside the project retain their
-observed absolute identities; project-local supplemental inputs are relative.
+#### What is and is not claimed
 
-`doctor`/`plan` show resolved summaries and current inspection status. Pending
-inspection does not prevent exploring a model. `run` archives the resolved
-summary inventory and input closure. `accept` requires current accepted support
-for every declared transitive dependency, in addition to the native outcomes and
-any independent human reviews. `explain`, summary output and project reports
-preserve the conditional abstraction basis.
-
-Changing the implementation makes inspection stale without changing the
-summary's model semantics. An unchanged TLC search can still be reused through
-the existing result store, but current inspection must be re-established before
-acceptance. Changing the summary changes the caller's imported model closure.
-No new evidence cache or automatic proof composition is introduced.
+Support means a finite model check of the primitive's harness against its kind,
+an accepted inspection and declared completeness of its operations. It is not a
+machine-checked refinement proof of the C# type, inspection is not proof, and a
+caller's result is conditional on the primitive's assumptions and limits.
+`guarantees` are validated vocabulary only in this release: plans, acceptance
+results and reports list them as outstanding obligations, and no check
+discharges them yet. Region, site, lock and environment checks are later
+increments of the proposal.
 
 ### One current public format
 
@@ -2235,11 +2319,11 @@ They guide CLI use without defining another binding format or review policy.
 IDs without editing source or requiring annotation context:
 
 ```powershell
-.\TlaLink.ps1 symbols find --source .\examples\MethodSummaries\src\PermitGate.cs --name TryTake --format summary
-.\TlaLink.ps1 symbols show --source .\examples\MethodSummaries\src\PermitGate.cs --id "M:SummaryExample.PermitGate.TryTake" --format summary
-.\TlaLink.ps1 symbols resolve --source .\examples\MethodSummaries\src\PermitGate.cs --line 17 --column 5 --format summary
-.\TlaLink.ps1 symbols callees --source .\examples\MethodSummaries\src\PermitGate.cs --id "M:SummaryExample.PermitGate.TryTake" --format summary
-.\TlaLink.ps1 symbols describe --source .\examples\MethodSummaries\src\PermitGate.cs --id "M:SummaryExample.PermitGate.TryTake" --format summary
+.\TlaLink.ps1 symbols find --source .\examples\Primitives\src\PermitGate.cs --name TryAcquire --format summary
+.\TlaLink.ps1 symbols show --source .\examples\Primitives\src\PermitGate.cs --id "M:PrimitivesExample.PermitGate.TryAcquire" --format summary
+.\TlaLink.ps1 symbols resolve --source .\examples\Primitives\src\PermitGate.cs --line 30 --column 5 --format summary
+.\TlaLink.ps1 symbols callees --source .\examples\Primitives\src\PermitGate.cs --id "M:PrimitivesExample.PermitGate.TryAcquire" --format summary
+.\TlaLink.ps1 symbols describe --source .\examples\Primitives\src\PermitGate.cs --id "M:PrimitivesExample.PermitGate.TryAcquire" --format summary
 ```
 
 Actions:
@@ -2859,7 +2943,12 @@ implicit active model or cross-model proof.
 TLA review/instrumentation commands require `--scope` and `--target`; optional
 `--model` must agree with the selected target. `validate-trace` reuses the exact
 scope pinned during instrumentation. Trace project stages declare `scope` and
-`target`; `doctor` and execution validate the same selection.
+`target`; `doctor` and execution validate the same selection. When that scope
+declares `synchronization.primitives`, `links`, `inspect`, `check` and `review`
+parse its models with the shipped primitive library (and declared custom module
+folders) on the SANY search path. `instrument` and `validate-trace` take that
+path only from repeated explicit `--module-path` options, which trace stages
+supply for their declared primitive uses.
 
 Integrated manifests declare `scope`, C# `sources`, and selected binding IDs
 with their adapters/cases. P analysis manifests declare `scope` when they select
@@ -3052,10 +3141,13 @@ sites, metadata targets, generic/extension identities, bundled member facts and
 missing/dynamic compiler context. The same
 controls run under `--core`, which also checks recorded compiler-context reuse.
 
-`--summaries` selects method-summary metadata, review-origin, source/summary
-drift, finite caller-state counts, result reuse, report composition and native
-misuse controls. It requires only the selected TLA+ JAR and pinned Java
-toolchain. Core summary controls also run under `--core`.
+`--primitives` selects primitive manifest structure, Roslyn operation
+completeness, SANY kind-module operator resolution, review-origin, source and
+verification drift, import-closure, report composition and shipped kind-module
+harness/negative-control suites (`primitives-core`, `primitives-native` and
+`primitive-kinds-native`). It requires only the selected TLA+ JAR and pinned
+Java toolchain. Core primitive controls also run under `--core`; the native
+suites also run under `--trace` and the full selection.
 
 `--frontend` selects the native SANY/PlusCal parity, metadata/arity, import,
 translation freshness, source extent and failure controls without running
