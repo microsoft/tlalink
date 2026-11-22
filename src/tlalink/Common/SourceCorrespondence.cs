@@ -30,9 +30,10 @@ public static class CorrespondenceInputs
         if (config.SchemaVersion != Schema.Version || config.Kind != "correspondence-scope")
             throw new InputException(ErrorCode.InvalidAnnotation, "Expected current correspondence-scope.");
         Markup.RequireVersion(config.AnnotationVersion);
-        if (config.Targets.Count is 0 or > 1000 || config.Omissions.Count > 1000 ||
-            config.Targets.Any(t => t is null) || config.Omissions.Any(r => r is null))
-            throw new InputException(ErrorCode.InvalidAnnotation, "Correspondence scope requires 1..1000 targets and at most 1000 omission rules.");
+        if (config.Targets.Count > 1000 || config.Targets.Count == 0 && config.Synchronization?.Region == null ||
+            config.Omissions.Count > 1000 || config.Targets.Any(t => t is null) || config.Omissions.Any(r => r is null))
+            throw new InputException(ErrorCode.InvalidAnnotation,
+                "Correspondence scope requires 1..1000 targets (none only beside a synchronization region) and at most 1000 omission rules.");
         ProjectInputs.Unique(config.Targets.Select(t => t.Id), "formal targets");
         ProjectInputs.Unique(config.Omissions.Select(t => t.Id), "omission rules");
         string root = Path.GetDirectoryName(path)!;
@@ -74,9 +75,7 @@ public static class CorrespondenceInputs
                 throw new InputException(ErrorCode.InvalidAnnotation, "Omissions require exact method declaration IDs, explicit unique targets, a reason and boundary assumptions.");
         }
         config = config with { Targets = targets };
-        Primitives.Validate(config.Synchronization);
-        if (config.Synchronization?.Primitives.Any(p => !File.Exists(FilePaths.Full(p, root))) == true)
-            throw new InputException(ErrorCode.InvalidAnnotation, "Declared primitive manifests must exist.");
+        SynchronizationRegion.Validate(config.Synchronization, root);
         return config;
     }
 

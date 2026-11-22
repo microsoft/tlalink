@@ -62,6 +62,23 @@
     {
       "id": "uploader",
       "components": ["uploader"]
+    },
+    {
+      "id": "region",
+      "stages": [
+        {
+          "id": "uploader-region",
+          "kind": "synchronization",
+          "timeout_seconds": 60,
+          "scope": "verification\\scope.json"
+        },
+        {
+          "id": "uploader-detached-write",
+          "kind": "synchronization",
+          "timeout_seconds": 60,
+          "scope": "controls\\scope.json"
+        }
+      ]
     }
   ]
 }

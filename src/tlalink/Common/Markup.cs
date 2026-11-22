@@ -15,6 +15,11 @@ public static class Markup
 
     public static readonly JsonSerializerOptions AnnotationJson = CreateAnnotationJson();
 
+    /// <summary>The shared typed C# source selector rule used by bind entries and scope-owned site declarations.</summary>
+    internal static bool IsSelector(PreparationTarget source) => !string.IsNullOrWhiteSpace(source.Symbol) &&
+        source.Match >= 1 && source.ExpectedMatches >= source.Match &&
+        (source.Syntax != null || source.Tokens == null && source.Match == 1 && source.ExpectedMatches == 1);
+
     private static JsonSerializerOptions CreateAnnotationJson()
     {
         JsonSerializerOptions options = new(ProjectInputs.Json) { MaxDepth = 16 };
@@ -44,9 +49,7 @@ public static class Markup
             {
                 Name(binding.Id);
                 if (binding.Reason != null && string.IsNullOrWhiteSpace(binding.Reason)) throw new JsonException("Empty binding reason.");
-                if (binding.Source is { } source && (string.IsNullOrWhiteSpace(source.Symbol) ||
-                    source.Match < 1 || source.ExpectedMatches < source.Match ||
-                    source.Syntax == null && (source.Tokens != null || source.Match != 1 || source.ExpectedMatches != 1)))
+                if (binding.Source is { } source && !IsSelector(source))
                     throw new JsonException("Source selectors require a declaration ID and an explicit, consistent syntax match.");
                 result.Add(new(binding, start, end));
             }

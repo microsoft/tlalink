@@ -1,0 +1,14 @@
+{
+  "schema_version": 4,
+  "kind": "environment",
+  "id": "frame-sink",
+  "environment_kind": "interface",
+  "types": ["T:SyncFixture.IFrameSink"],
+  "operations": [
+    { "member": "M:SyncFixture.IFrameSink.SendAsync(System.ReadOnlyMemory{System.Byte},System.Threading.CancellationToken)", "role": "submit" },
+    { "member": "M:SyncFixture.IFrameSink.Post(System.Int32)", "role": "enqueue", "lock_safe": true },
+    { "member": "M:SyncFixture.IFrameSink.Flush", "role": "submit" }
+  ],
+  "obligations": [],
+  "evidence": []
+}

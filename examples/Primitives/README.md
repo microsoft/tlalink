@@ -20,6 +20,12 @@ proof of the C# code; see [what is and is not claimed](../../REFERENCE.md#synchr
 - [`Uploader`](src/Uploader.cs), its [caller model](verification/Uploader.tla)
   and the [caller component](components/uploader.json) whose TLC stage declares
   the `permit-gate` use: the `uploader` scenario.
+- A synchronization region: the scope also declares `src/Uploader.cs` as its
+  `region`, the [`chunk-sink` environment](environments/chunk-sink/environment.json)
+  below it and the `statsLock` lock. The `region` scenario checks it with a
+  source-only `synchronization` stage and rejects the
+  [detached-write control](controls/UploaderDetachedWrite.cs), whose discarded
+  write would release the permit before the chunk is written, with `SR104`.
 
 Both models instance the shipped kind module, for example:
 
@@ -37,6 +43,8 @@ After the separately documented tool setup, run from the repository root:
 ```powershell
 .\TlaLink.ps1 doctor --project .\examples\Primitives\tlalink.project.json
 .\TlaLink.ps1 plan --project .\examples\Primitives\tlalink.project.json --format summary
+.\TlaLink.ps1 run --project .\examples\Primitives\tlalink.project.json --scenario region --output .\Results\primitives\runs\region-new
+.\TlaLink.ps1 accept --project .\examples\Primitives\tlalink.project.json --run .\Results\primitives\runs\region-new --format summary
 .\TlaLink.ps1 run --project .\examples\Primitives\tlalink.project.json --scenario permit-gate --output .\Results\primitives\runs\permit-gate-new
 .\TlaLink.ps1 accept --project .\examples\Primitives\tlalink.project.json --run .\Results\primitives\runs\permit-gate-new --output .\Results\primitives\permit-gate-new.acceptance.json --format summary
 ```
@@ -58,9 +66,17 @@ changing the harness makes the verification run stale. Either withdraws support
 until the primitive is verified and inspected again. This is agent inspection,
 not human approval.
 
-The manifest lists `signals-async` and `fifo-waiters`. In this release they are
-validated vocabulary carried into plans, acceptance results and reports as
-outstanding obligations; no check discharges them yet.
+The `region` scenario needs no model checker. Its checks also run in preflight
+for the `uploader` model stage, which uses `permit-gate` from the same scope: a
+failing region makes `doctor` report `failed` and blocks `run`. The
+`permit-gate` verification stages model the primitive's harness and are not
+blocked. The environment's obligations are listed as assumptions; it names no
+supporting evidence, so they remain unsupported assumptions.
+
+The manifest lists `signals-async` and `fifo-waiters`. The static check
+discharges `signals-async` (every `TaskCompletionSource` is created with
+`RunContinuationsAsynchronously`); `fifo-waiters` remains an outstanding
+obligation backed by the kind contract and inspection.
 
 The focused native tests copy this example into isolated directories:
 

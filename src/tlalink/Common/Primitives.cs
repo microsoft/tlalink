@@ -6,7 +6,7 @@ namespace TlaLink;
 
 /// <summary>
 /// Declared synchronization primitives: manifest loading, stage selection, Roslyn/SANY resolution and
-/// inspection-support fingerprints. Guarantees are validated vocabulary only; their discharge is not checked here.
+/// inspection-support fingerprints. Guarantee discharge checks live in <see cref="SynchronizationGuarantees"/>.
 /// </summary>
 public static class Primitives
 {
@@ -32,16 +32,8 @@ public static class Primitives
         return path;
     }
 
-    public static void Validate(SynchronizationDeclaration? synchronization)
-    {
-        if (synchronization == null) return;
-        if (synchronization.Primitives is not { Count: > 0 and <= 1000 } ||
-            synchronization.Primitives.Any(p => string.IsNullOrWhiteSpace(p) ||
-                !Path.GetExtension(p).Equals(".json", StringComparison.OrdinalIgnoreCase)) ||
-            synchronization.Primitives.Distinct(FilePaths.Comparer).Count() != synchronization.Primitives.Count)
-            throw new InputException(ErrorCode.InvalidAnnotation,
-                "synchronization.primitives requires 1..1000 unique primitive manifest paths.");
-    }
+    /// <summary>A library primitive declares a referenced (metadata) type and no sources.</summary>
+    internal static bool IsLibrary(PrimitiveManifest manifest) => manifest.Sources.Count == 0;
 
     public static PrimitiveManifest Load(string path, Dictionary<string, string> pins)
     {
@@ -68,10 +60,10 @@ public static class Primitives
         if (manifest.SchemaVersion != Schema.Version || manifest.Kind != "primitive" || !Schema.IsStableId(manifest.Id) ||
             !manifest.Type.StartsWith("T:", StringComparison.Ordinal) || manifest.Type.Length < 3)
             throw Invalid("Primitive manifests require schema/kind, a stable id and a T: type documentation ID.");
-        if (manifest.Sources.Count is < 1 or > 1000 || manifest.Sources.Any(p => string.IsNullOrWhiteSpace(p) ||
+        if (manifest.Sources.Count > 1000 || manifest.Sources.Any(p => string.IsNullOrWhiteSpace(p) ||
                 !Path.GetExtension(p).Equals(".cs", StringComparison.OrdinalIgnoreCase)) ||
             manifest.Sources.Distinct(FilePaths.Comparer).Count() != manifest.Sources.Count)
-            throw Invalid("Primitive sources must be 1..1000 unique explicit C# files.");
+            throw Invalid("Primitive sources must be at most 1000 unique explicit C# files; an empty list declares a library type.");
         if (!Kinds.Contains(manifest.PrimitiveKind, StringComparer.Ordinal))
             throw Invalid("Unsupported primitive_kind: " + manifest.PrimitiveKind);
         if ((manifest.PrimitiveKind == "custom") != (manifest.Module != null) || manifest.Module != null &&
@@ -102,11 +94,12 @@ public static class Primitives
         if (guarantees.Any(g => !Guarantees.Contains(g, StringComparer.Ordinal)) ||
             guarantees.Distinct(StringComparer.Ordinal).Count() != guarantees.Count)
             throw Invalid("Guarantees must be unique entries of: " + string.Join(", ", Guarantees));
-        if (manifest.Verification.Scenarios.Count is < 1 or > 100 ||
+        if (manifest.Verification.Scenarios.Count > 100 ||
+            manifest.Verification.Scenarios.Count == 0 && !IsLibrary(manifest) ||
             manifest.Verification.Scenarios.Any(s => !Schema.IsStableId(s)) ||
             manifest.Verification.Scenarios.Distinct(StringComparer.Ordinal).Count() != manifest.Verification.Scenarios.Count ||
             !Schema.IsStableId(manifest.Verification.Inspection))
-            throw Invalid("Verification requires unique scenario IDs and one inspection obligation.");
+            throw Invalid("Verification requires unique scenario IDs (at least one for a source primitive) and one inspection obligation.");
         List<string> dependencies = manifest.DependsOn ?? [];
         if (dependencies.Any(d => !Schema.IsStableId(d) || d == manifest.Id) ||
             dependencies.Distinct(StringComparer.Ordinal).Count() != dependencies.Count)
@@ -287,21 +280,55 @@ public static class Primitives
             Files.Pin(pins, item.Manifest, item.ManifestSha256);
             Files.Pin(pins, module.Path, module.Hash);
             foreach (var pin in module.DependencyFingerprints) Files.Pin(pins, pin.Key, pin.Value);
-            results.Add(new(item.Scope, item.Manifest, manifest, item.Module, members));
+            results.Add(new(item.Scope, item.Manifest, manifest, item.Module, members, SynchronizationGuarantees.Check(source, manifest)));
         }
         return results;
     }
 
-    /// <summary>Every public or internal declared method, constructor and property must be declared exactly once.</summary>
-    internal static List<string> Members(CSharpScope source, PrimitiveManifest manifest)
+    /// <summary>Resolves the declared type: in its own sources for a source primitive, in metadata for a library primitive.</summary>
+    internal static INamedTypeSymbol Type(Compilation compilation, PrimitiveManifest manifest, IEnumerable<string> sources)
     {
-        List<INamedTypeSymbol> types = DocumentationCommentId.GetSymbolsForDeclarationId(manifest.Type, source.Compilation)
+        List<INamedTypeSymbol> types = DocumentationCommentId.GetSymbolsForDeclarationId(manifest.Type, compilation)
             .OfType<INamedTypeSymbol>().ToList();
-        if (types.Count != 1 || !types[0].Locations.All(l => l.IsInSource) ||
-            !types[0].Locations.All(l => source.Texts.ContainsKey(l.SourceTree!.FilePath)))
+        HashSet<string> files = sources.ToHashSet(FilePaths.Comparer);
+        if (IsLibrary(manifest))
+        {
+            if (types.Count != 1 || types[0].Locations.Any(l => l.IsInSource))
+                throw Invalid("Library primitive type must resolve to exactly one referenced (metadata) type: " + manifest.Type);
+        }
+        else if (types.Count != 1 || !types[0].Locations.All(l => l.IsInSource && files.Contains(l.SourceTree!.FilePath)))
             throw Invalid("Primitive type must resolve to exactly one type declared in its sources: " + manifest.Type);
+        return types[0];
+    }
+
+    /// <summary>
+    /// A source primitive declares every public or internal method, constructor and property exactly once. A library
+    /// primitive declares the members a region uses; each must be a member of the type (region checks enforce use).
+    /// </summary>
+    internal static List<string> Members(CSharpScope source, PrimitiveManifest manifest, IEnumerable<string>? sources = null)
+    {
+        List<string> declared = Members(source.Compilation, Type(source.Compilation, manifest, sources ?? source.Texts.Keys),
+            manifest, out List<string> missing);
+        if (missing.Count > 0) throw Invalid("Undeclared primitive members of " + manifest.Id + ": " + string.Join(", ", missing));
+        return declared;
+    }
+
+    /// <summary>Resolved members; <paramref name="missing"/> lists visible source members the manifest does not declare.</summary>
+    internal static List<string> Members(Compilation compilation, INamedTypeSymbol type, PrimitiveManifest manifest,
+        out List<string> missing)
+    {
+        missing = [];
+        if (IsLibrary(manifest))
+        {
+            foreach (PrimitiveOperation operation in manifest.Operations)
+                if (DocumentationCommentId.GetSymbolsForDeclarationId(operation.Member, compilation)
+                    .Where(s => s is IMethodSymbol or IPropertySymbol).ToList() is not [ISymbol member] ||
+                    !SymbolEqualityComparer.Default.Equals(member.ContainingType, type))
+                    throw Invalid("Unknown primitive operation members of " + manifest.Id + ": " + operation.Member);
+            return manifest.Operations.Select(o => o.Member).Order(StringComparer.Ordinal).ToList();
+        }
         List<string> declared = [];
-        foreach (ISymbol member in types[0].GetMembers())
+        foreach (ISymbol member in type.GetMembers())
         {
             if (member.IsImplicitlyDeclared || member.DeclaredAccessibility is not
                 (Accessibility.Public or Accessibility.Internal or Accessibility.ProtectedOrInternal))
@@ -314,9 +341,8 @@ public static class Primitives
                 declared.Add(member.GetDocumentationCommentId() ?? throw Invalid("Primitive member has no documentation ID."));
         }
         HashSet<string> listed = manifest.Operations.Select(o => o.Member).ToHashSet(StringComparer.Ordinal);
-        List<string> missing = declared.Where(m => !listed.Contains(m)).Order(StringComparer.Ordinal).ToList();
+        missing = declared.Where(m => !listed.Contains(m)).Order(StringComparer.Ordinal).ToList();
         List<string> unknown = listed.Where(m => !declared.Contains(m, StringComparer.Ordinal)).Order(StringComparer.Ordinal).ToList();
-        if (missing.Count > 0) throw Invalid("Undeclared primitive members of " + manifest.Id + ": " + string.Join(", ", missing));
         if (unknown.Count > 0) throw Invalid("Unknown primitive operation members of " + manifest.Id + ": " + string.Join(", ", unknown));
         return declared.Order(StringComparer.Ordinal).ToList();
     }

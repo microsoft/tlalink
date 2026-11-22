@@ -1690,8 +1690,9 @@ by one `primitive` manifest and checked against one abstract kind. Each
 primitive is verified once in its own scenarios; caller models reuse the kind
 contract by instancing its TLA+ module. Primitives replace the former reviewed
 method summaries: a stateless helper is a `custom` primitive whose operations
-are `pure`. The design and later increments (regions, instances and sites,
-environments, scale) are in the
+are `pure`. Environments and synchronization regions declare the parties
+outside a region and the C# files inside it, checked without a model checker.
+The design and later increments (instances and sites, scale) are in the
 [proposal](docs/proposals/synchronization-primitives.md). See the runnable
 [synthetic example](examples/Primitives/README.md).
 
@@ -1749,20 +1750,21 @@ kind. Callers substitute their own variable and sets, for example
 | Field | Rule |
 |---|---|
 | `id` | Stable ID, unique among the primitives of one correspondence scope. |
-| `type`, `sources` | A `T:` documentation ID resolved with Roslyn and the project compiler profile in 1..1000 explicit `.cs` files relative to the manifest. The type must be declared in those sources. |
+| `type`, `sources` | A `T:` documentation ID resolved with Roslyn and the project compiler profile in at most 1000 explicit `.cs` files relative to the manifest. With sources, the type must be declared in them (a source primitive); `sources: []` declares a [library primitive](#library-primitives) over a referenced metadata type. |
 | `primitive_kind` | One kind above. `module` (a `.tla` path relative to the manifest) is required for `custom` and rejected otherwise. |
-| `operations` | Every public, internal or protected internal method, constructor, operator and property declared by the type, exactly once, by `M:`/`P:` ID. Compiler-generated members and nested types are excluded; unknown members are errors; visible non-constant fields and events are rejected. Asynchronous and `Task`-returning members are allowed. |
+| `operations` | For a source primitive, every public, internal or protected internal method, constructor, operator and property declared by the type, exactly once, by `M:`/`P:` ID. Compiler-generated members and nested types are excluded; unknown members are errors; visible non-constant fields and events are rejected. Asynchronous and `Task`-returning members are allowed. A library primitive lists the members a region uses. |
 | `role` | `create`, `query`, `acquire`, `try-acquire`, `release`, `signal`, `wait`, `close`, `complete`, `enqueue`, `dequeue` or `pure`. State-changing roles (`acquire` through `dequeue`, except `wait`) need at least one action. |
 | `actions`, `fails`, `wait`, `precondition` | Kind-module operator names. `actions` are in order, and a trailing `?` marks a conditional step; `fails` lists the actions modeling exceptional outcomes; `wait` names the wait predicate and is required exactly for `wait` operations; `precondition` names an operator the caller must establish. Each must resolve through SANY to a parameterized operator defined in the kind module. |
 | `guarantees` | Unique entries of `signals-async`, `non-blocking`, `fifo-waiters`, `cancellable-wait`, `inline-callbacks`. |
-| `verification` | 1..100 project scenario IDs that verify the primitive, each with a TLC/trace stage directly using it, and one existing review obligation. |
+| `verification` | Up to 100 project scenario IDs that verify the primitive, each with a TLC/trace stage directly using it (at least one for a source primitive), and one existing review obligation. |
 | `depends_on` | Other primitive IDs in the same scope; unknown IDs and cycles are errors. |
 | `assumptions`, `limits` | Nonempty entries; at least one limit. Carried into acceptance results and reports. |
 
 Unknown or duplicate properties are rejected, including `state_mapping`, which
 arrives with trace capture in a later increment.
 
-A schema-4 `correspondence-scope` declares its primitives:
+A schema-4 `correspondence-scope` declares its primitives and, optionally, a
+[synchronization region](#synchronization-regions):
 
 ```json
 "synchronization": {
@@ -1770,9 +1772,159 @@ A schema-4 `correspondence-scope` declares its primitives:
 }
 ```
 
-Only `primitives` (1..1000 unique existing manifest paths relative to the scope)
-is supported; `region`, `environments` and `locks` are rejected until their
-checks exist.
+`primitives` lists 1..1000 unique existing manifest paths relative to the
+scope (it may be empty beside a region).
+
+#### Library primitives
+
+A primitive with `sources: []` declares a type from a compiler reference, for
+example a `cancellation-source` over `T:System.Threading.CancellationTokenSource`.
+The type must resolve to exactly one metadata type and each declared member to
+one of its methods or properties. Completeness is over the members a region
+uses (`SR101` reports others), not all members. `verification.scenarios` may be
+empty: support is the inspection plus any listed scenarios, and every listed
+guarantee stays outstanding because there are no sources to check.
+
+#### Environments
+
+One `environment` manifest per party outside a region:
+
+```json
+{
+  "$schema": "../../../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "environment",
+  "id": "chunk-sink",
+  "environment_kind": "interface",
+  "types": ["T:PrimitivesExample.IChunkSink"],
+  "operations": [
+    { "member": "M:PrimitivesExample.IChunkSink.WriteAsync(System.ReadOnlyMemory{System.Byte})", "role": "submit" }
+  ],
+  "obligations": ["Every WriteAsync call completes or faults; it never waits for another Uploader operation."],
+  "evidence": []
+}
+```
+
+| Field | Rule |
+|---|---|
+| `environment_kind` | `interface` (code outside the region implementing a type the region calls) or `consumer` (code calling into the region or reading what it produces). The scheduler is built in and cannot be declared. |
+| `types` | 1..100 unique `T:` IDs, each resolving to exactly one source or referenced (metadata) type, for example `T:System.IO.Pipelines.PipeWriter` through a compiler reference. |
+| `operations` | 1..1000 unique `M:`/`P:` members of those types, with a `role` from the primitive roles plus `submit`. Only members the region uses must be declared. `lock_safe: true` marks an operation whose synchronous part may run inside a declared lock: it does not block, take region locks or run region code inline. |
+| `module`, `actions`, `wait` | Optional `.tla` contract relative to the manifest. `actions` and `wait` name operators that SANY must resolve in it; they require a module. |
+| `obligations` | 1..100 nonempty statements the region relies on. They are assumptions, listed in plans and in project reports of synchronization stages. |
+| `evidence` | Up to 100 unique project scenario or stage IDs supporting the obligations; unknown IDs are errors at project load. Without evidence the obligations are reported as unsupported assumptions. |
+
+#### Synchronization regions
+
+```json
+"synchronization": {
+  "region": ["..\\src\\Uploader.cs"],
+  "primitives": ["..\\primitives\\permit-gate\\primitive.json"],
+  "environments": ["..\\environments\\chunk-sink\\environment.json"],
+  "locks": [
+    { "field": "F:Demo.Connection.stateLock", "may_hold": ["F:Demo.Connection.tableLock"] },
+    { "field": "F:Demo.Connection.tableLock", "indexed_by": "T:Demo.Connection" }
+  ],
+  "spawns": [{
+    "site": { "symbol": "M:Demo.Connection.Start", "syntax": "InvocationExpression", "tokens": "Task.Run(this.PumpAsync)" },
+    "disposition": "joined",
+    "reason": "CloseAsync awaits the stored pump task."
+  }],
+  "waits": [{
+    "site": { "symbol": "M:Demo.Connection.CloseAsync", "syntax": "AwaitExpression", "tokens": "await this.pump.ConfigureAwait(false)" },
+    "kind": "join",
+    "reason": "Joins the pump spawned by Start."
+  }]
+}
+```
+
+| Field | Rule |
+|---|---|
+| `region` | 1..1000 unique existing `.cs` files relative to the scope. A scope with a region may declare no formal `targets`. `environments`, `locks`, `spawns` and `waits` require a region. |
+| `environments` | 1..1000 unique environment manifest paths. |
+| `locks` | Every `lock` target in the region: unique `F:` fields declared in the region. `may_hold` lists other declared locks that may be acquired while this one is held; the graph must be acyclic. `indexed_by` is a `T:` owner type (used by later model instances). Unresolved or unused locks are `SR105`. |
+| `spawns` | One entry per spawn site: a `site` using the typed source selector of `bind` entries (`symbol`, `syntax`, `tokens`, `match`, `expected_matches`), `disposition` `joined` or `detached`, and a nonempty `reason`. An entry matches a site that its selected node contains within the same statement. |
+| `waits` | Explicit dispositions for awaits that are not declared waits: a `site` selector (an `AwaitExpression`, or the statement of an `await foreach`/`await using`), a `kind` (`join`, `timer`, `yield` or `external`) and a `reason`. |
+
+Waits and spawns are scope-owned dispositions rather than formal `exclude`
+entries: region checks run without models and their sites belong to the region,
+not to a formal target.
+
+Primitive types declared inside a region file, for example a nested class, are
+exempt from region rules inside their own declarations; their guarantee checks
+apply instead. Everything else in a region file is region code, including
+lambdas passed to spawns.
+
+#### Region diagnostics
+
+Every region diagnostic is an error with a file:line location, the documentation
+ID of the enclosing member and a precise message (`Connection.cs:41:
+M:Demo.Connection.TrySend(System.Int32): ...`). Scope-level findings start
+with the scope file name.
+
+| Code | Check | Rule |
+|---|---|---|
+| `SR100` | Raw synchronization | Outside declared primitive bodies, any use of `Interlocked`, `Volatile`, `volatile` fields, `Monitor`, `Lock`, `SemaphoreSlim`, `Semaphore`, `Mutex`, `EventWaitHandle`, `ManualResetEvent(Slim)`, `AutoResetEvent`, `CountdownEvent`, `Barrier`, `SpinLock`, `ReaderWriterLock(Slim)`, `TaskCompletionSource` (generic and not), `ManualResetValueTaskSourceCore`, `System.Threading.Channels` types, an `IValueTaskSource` implementation, or a `lock` whose target is not a declared lock field. Declared primitive and environment types are exempt; the type of a declared lock field may be `Lock`. |
+| `SR101` | Undeclared operation | A member of a declared primitive or environment type is used but not declared in its manifest, including an undeclared visible member of a source primitive. Implicit constructors of source primitives need no declaration. |
+| `SR102` | Undeclared wait | An `await` (after stripping `ConfigureAwait`) that does not target a primitive operation with role `wait`, a declared environment operation, an invocation of a region method or local function, or a `Task.Run`/`TaskFactory.StartNew` spawn site, and is not covered by a `waits` disposition. Awaiting a Task-typed field, local, parameter or property, `Task.WhenAll`, `Task.Delay` or `Task.Yield` needs a disposition; `await foreach` and `await using` always do. |
+| `SR103` | Lock region | Inside a declared lock, and transitively in the region methods, constructors and accessors it calls: no primitive `wait` operation; no `release`, `signal`, `complete`, `close`, `enqueue` or `try-acquire` operation unless its primitive claims `signals-async`; no operation of a `once` or `cancellation-source` primitive or of a primitive claiming `inline-callbacks`; environment operations only when `lock_safe`; no delegate or event invocation; nested locks only when listed in the held lock's `may_hold`. |
+| `SR104` | Spawn | A spawn site without a `spawns` entry, or a contradictory disposition (an awaited site declared `detached`; a discarded, unawaited, `async void` or `ThreadPool.QueueUserWorkItem` site declared `joined`). Spawn sites are `Task.Run`, `TaskFactory.StartNew`, `ThreadPool.QueueUserWorkItem`, `new Thread`, discards `_ = <task>`, expression statements whose value is an unawaited `Task`/`ValueTask`, and invocations of `async void` methods. |
+| `SR105` | Stale declaration | A `spawns` or `waits` entry that does not resolve, selects code outside the region, or matches no (or several) sites; a wait disposition on an already declared wait; an unresolved or unused lock; an unresolved primitive or environment type or member; an environment operator SANY does not resolve. |
+| `SR106` | Undischarged guarantee | A source primitive's `signals-async` or `non-blocking` static check failed. |
+| `SR200` | Incomplete | The region and primitive sources do not compile with the project compiler profile; the outcome is incomplete, not rejected. |
+
+The lock check follows region calls depth first, visiting each callee once per
+`lock` statement, so recursion terminates. Lambdas and local functions are not
+entered unless invoked; a called async method is checked in full, conservatively
+including code after its first `await`. A primitive operation is classified by
+its declared role, not by what its implementation does.
+
+The `signals-async` check covers every `TaskCompletionSource` construction in
+the primitive's declarations (a constant `TaskCreationOptions` argument with
+`RunContinuationsAsynchronously`) and every instance `ManualResetValueTaskSourceCore`
+field (set to constant `true` in its initializer or at the top level of every
+constructor, directly or through `: this(...)`, and never reassigned or set to
+anything else). `non-blocking` rejects `Wait`, `WaitAll`, `WaitAny`,
+`SignalAndWait`, `WaitHandle.WaitOne`, `Thread.Sleep`/`Join`,
+`SpinWait.SpinUntil`, `Task<T>.Result`/`ValueTask<T>.Result` and awaiter
+`GetResult` calls, and any `await` outside an operation with role `wait`;
+acquiring a `lock` is not counted as blocking. Both checks are syntactic and
+may reject safe code, for example reading `Result` of a completed task.
+
+#### Synchronization stages
+
+A stage of kind `synchronization` names one scope with a region and takes no
+models, config, sources, bindings, arguments, primitive uses or target:
+
+```json
+{ "id": "uploader-region", "kind": "synchronization", "timeout_seconds": 60, "scope": "verification\\scope.json" }
+```
+
+It runs `check-synchronization` with the project compiler profile (plus the
+pinned TLA+ JAR only when an environment declares a module) and records a
+`synchronization-result` receipt: status `passed`, `rejected` or `incomplete`,
+the region report (files, primitives with guarantee statuses, environments,
+locks, site counts) and every diagnostic. Requirements use `passed`, or
+`rejected` with an `SR` diagnostic, optional `diagnostic_text` and
+`diagnostic_count`, like other stages; no backend claim is selected. Every
+region, primitive and environment input is pinned and archived. Acceptance
+checks the receipt against the declared scope and the archived pins; it does
+not rerun the checks, and any changed input makes the run stale. Project
+reports list each environment's obligations and `lock_safe` operations as
+assumptions of the stage, and an environment without evidence as a gap.
+
+The checks also run in preflight for each region scope that a TLC/trace stage
+uses a primitive from, unless the stage belongs to a verification scenario of
+every primitive it uses. `doctor` and `plan` list each analyzed region under
+`regions` with role `stage` or `preflight`; a failing preflight region or a
+failed guarantee check makes their status `failed` (exit 1), and `run` refuses
+to start. Standalone:
+
+```powershell
+.\TlaLink.ps1 check-synchronization --scope .\examples\Primitives\verification\scope.json --format summary
+```
+
+Exit codes are 0 (passed), 1 (rejected) and 2 (incomplete or invalid input).
 
 #### Stage uses
 
@@ -1798,8 +1950,10 @@ that the caller uses the contract correctly: check preconditions explicitly as
 authored properties at the call boundary.
 
 `doctor`/`plan` resolve every selected primitive (Roslyn type and operation
-completeness, SANY operators) and show its inspection status and outstanding
-guarantees. Pending support does not prevent exploring a model. `run` archives
+completeness, SANY operators, guarantee checks) and show its inspection status,
+each guarantee's status (`discharged`, `failed` or `outstanding`) and the
+outstanding ones. Pending support does not prevent exploring a model; a failed
+guarantee check does. `run` archives
 the resolved primitives and their inputs; `explain`, acceptance summaries and
 project reports show them.
 
@@ -1847,10 +2001,13 @@ Support means a finite model check of the primitive's harness against its kind,
 an accepted inspection and declared completeness of its operations. It is not a
 machine-checked refinement proof of the C# type, inspection is not proof, and a
 caller's result is conditional on the primitive's assumptions and limits.
-`guarantees` are validated vocabulary only in this release: plans, acceptance
-results and reports list them as outstanding obligations, and no check
-discharges them yet. Region, site, lock and environment checks are later
-increments of the proposal.
+Only the static `signals-async` and `non-blocking` checks discharge guarantees;
+acceptance results record each status, a failed check fails acceptance, and
+reports list the others as outstanding obligations. Region checks establish
+that declared vocabulary covers a region's synchronization sites under the
+stated syntactic rules, not that the region is deadlock free; environment
+obligations are assumptions. Instance and site bindings to models are a later
+increment of the proposal.
 
 ### One current public format
 

@@ -35,6 +35,7 @@ public sealed class CliOptions
                 "match", "expected-matches", "capture", "clear-capture", "reason", "output", "timeout", "format", "apply", "strip-source", "reason-policy",
                 "context", "view", "include-unlinked", "calls", "source-file", "kind", "status", "capture-point",
                 "search", "section", "offset", "limit", "group-by", "callee-source", "callee-limit", "callee-max-lines"],
+            ["check-synchronization"] = ["scope", "reference", "define", "language-version", "jar", "timeout", "format"],
             ["check-dafny"] = ["config", "dafny", "output", "timeout", "format"],
             ["read-dafny"] = ["result", "current", "format"],
             ["check-regression"] = ["config", "output", "timeout", "format"],

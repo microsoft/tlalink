@@ -22,6 +22,22 @@ public enum ErrorCode
     SourceObligationIncomplete,
     [DiagnosticInfo("SP001", IssueSeverity.Error)]
     InvalidSourcePreparation,
+    [DiagnosticInfo("SR100", IssueSeverity.Error)]
+    RawSynchronization,
+    [DiagnosticInfo("SR101", IssueSeverity.Error)]
+    UndeclaredOperation,
+    [DiagnosticInfo("SR102", IssueSeverity.Error)]
+    UndeclaredWait,
+    [DiagnosticInfo("SR103", IssueSeverity.Error)]
+    LockRegionViolation,
+    [DiagnosticInfo("SR104", IssueSeverity.Error)]
+    UndeclaredSpawn,
+    [DiagnosticInfo("SR105", IssueSeverity.Error)]
+    StaleSynchronizationDeclaration,
+    [DiagnosticInfo("SR106", IssueSeverity.Error)]
+    GuaranteeCheckFailed,
+    [DiagnosticInfo("SR200", IssueSeverity.Error)]
+    SynchronizationRegionIncomplete,
     [DiagnosticInfo("RP001", IssueSeverity.Error)]
     InvalidReportInput,
     [DiagnosticInfo("RP002", IssueSeverity.Warning)]

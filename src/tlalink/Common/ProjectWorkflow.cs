@@ -28,29 +28,32 @@ public static partial class ProjectWorkflow
             : project.Scenarios;
         Dictionary<string, TlaDocument> parsed = new(FilePaths.Comparer);
         List<PrimitiveResolution> primitives = [];
-        Dictionary<string, string> pins = Pins(path, project, policy, scenarios, parsed, primitives);
+        List<PlannedRegion> regions = [];
+        Dictionary<string, string> pins = Pins(path, project, policy, scenarios, parsed, primitives, regions);
         List<CheckCoverage> coverage = ProjectInputs.Coverage(project, policy, scenarios.Select(s => s.Id));
         List<Issue> coverageIssues = coverage.SelectMany(o => o.Gaps.Select(gap =>
             new Issue(ErrorCode.WorkflowPrerequisiteMissing, o.Id + ": " + gap))).ToList();
+        List<Issue> blocking = SynchronizationWorkflow.Blocking(regions, primitives);
         if (options.Command is "doctor" or "plan")
         {
             ProjectPlan report = new(
                 Schema.Version, options.Command == "doctor" ? "project-preflight" : "analysis-plan",
-                project.Id, coverageIssues.Count == 0 ? "ready" : "incomplete", project.Compiler,
+                project.Id, blocking.Count > 0 ? "failed" : coverageIssues.Count == 0 ? "ready" : "incomplete", project.Compiler,
                 project.AnnotationVersion,
                 primitives.Select(p => new PlannedPrimitive(p.Scope, p.Manifest, p.Primitive, p.Module,
                     ProjectAcceptance.ReviewStatus(path, project, p.Primitive.Verification.Inspection),
                     project.Obligations.Single(o => o.Id == p.Primitive.Verification.Inspection).Origin,
-                    p.Primitive.Guarantees ?? [],
-                    "Resolved declaration: complete operations, kind-module operators and Roslyn type. Support needs accepted verification scenarios and current inspection; listed guarantees are outstanding obligations; not machine-checked C# refinement."
+                    p.Guarantees, p.Guarantees.Where(g => g.Status != "discharged").Select(g => g.Guarantee).ToList(),
+                    "Resolved declaration: operations, kind-module operators and Roslyn type. Support needs accepted verification scenarios and current inspection; a guarantee is discharged only by its static source check, and the others remain outstanding obligations; not machine-checked C# refinement."
                 )).ToList(),
-                coverage, coverageIssues,
+                regions, coverage, [.. coverageIssues, .. blocking],
                 pins, scenarios.Select(s => new PlannedScenario(
                     s.Id, ProjectInputs.Order(s).Select(stage => new PlannedStage(
                         stage.Id, stage.Kind, stage.DependsOn, stage.TimeoutSeconds, stage.Primitives,
                         stage.Resources,
                         stage.Kind is "tlc" or "trace" ? TlcResources.Effective(stage.Kind, stage.Resources) : null,
                         stage.Kind == "oracle" ? "synchronous-int-bool-adapter; native signature resolution required" :
+                            stage.Kind == "synchronization" ? SynchronizationWorkflow.StageCapability :
                             stage.Kind == "csharp-regression" ? "selected console-harness assertions; observed compiler inputs and loaded entry binary; no model conformance" :
                             stage.Kind == "dafny-verify" ? "native Dafny contracts and assumption audit; no C# correspondence or oracle execution" :
                             ApalacheInputs.IsStage(stage.Kind) ? "native Apalache " + stage.Kind + "; explicit typed safety scope; no TLC exhaustion, liveness or trace-matching claim" :
@@ -64,11 +67,14 @@ public static partial class ProjectWorkflow
                 )).ToList(),
                 project.Obligations.Select(o => new PlannedReview(
                     o.Id, o.Origin, Schema.Hash(o), ProjectAcceptance.ReviewStatus(path, project, o.Id))).ToList(),
-                "Check coverage maps explicit declarations to required compatible backends, not proofs or inferred TLC properties/fairness. Preflight does not discharge reviews or establish milestone acceptance."
+                "Check coverage maps explicit declarations to required compatible backends, not proofs or inferred TLC properties/fairness. Region summaries are Roslyn source checks; environment obligations are assumptions. Preflight does not discharge reviews or establish milestone acceptance."
             );
             Render(report, options);
-            return coverageIssues.Count == 0 ? 0 : 2;
+            return blocking.Count > 0 ? 1 : coverageIssues.Count == 0 ? 0 : 2;
         }
+        if (blocking.Count > 0)
+            throw new InputException(Enum.GetValues<ErrorCode>().First(c => c.Id() == blocking[0].Code),
+                string.Join("; ", blocking.Select(i => i.Code + ": " + i.Message)));
         if (coverageIssues.Count > 0)
             throw new InputException(ErrorCode.WorkflowPrerequisiteMissing, string.Join("; ", coverageIssues.Select(i => i.Message)));
         if (scenarios.Count != 1) throw new InputException(ErrorCode.InvalidWorkflowInput, "run requires --scenario when the project has multiple scenarios.");
@@ -136,8 +142,9 @@ public static partial class ProjectWorkflow
         return run.ExecutionStatus == "completed" ? 0 : 2;
     }
 
+    /// <summary>Preflight pins and resolution. Without a <paramref name="regions"/> collector, blocking region issues throw.</summary>
     private static Dictionary<string, string> Pins(string path, AnalysisProject project, AcceptancePolicy policy, List<AnalysisScenario> scenarios,
-        Dictionary<string, TlaDocument>? parsed = null, List<PrimitiveResolution>? primitives = null)
+        Dictionary<string, TlaDocument>? parsed = null, List<PrimitiveResolution>? primitives = null, List<PlannedRegion>? regions = null)
     {
         Dictionary<string, string> pins = new(FilePaths.Comparer);
         foreach (var pin in project.Authoring!.Fingerprints) Files.Pin(pins, pin.Key, pin.Value);
@@ -184,6 +191,12 @@ public static partial class ProjectWorkflow
             }
             if (stage.Scope != null)
                 _ = CorrespondenceInputs.Load(ProjectInputs.Resolve(path, stage.Scope), pins);
+            if (stage.Kind == "synchronization" && SynchronizationWorkflow.NeedsJar(ProjectInputs.Resolve(path, stage.Scope!), pins))
+            {
+                needJar = true;
+                if (project.Tools.Jar == null)
+                    throw new InputException(ErrorCode.WorkflowPrerequisiteMissing, "Environment modules resolve through SANY and require a pinned TLA+ JAR: " + stage.Id);
+            }
             if (stage.Sources is { Count: > 0 })
                 foreach (string file in Files.Discover(stage.Sources.Select(p => ProjectInputs.Resolve(path, p)).ToList(), ".cs")) Pin(file);
             if (stage.Models is { Count: > 0 })
@@ -232,6 +245,22 @@ public static partial class ProjectWorkflow
         List<PrimitiveResolution> resolved = Primitives.Inspect(path, project, selectedPrimitives, pins,
             (model, modulePath) => ParsedModel(model, scenarios.SelectMany(s => s.Stages).Max(s => s.TimeoutSeconds), modulePath));
         primitives?.AddRange(resolved);
+        int timeout = scenarios.SelectMany(s => s.Stages).Max(s => s.TimeoutSeconds);
+        List<PlannedRegion> analyzed = [];
+        foreach (var (scope, role, stages) in SynchronizationWorkflow.Scopes(path, scenarios))
+        {
+            Dictionary<string, string> regionPins = new(FilePaths.Comparer);
+            SynchronizationRegionReport region = SynchronizationRegion.Analyze(scope,
+                project.Compiler.References.Select(p => ProjectInputs.Resolve(path, p)), project.Compiler.Defines,
+                project.Compiler.LanguageVersion, regionPins, project.Tools.Jar == null ? null :
+                    (model, modulePath) => ParsedModel(model, timeout, modulePath));
+            foreach (var pin in regionPins) Files.Pin(pins, pin.Key, pin.Value);
+            analyzed.Add(new(role, stages, region));
+        }
+        if (regions != null) regions.AddRange(analyzed);
+        else if (SynchronizationWorkflow.Blocking(analyzed, resolved) is { Count: > 0 } blocking)
+            throw new InputException(Enum.GetValues<ErrorCode>().First(c => c.Id() == blocking[0].Code),
+                string.Join("; ", blocking.Select(i => i.Code + ": " + i.Message)));
         foreach (AnalysisStage stage in scenarios.SelectMany(s => s.Stages).Where(s => s.Primitives != null))
         {
             TlaDocument consumer = ParsedModel(ProjectInputs.Resolve(path, stage.Models![0]), stage.TimeoutSeconds,
@@ -310,6 +339,13 @@ public static partial class ProjectWorkflow
                 arguments.AddRange(["--dafny", ProjectInputs.Resolve(path, project.Tools.Dafny!.Path)]);
             if (project.Tools.Jar != null) Jar();
             Compiler();
+        }
+        else if (stage.Kind == "synchronization")
+        {
+            string scope = ProjectInputs.Resolve(path, stage.Scope!);
+            arguments.AddRange(["check-synchronization", "--scope", scope]);
+            Compiler();
+            if (SynchronizationWorkflow.NeedsJar(scope, new(FilePaths.Comparer))) Jar();
         }
         else if (stage.Kind == "tlc") throw new InvalidOperationException("TLC stages execute through the result-store path.");
         else if (stage.Kind == "trace") return Trace(path, project, stage, output, pins);
@@ -396,7 +432,7 @@ public static partial class ProjectWorkflow
     {
         string? expectedKind = kind switch {
             "csharp-regression" => "csharp-regression-result", "dafny-verify" => "dafny-result",
-            "tlc" => "tlc-result", "trace" => "trace-validation", _ => null };
+            "tlc" => "tlc-result", "trace" => "trace-validation", "synchronization" => "synchronization-result", _ => null };
         if (expectedKind != null && result.Kind != expectedKind) return "incomplete";
         if (ApalacheInputs.IsStage(kind) && result.Kind != "apalache-result") return "incomplete";
         if (PInputs.IsStage(kind) && result.Kind != "p-result") return "incomplete";
@@ -503,7 +539,10 @@ public static partial class ProjectWorkflow
                         }
                     }
                     foreach (PlannedPrimitiveView primitive in plan.Primitives)
-                        Console.WriteLine($"primitive {primitive.Id}: {primitive.PrimitiveKind}; inspection {primitive.InspectionStatus}");
+                        Console.WriteLine($"primitive {primitive.Id}: {primitive.PrimitiveKind}; inspection {primitive.InspectionStatus}; " +
+                            $"outstanding guarantees {primitive.OutstandingGuarantees.Count}");
+                    foreach (RegionSummary region in plan.Regions)
+                        Console.WriteLine($"region {region.Scope}: {region.Status} ({region.Role}); {region.Diagnostics.Count} diagnostics");
                     foreach (PlannedReview review in plan.ReviewStatus) Console.WriteLine($"review {review.Id}: {review.Status}");
                     break;
                 case WorkflowRunSummary run:

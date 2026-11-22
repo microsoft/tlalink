@@ -7,7 +7,7 @@ internal static class AnalysisDocuments
     internal static bool MatchesStage(string stage, IAnalysisResult result) => stage switch {
         "tlc" => result is TlcResult, "trace" => result is TraceValidationResult,
         "csharp-regression" => result is CSharpRegressionResult, "dafny-verify" => result is DafnyResult,
-        "inputs" => result is ModelInputsResult,
+        "inputs" => result is ModelInputsResult, "synchronization" => result is SynchronizationResult,
         _ when PInputs.IsStage(stage) => result is PPacket,
         _ when ApalacheInputs.IsStage(stage) => result is ApalachePacket,
         _ => result is IntegratedResult
@@ -31,6 +31,7 @@ internal static class AnalysisDocuments
             "p-result" => Deserialize<PPacket>(root),
             "apalache-result" => Deserialize<ApalachePacket>(root),
             "model-inputs" => Deserialize<ModelInputsResult>(root),
+            "synchronization-result" => Deserialize<SynchronizationResult>(root),
             "command-error" => Deserialize<CommandFailure>(root),
             "integrated-result" => Deserialize<IntegratedResult>(root),
             _ => throw new InputException(ErrorCode.InvalidCommandOutput, "Unsupported analysis result kind: " + selected)

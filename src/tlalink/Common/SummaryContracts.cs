@@ -64,13 +64,23 @@ public sealed record ResolvedPrimitiveView(string Scope, string Id, string Primi
     int Operations);
 public sealed record PlannedPrimitiveView(string Scope, string Id, string PrimitiveKind, string Type, string Module,
     int Operations, List<string> VerificationScenarios, string Inspection, string InspectionStatus,
-    ReviewOrigin InspectionOrigin, List<string> DependsOn, List<string> OutstandingGuarantees, string Boundary);
+    ReviewOrigin InspectionOrigin, List<string> DependsOn, List<GuaranteeSummary> Guarantees,
+    List<string> OutstandingGuarantees, string Boundary);
+public sealed record GuaranteeSummary(string Guarantee, string Status);
+public sealed record RegionPrimitiveSummary(string Id, string Origin, List<GuaranteeSummary> Guarantees);
+public sealed record RegionEnvironmentSummary(string Id, string EnvironmentKind, List<string> LockSafe,
+    List<string> Obligations, List<string> Evidence, string Support);
+public sealed record RegionSummary(string Scope, string Role, List<string> Stages, string Status, int Files,
+    RegionSites Sites, List<RegionPrimitiveSummary> Primitives, List<RegionEnvironmentSummary> Environments,
+    List<Issue> Diagnostics);
+public sealed record SynchronizationSummary(string Status, RegionSummary Region, string Boundary)
+    : CommandSummaryResult("synchronization-result");
 public sealed record PlannedStageSummary(string Id, string Kind, List<string> DependsOn,
     TlcResources? RequestedResources, TlcResources? Resources, int? Fingerprint,
     List<StoredOutcome>? Stored, List<PrimitiveUse>? Primitives);
 public sealed record PlannedScenarioSummary(string Id, List<PlannedStageSummary> Stages);
 public sealed record ProjectPlanSummary([property: JsonIgnore] string NativeKind, string Project, string Status, int AnnotationVersion,
-    List<PlannedPrimitiveView> Primitives, List<CoverageSummary> CheckCoverage,
+    List<PlannedPrimitiveView> Primitives, List<RegionSummary> Regions, List<CoverageSummary> CheckCoverage,
     List<Issue> Diagnostics, List<PlannedScenarioSummary> Scenarios, List<PlannedReview> ReviewStatus,
     string Boundary) : CommandSummaryResult(NativeKind);
 public sealed record SourceInventorySummary(string Status, int AnnotationVersion, int SourceCount,

@@ -182,6 +182,12 @@ TlaLink does not model a whole program at once. For a larger system:
   map a C# gate, latch or queue onto a shipped TLA+ kind contract that caller
   models instance. A verification scenario and source-pinned inspection support
   it; caller results remain conditional on that support.
+- **Declare where code synchronizes.** A synchronization region lists the C#
+  files in which only declared primitives, environments and locks may
+  synchronize. A source-only stage checks raw synchronization, undeclared
+  operations and waits, lock bodies and spawned work with Roslyn, and lists
+  environment obligations as assumptions. These checks cover declared sites;
+  they are not a deadlock or progress proof.
 - **Only re-check what changed.** With a declared result store, completed
   TLC searches are reused while their models and configurations are unchanged,
   like an incremental build. Expensive searches can run once, separately,

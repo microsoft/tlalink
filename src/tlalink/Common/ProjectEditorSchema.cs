@@ -27,7 +27,8 @@ public static class ProjectEditorSchema
             ("inputSets", "project-input-sets", typeof(ProjectInputSets)),
             ("executionProfiles", "project-execution-profiles", typeof(ProjectExecutionProfiles)),
             ("correspondenceScope", "correspondence-scope", typeof(CorrespondenceConfiguration)),
-            ("primitive", "primitive", typeof(PrimitiveManifest))
+            ("primitive", "primitive", typeof(PrimitiveManifest)),
+            ("environment", "environment", typeof(EnvironmentManifest))
         ];
         foreach (var document in documents)
         {
@@ -106,13 +107,36 @@ public static class ProjectEditorSchema
                 }
                 if (properties["primitives"] is JsonObject primitives)
                 {
-                    primitives["minItems"] = 1;
+                    // A synchronization declaration may list no primitives beside a region.
+                    primitives["minItems"] = properties.ContainsKey("region") ? 0 : 1;
                     primitives["maxItems"] = 1000;
+                }
+                if (properties.ContainsKey("region") && properties.ContainsKey("locks"))
+                    foreach (string list in new[] { "region", "environments", "locks", "spawns", "waits" })
+                    {
+                        properties[list]!["minItems"] = 1;
+                        properties[list]!["maxItems"] = 1000;
+                    }
+                if (properties.ContainsKey("site") && properties.ContainsKey("disposition"))
+                    properties["disposition"]!["enum"] = new JsonArray(SynchronizationRegion.SpawnDispositions.Select(k => (JsonNode?)JsonValue.Create(k)).ToArray());
+                if (properties.ContainsKey("site") && properties.ContainsKey("kind") && !properties.ContainsKey("disposition"))
+                    properties["kind"]!["enum"] = new JsonArray(SynchronizationRegion.WaitKinds.Select(k => (JsonNode?)JsonValue.Create(k)).ToArray());
+                if (properties.ContainsKey("environment_kind"))
+                {
+                    properties["environment_kind"]!["enum"] = new JsonArray(Environments.Kinds.Select(k => (JsonNode?)JsonValue.Create(k)).ToArray());
+                    properties["types"]!["minItems"] = 1;
+                    properties["types"]!["maxItems"] = 100;
+                    properties["types"]!["uniqueItems"] = true;
+                    properties["operations"]!["minItems"] = 1;
+                    properties["operations"]!["maxItems"] = 1000;
+                    properties["obligations"]!["minItems"] = 1;
+                    properties["obligations"]!["maxItems"] = 100;
+                    properties["evidence"]!["maxItems"] = 100;
+                    properties["evidence"]!["uniqueItems"] = true;
                 }
                 if (properties.ContainsKey("primitive_kind") && properties.ContainsKey("operations"))
                 {
                     properties["primitive_kind"]!["enum"] = new JsonArray(Primitives.Kinds.Select(k => (JsonNode?)JsonValue.Create(k)).ToArray());
-                    properties["sources"]!["minItems"] = 1;
                     properties["sources"]!["maxItems"] = 1000;
                     properties["sources"]!["uniqueItems"] = true;
                     properties["operations"]!["minItems"] = 1;
@@ -125,7 +149,8 @@ public static class ProjectEditorSchema
                     };
                 }
                 if (properties.ContainsKey("member") && properties.ContainsKey("role"))
-                    properties["role"]!["enum"] = new JsonArray(Primitives.Roles.Select(r => (JsonNode?)JsonValue.Create(r)).ToArray());
+                    properties["role"]!["enum"] = new JsonArray((properties.ContainsKey("lock_safe") ? Environments.Roles : Primitives.Roles)
+                        .Select(r => (JsonNode?)JsonValue.Create(r)).ToArray());
                 if (properties.ContainsKey("scope") && properties.ContainsKey("ids"))
                 {
                     properties["ids"]!["minItems"] = 1;

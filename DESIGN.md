@@ -164,10 +164,61 @@ when re-evaluated. Source, manifest, scope, module, compiler-context and tool
 changes stale the inspection; verification-input changes fail re-evaluation.
 Agent decisions cannot satisfy human obligations.
 
-Guarantees are validated vocabulary carried into plans, acceptance and reports
-as outstanding obligations until a later increment discharges them. Support is
-a finite check of a harness against the kind plus inspection; it is not a
-machine-checked refinement proof of the C# type.
+A library primitive declares a referenced metadata type with no sources, for
+example a cancellation source over `CancellationTokenSource`. It declares only
+the members a region uses, its support is inspection plus any listed scenarios,
+and none of its guarantees can be discharged by a source check.
+
+Two guarantees have static discharge checks over a source primitive's own type
+declarations: `signals-async` (every `TaskCompletionSource` construction passes
+`RunContinuationsAsynchronously`, and every `ManualResetValueTaskSourceCore`
+field sets it on every construction path) and `non-blocking` (no blocking
+waits, `Result`/`GetResult` reads or sleeps, and `await` only inside wait
+operations). Preflight records each check's status with the resolved
+primitive; a failed check blocks runs and acceptance. `fifo-waiters`,
+`cancellable-wait` and `inline-callbacks` stay declared and inspection-backed.
+Support is a finite check of a harness against the kind plus inspection; it is
+not a machine-checked refinement proof of the C# type.
+
+### Synchronization regions and environments
+
+A correspondence scope's `synchronization.region` names explicit C# files in
+which only declared primitives, environments and locks may synchronize. The
+checks live in `SynchronizationRegion.cs` and run on one Roslyn compilation of
+the region files and the primitive sources under the project compiler profile:
+raw synchronization types and undeclared `lock` targets, members of declared
+primitive and environment types that their manifests do not declare, every
+`await` classified as a primitive wait, an environment operation, a region
+call or a declared spawn (anything else needs a typed `waits` disposition),
+lock bodies followed through the region methods they call, spawn sites
+matched one-to-one with typed `spawns` entries, and the guarantee checks above.
+Scope-owned `spawns` and `waits` entries reuse the typed source selector of
+`bind`; the formal-owned `exclude` mechanism is not used because these checks
+need no model and belong to the region, not to a formal target.
+
+Environment manifests declare parties outside the region: their types (source
+or metadata), the operations the region uses, which of them are `lock_safe`,
+optional TLA+ contract operators resolved through SANY, obligations and
+evidence stage or scenario IDs. Obligations are assumptions: plans list them
+and project reports carry them on synchronization stages, and an environment
+without evidence is reported as an unsupported assumption, not a failure.
+
+These are syntactic Roslyn checks over explicit files, not alias, data-flow or
+runtime analysis. Instances are not traced through locals or parameters, code
+outside the region and implicit callbacks are not followed, and declared
+dispositions, `lock_safe` and environment obligations are trusted. Passing
+checks establish that the declared vocabulary covers the region's
+synchronization sites; they do not prove deadlock freedom or progress.
+
+The checks run in two places. A `synchronization` stage runs them alone,
+without a model checker, and records a `synchronization-result` receipt whose
+outcome requirements accept like any stage; negative controls are separate
+scopes over named mutant files. Preflight also runs them for every region
+scope that a TLC/trace stage uses a primitive from, except stages of a
+primitive's own verification scenarios, which model the primitive's harness
+rather than the region. A failing region there makes `doctor`/`plan` report
+`failed` and blocks `run`, and its files are pinned into the run, so a model
+result cannot be accepted over a changed or failing region.
 
 ### Source and native correspondence
 
@@ -425,6 +476,10 @@ and freshness handling are in a separate partial frontend under `PlusCal`.
 | `TlaIndex.java` | Authoritative SANY/PlusCal adapter |
 | `Tla/Primitives/TlaLink*.tla` | Shipped primitive kind modules, deployed under `primitives` |
 | `Primitives.cs` | Primitive manifests, stage selection, Roslyn completeness, SANY operator resolution and support pins |
+| `SynchronizationGuarantees.cs` | Static `signals-async` and `non-blocking` discharge checks over a source primitive's declarations |
+| `Environments.cs` | Environment manifests, Roslyn member resolution and SANY operator resolution |
+| `SynchronizationRegion.cs` | Region declaration validation and Roslyn region checks (raw synchronization, operations, waits, locks, spawns) |
+| `SynchronizationWorkflow.cs` | Region scopes of a selection, environment evidence IDs and preflight blocking |
 | `ModelScope.cs` | Model annotations, explicit label bindings and operator arities |
 | `Review.cs` | Scoped uniqueness/link/coverage diagnostics and review questions |
 | `Instrumentation.cs` | Validated, separately generated source captures and binding manifest |

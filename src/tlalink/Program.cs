@@ -21,6 +21,7 @@ public static class Program
             if (options.Command == "links") return Links.Run(options);
             if (options.Command == "inspect-source") return SourceInventory.Run(options);
             if (options.Command == "report") return EvidenceReport.Run(options);
+            if (options.Command == "check-synchronization") return SynchronizationRegion.Run(options, args);
             if (options.Command == "project-schema") return ProjectEditorSchema.Run(options);
             if (options.Command == "gc") return EvidenceGarbageCollection.Run(options);
             if (options.Command is "check-dafny" or "read-dafny") return DafnyAnalysisBackend.Run(options);

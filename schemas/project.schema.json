@@ -20,6 +20,9 @@
     },
     {
       "$ref": "#/$defs/primitive"
+    },
+    {
+      "$ref": "#/$defs/environment"
     }
   ],
   "$defs": {
@@ -238,6 +241,7 @@
                         "inputs",
                         "tlc",
                         "trace",
+                        "synchronization",
                         "csharp-regression",
                         "dafny-verify",
                         "apalache-typecheck",
@@ -739,6 +743,7 @@
                   "inputs",
                   "tlc",
                   "trace",
+                  "synchronization",
                   "csharp-regression",
                   "dafny-verify",
                   "apalache-typecheck",
@@ -1241,6 +1246,7 @@
                   "inputs",
                   "tlc",
                   "trace",
+                  "synchronization",
                   "csharp-regression",
                   "dafny-verify",
                   "apalache-typecheck",
@@ -1539,6 +1545,216 @@
                   "null"
                 ]
               },
+              "minItems": 0,
+              "maxItems": 1000
+            },
+            "region": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "default": null,
+              "minItems": 1,
+              "maxItems": 1000
+            },
+            "environments": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "default": null,
+              "minItems": 1,
+              "maxItems": 1000
+            },
+            "locks": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "may_hold": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "default": null
+                  },
+                  "indexed_by": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "default": null
+                  }
+                },
+                "required": [
+                  "field"
+                ],
+                "additionalProperties": false
+              },
+              "default": null,
+              "minItems": 1,
+              "maxItems": 1000
+            },
+            "spawns": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "site": {
+                    "type": "object",
+                    "properties": {
+                      "symbol": {
+                        "type": "string"
+                      },
+                      "syntax": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      },
+                      "tokens": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      },
+                      "match": {
+                        "type": "integer",
+                        "default": 1
+                      },
+                      "expected_matches": {
+                        "type": "integer",
+                        "default": 1
+                      }
+                    },
+                    "required": [
+                      "symbol"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "disposition": {
+                    "type": "string",
+                    "enum": [
+                      "joined",
+                      "detached"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "site",
+                  "disposition",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              "default": null,
+              "minItems": 1,
+              "maxItems": 1000
+            },
+            "waits": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "site": {
+                    "type": "object",
+                    "properties": {
+                      "symbol": {
+                        "type": "string"
+                      },
+                      "syntax": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      },
+                      "tokens": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      },
+                      "match": {
+                        "type": "integer",
+                        "default": 1
+                      },
+                      "expected_matches": {
+                        "type": "integer",
+                        "default": 1
+                      }
+                    },
+                    "required": [
+                      "symbol"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "join",
+                      "timer",
+                      "yield",
+                      "external"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "site",
+                  "kind",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              "default": null,
               "minItems": 1,
               "maxItems": 1000
             }
@@ -1594,7 +1810,6 @@
               "null"
             ]
           },
-          "minItems": 1,
           "maxItems": 1000,
           "uniqueItems": true
         },
@@ -1787,6 +2002,161 @@
         "verification",
         "assumptions",
         "limits"
+      ],
+      "additionalProperties": false
+    },
+    "environment": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 4
+        },
+        "kind": {
+          "type": "string",
+          "const": "environment"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,100}$",
+          "not": {
+            "enum": [
+              ".",
+              ".."
+            ]
+          }
+        },
+        "environment_kind": {
+          "type": "string",
+          "enum": [
+            "interface",
+            "consumer"
+          ]
+        },
+        "types": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "member": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "create",
+                  "query",
+                  "acquire",
+                  "try-acquire",
+                  "release",
+                  "signal",
+                  "wait",
+                  "close",
+                  "complete",
+                  "enqueue",
+                  "dequeue",
+                  "pure",
+                  "submit"
+                ]
+              },
+              "actions": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "default": null
+              },
+              "wait": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "default": null
+              },
+              "lock_safe": {
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "required": [
+              "member",
+              "role"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 1000
+        },
+        "obligations": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 100
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "maxItems": 100,
+          "uniqueItems": true
+        },
+        "module": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "$schema": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "environment_kind",
+        "types",
+        "operations",
+        "obligations",
+        "evidence"
       ],
       "additionalProperties": false
     }

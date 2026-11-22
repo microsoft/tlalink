@@ -73,8 +73,8 @@ public static class PrimitiveManifestTests
                 Primitives.Select(path, project, [stage with { Primitives = [new("scope.json", ["cycle-a"])] }]));
             CoreTests.True(cycle.Message.Contains("Cyclic", StringComparison.Ordinal));
             File.WriteAllText(Path.Combine(directory, "scope.json"), File.ReadAllText(Path.Combine(directory, "scope.json"))
-                .Replace("\"primitives\":", "\"region\": [\"SignalLatch.cs\"], \"primitives\":", StringComparison.Ordinal));
-            CoreTests.ThrowsAny<JsonException>(() => CorrespondenceInputs.Load(Path.Combine(directory, "scope.json"), new(FilePaths.Comparer)));
+                .Replace("\"locks\": null", "\"locks\": [{\"field\": \"F:PrimitiveFixture.SignalLatch.sync\"}]", StringComparison.Ordinal));
+            CoreTests.ThrowsAny<InputException>(() => CorrespondenceInputs.Load(Path.Combine(directory, "scope.json"), new(FilePaths.Comparer)));
         });
         test("component primitive uses retain declaring-file scope paths", () =>
         {
@@ -166,7 +166,9 @@ public static class PrimitiveManifestTests
                 JsonElement primitive = plan.RootElement.GetProperty("primitives").EnumerateArray().Single();
                 CoreTests.Equal("pending", primitive.GetProperty("inspection_status").GetString());
                 CoreTests.Equal("counting-resource", primitive.GetProperty("primitive_kind").GetString());
-                CoreTests.Equal(2, primitive.GetProperty("outstanding_guarantees").GetArrayLength());
+                CoreTests.Equal("fifo-waiters", primitive.GetProperty("outstanding_guarantees").EnumerateArray().Single().GetString());
+                CoreTests.Equal("discharged", primitive.GetProperty("guarantees").EnumerateArray()
+                    .Single(g => g.GetProperty("guarantee").GetString() == "signals-async").GetProperty("status").GetString());
             }
             string verification = f.Run("permit-gate", "verification");
             WorkflowRun verified = ProjectInputs.Read<WorkflowRun>(Path.Combine(verification, "run.json"));
@@ -185,6 +187,7 @@ public static class PrimitiveManifestTests
                 JsonElement primitive = accepted.RootElement.GetProperty("primitives").EnumerateArray().Single();
                 CoreTests.Equal("current", primitive.GetProperty("support_status").GetString());
                 CoreTests.Equal("accepted", primitive.GetProperty("verification")[0].GetProperty("status").GetString());
+                CoreTests.Equal("fifo-waiters", primitive.GetProperty("outstanding_guarantees").EnumerateArray().Single().GetString());
             }
             string report = Path.Combine(f.Directory, "report.md");
             CoreTests.Equal(0, f.Cli("report", "--run", caller, "--output", report).Code);
@@ -192,6 +195,8 @@ public static class PrimitiveManifestTests
             EvidenceReportNode node = rendered.Nodes.Single(n => n.Kind == "code" && n.Title == "permit-gate");
             CoreTests.Equal("current", node.RecordedStatus);
             CoreTests.True(node.Gaps.Any(g => g.Contains("Outstanding guarantee obligation: fifo-waiters", StringComparison.Ordinal)));
+            CoreTests.True(!node.Gaps.Any(g => g.Contains("signals-async", StringComparison.Ordinal)) &&
+                node.Claim.Contains("Statically checked guarantees: signals-async", StringComparison.Ordinal));
             File.AppendAllText(f.Source, "\n");
             CoreTests.Equal("stale", f.Status());
             CoreTests.Equal(2, f.Cli("accept", "--run", caller).Code);
@@ -229,6 +234,43 @@ public static class PrimitiveManifestTests
             var human = f.Cli("record-review", "--obligation", "permit-gate-inspection", "--origin", "human",
                 "--reviewer", "synthetic-human", "--rationale", "Negative role control.", "--evidence", f.Source);
             CoreTests.Equal(2, human.Code);
+        });
+    }
+
+    public static void RegisterRegion(Action<string, Action> test, string root, string work)
+    {
+        test("the example synchronization stage passes, its control is rejected and both are accepted", () =>
+        {
+            Example f = new(root, work);
+            using (JsonDocument plan = JsonDocument.Parse(f.Cli("plan", "--format", "summary").Json))
+            {
+                CoreTests.Equal("ready", plan.RootElement.GetProperty("status").GetString());
+                JsonElement[] regions = [.. plan.RootElement.GetProperty("regions").EnumerateArray()];
+                JsonElement verification = regions.Single(r => r.GetProperty("scope").GetString()!.EndsWith(System.IO.Path.Combine("verification", "scope.json"), StringComparison.Ordinal));
+                CoreTests.True(verification.GetProperty("role").GetString() == "preflight" && verification.GetProperty("status").GetString() == "passed");
+                CoreTests.True(verification.GetProperty("stages").EnumerateArray().Select(s => s.GetString()).SequenceEqual(["uploader/uploader", "region/uploader-region"]));
+                CoreTests.Equal("rejected", regions.Single(r => r.GetProperty("role").GetString() == "stage").GetProperty("status").GetString());
+            }
+            string run = f.Run("region", "region");
+            WorkflowRun recorded = ProjectInputs.Read<WorkflowRun>(System.IO.Path.Combine(run, "run.json"));
+            CoreTests.True(recorded.Stages.Select(s => s.Outcome).SequenceEqual(["passed", "rejected"]));
+            CoreTests.Equal(0, f.Cli("accept", "--run", run).Code);
+        });
+        test("a failing region blocks caller model stages in preflight but not the primitive's own verification", () =>
+        {
+            Example f = new(root, work);
+            File.Copy(System.IO.Path.Combine(f.Directory, "controls", "UploaderDetachedWrite.cs"),
+                System.IO.Path.Combine(f.Directory, "src", "Uploader.cs"), overwrite: true);
+            var doctor = f.Cli("doctor", "--scenario", "uploader");
+            CoreTests.Equal(1, doctor.Code);
+            using (JsonDocument plan = JsonDocument.Parse(doctor.Json))
+            {
+                CoreTests.Equal("failed", plan.RootElement.GetProperty("status").GetString());
+                CoreTests.True(plan.RootElement.GetProperty("diagnostics").EnumerateArray().Any(d => d.GetProperty("code").GetString() == "SR104"));
+            }
+            var run = f.Cli("run", "--scenario", "uploader", "--output", System.IO.Path.Combine(f.Directory, "runs", "blocked"));
+            CoreTests.True(run.Code != 0 && run.Json.Contains("SR104", StringComparison.Ordinal));
+            CoreTests.Equal(0, f.Cli("doctor", "--scenario", "permit-gate").Code);
         });
     }
 

@@ -62,6 +62,17 @@ public static class ProjectAcceptance
             foreach (string input in Primitives.Inputs(primitive))
                 if (!recordedPaths.ContainsKey(RecordedPath(input)))
                     Error(ErrorCode.WorkflowProvenanceInconsistent, "Run is missing a primitive input pin: " + input);
+        List<GuaranteeStatus> RecordedGuarantees(SelectedPrimitive primitive) =>
+            run.Primitives.FirstOrDefault(r => r.Primitive.Id == primitive.Primitive.Id)?.Guarantees ?? [];
+        foreach (SelectedPrimitive primitive in selectedPrimitives)
+        {
+            List<GuaranteeStatus> guarantees = RecordedGuarantees(primitive);
+            if (!guarantees.Select(g => g.Guarantee).SequenceEqual(primitive.Primitive.Guarantees ?? []))
+                Error(ErrorCode.WorkflowStageInconsistent, "Run guarantee checks differ from the declared guarantees of " + primitive.Primitive.Id + ".");
+            foreach (GuaranteeStatus failed in guarantees.Where(g => g.Status == "failed"))
+                Error(ErrorCode.GuaranteeCheckFailed, "Primitive " + primitive.Primitive.Id + " claims " + failed.Guarantee +
+                    " but its static check failed: " + string.Join("; ", failed.Findings));
+        }
         Dictionary<string, List<PrimitiveVerificationStatus>> verifications = new(StringComparer.Ordinal);
         List<PrimitiveVerificationStatus> Verified(SelectedPrimitive primitive)
         {
@@ -158,6 +169,11 @@ public static class ProjectAcceptance
                         ProjectInputs.Resolve(path, project.Tools.Dafny!.Path)))
                     Error(ErrorCode.WorkflowStageInconsistent, "Native regression/Dafny evidence differs from the declared config/tool/deadline.");
             }
+            if (result is SynchronizationResult synchronization &&
+                (!FilePaths.Comparer.Equals(synchronization.Region.Scope, RecordedPath(ProjectInputs.Resolve(path, selectedStage.Scope!))) ||
+                    synchronization.Status != synchronization.Region.Status ||
+                    !synchronization.Diagnostics.SequenceEqual(synchronization.Region.Diagnostics)))
+                Error(ErrorCode.WorkflowStageInconsistent, "Synchronization evidence differs from the declared scope or its own region report: " + stage.Id);
             if (result is PPacket p)
             {
                 issues.AddRange(PEvidence.Validate(p, Path.Combine(directory, stage.Id, "engine")));
@@ -312,8 +328,10 @@ public static class ProjectAcceptance
                     verifiedHere ? "verified-by-this-scenario" : "required",
                     p.Primitive.Verification.Inspection, ReviewStatus(path, project, p.Primitive.Verification.Inspection),
                     verifiedHere ? [] : Verified(p), verifiedHere ? "established-by-this-scenario" : Support(p),
-                    p.Primitive.DependsOn ?? [], p.Primitive.Guarantees ?? [], p.Primitive.Assumptions, p.Primitive.Limits,
-                    "Caller results are conditional on this primitive's verification scenarios and inspection; listed guarantees are outstanding obligations; not machine-checked C# refinement.");
+                    p.Primitive.DependsOn ?? [], RecordedGuarantees(p),
+                    RecordedGuarantees(p).Where(g => g.Status != "discharged").Select(g => g.Guarantee).ToList(),
+                    p.Primitive.Assumptions, p.Primitive.Limits,
+                    "Caller results are conditional on this primitive's verification scenarios and inspection; guarantees are discharged only by their recorded static checks and the others are outstanding obligations; not machine-checked C# refinement.");
             }).ToList(),
             policy.Requirements.Where(r => r.Scenario == run.Scenario).SelectMany(r => r.Reviews ?? [])
                 .Concat(requiredInspections)

@@ -106,15 +106,18 @@ public static class ProjectReport
             {
                 AcceptancePrimitive accepted = evaluation.Report.Primitives.Single(p => p.Id == primitive.Primitive.Id);
                 bool verifiedHere = accepted.Use == "verified-by-this-scenario";
+                List<string> discharged = accepted.Guarantees.Where(g => g.Status == "discharged").Select(g => g.Guarantee).ToList();
                 nodes.Add(new(primitiveIds[primitive.Primitive.Id], "code", primitive.Primitive.Id,
                     "Declared " + primitive.Primitive.PrimitiveKind + " primitive " + primitive.Primitive.Type +
-                    "; support is accepted verification scenarios plus current inspection, not machine-checked C# refinement.",
+                    "; support is accepted verification scenarios plus current inspection, not machine-checked C# refinement." +
+                    (discharged.Count == 0 ? "" : " Statically checked guarantees: " + string.Join(", ", discharged) + "."),
                     accepted.SupportStatus, verifiedHere ? null : "current",
                     (verifiedHere ? [] : new[] { reviewIds[primitive.Primitive.Verification.Inspection] })
                         .Concat((primitive.Primitive.DependsOn ?? []).Select(id => primitiveIds[id])).ToList(),
                     [runPath, evaluations[i]], primitive.Primitive.Assumptions,
-                    [.. primitive.Primitive.Limits, .. (primitive.Primitive.Guarantees ?? []).Select(g =>
-                        "Outstanding guarantee obligation: " + g + "; no discharge check is performed.")]));
+                    [.. primitive.Primitive.Limits, .. accepted.Guarantees.Where(g => g.Status != "discharged").Select(g =>
+                        g.Status == "failed" ? "Failed guarantee check: " + g.Guarantee + "." :
+                            "Outstanding guarantee obligation: " + g.Guarantee + "; " + g.Check + ".")]));
             }
             foreach (AnalysisStage stage in scenario.Stages)
             {
@@ -125,6 +128,7 @@ public static class ProjectReport
                 List<AnalysisRequirement> stageRequirements = requirements.Where(r => r.Stage == stage.Id).ToList();
                 List<string> stageReviews = stageRequirements.SelectMany(r => r.Reviews ?? [])
                     .Concat(Primitives.Inspections(path, project, scenario.Id, [stage])).Distinct(StringComparer.Ordinal).ToList();
+                var environment = EnvironmentAssumptions(stage, recorded, runs[i]);
                 List<string> incomplete = recorded == null ? ["missing-stage"] :
                     recorded.ExecutionStatus != "completed" || recorded.Outcome == "incomplete"
                         ? [recorded.ExecutionStatus + " / " + recorded.Outcome, .. recorded.Diagnostics] : [];
@@ -133,7 +137,7 @@ public static class ProjectReport
                     scenario.Id + ": " + stage.Id, "Recorded " + stage.Kind + " result; scope remains backend-specific.",
                     recorded?.Outcome ?? "incomplete", outcomes.Count == 1 ? outcomes[0] : null,
                     stage.DependsOn.Select(id => stageIds[id]).Concat(Primitives.Select(path, project, [stage])
-                        .Select(p => primitiveIds[p.Primitive.Id])).ToList(), evidence, [], [],
+                        .Select(p => primitiveIds[p.Primitive.Id])).ToList(), evidence, environment.Assumptions, environment.Gaps,
                     new(prefix, scenario.Id, stage.Id, stage.Kind, recorded?.ExecutionStatus ?? "missing",
                         recorded?.DurationSeconds, recorded?.StoredResults?.Any(s => s.Primary && s.Origin == "reused") == true,
                         Metrics(recorded, runs[i], Pin, incomplete),
@@ -195,6 +199,19 @@ public static class ProjectReport
             [.. gaps, .. sourceReport?.Gaps ?? []], sourceReport?.SourceInventories);
         Files.WriteNew(manifestPath, manifest);
         return EvidenceReport.Run(new(["report", "--manifest", manifestPath, "--output", output, "--format", options.Get("format", "json")]));
+    }
+
+    /// <summary>Environment obligations of a recorded synchronization stage are report assumptions; missing evidence is a gap.</summary>
+    private static (List<string> Assumptions, List<string> Gaps) EnvironmentAssumptions(AnalysisStage stage, WorkflowStageResult? recorded, string run)
+    {
+        if (stage.Kind != "synchronization" || recorded?.Evidence is not { Length: > 0 } evidence ||
+            AnalysisDocuments.Read(ProjectAcceptance.SafePath(run, evidence)) is not SynchronizationResult result)
+            return ([], []);
+        return (result.Region.Environments.SelectMany(e => e.Obligations.Select(o => "Environment " + e.Id + " (" + e.EnvironmentKind + "): " + o)
+                .Concat(e.LockSafe.Select(m => "Environment " + e.Id + " operation " + m +
+                    " is lock_safe: it does not block, take region locks or run region code inline."))).ToList(),
+            result.Region.Environments.Where(e => e.Support == "unsupported-assumption")
+                .Select(e => "Environment " + e.Id + " obligations have no declared supporting evidence.").ToList());
     }
 
     internal static List<ReportMetric> Metrics(WorkflowStageResult? stage, string run,

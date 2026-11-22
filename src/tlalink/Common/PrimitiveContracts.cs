@@ -2,7 +2,6 @@ using System.Text.Json.Serialization;
 
 namespace TlaLink;
 
-public sealed record SynchronizationDeclaration(List<string> Primitives);
 public sealed record PrimitiveOperation(string Member, string Role, List<string>? Actions = null,
     List<string>? Fails = null, string? Wait = null, string? Precondition = null);
 public sealed record PrimitiveVerification(List<string> Scenarios, string Inspection);
@@ -16,14 +15,15 @@ public sealed record PrimitiveVerificationEvidence(string Scenario, string Recei
 public sealed record PrimitiveSupport(string SelectionSha256, string SourceContextSha256, List<string> Inputs,
     List<PrimitiveVerificationEvidence> Verification);
 public sealed record PrimitiveResolution(string Scope, string Manifest, PrimitiveManifest Primitive, string Module,
-    List<string> Members);
+    List<string> Members, List<GuaranteeStatus> Guarantees);
 public sealed record PlannedPrimitive(string Scope, string Manifest, PrimitiveManifest Primitive, string Module,
-    string InspectionStatus, ReviewOrigin InspectionOrigin, List<string> OutstandingGuarantees, string Boundary);
+    string InspectionStatus, ReviewOrigin InspectionOrigin, List<GuaranteeStatus> Guarantees,
+    List<string> OutstandingGuarantees, string Boundary);
 public sealed record PrimitiveVerificationStatus(string Scenario, string? Receipt, string Status);
 public sealed record AcceptancePrimitive(string Scope, string Id, string PrimitiveKind, string Type, string Use,
     string Inspection, string InspectionStatus, List<PrimitiveVerificationStatus> Verification, string SupportStatus,
-    List<string> DependsOn, List<string> OutstandingGuarantees, List<string> Assumptions, List<string> Limits,
-    string Boundary);
+    List<string> DependsOn, List<GuaranteeStatus> Guarantees, List<string> OutstandingGuarantees,
+    List<string> Assumptions, List<string> Limits, string Boundary);
 
 internal sealed record SelectedPrimitive(string Scope, string ScopeSha256, string Manifest, string ManifestSha256,
     PrimitiveManifest Primitive, string Module);

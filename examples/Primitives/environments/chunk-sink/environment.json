@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "environment",
+  "id": "chunk-sink",
+  "environment_kind": "interface",
+  "types": ["T:PrimitivesExample.IChunkSink"],
+  "operations": [
+    { "member": "M:PrimitivesExample.IChunkSink.WriteAsync(System.ReadOnlyMemory{System.Byte})", "role": "submit" }
+  ],
+  "obligations": [
+    "Every WriteAsync call completes or faults; it never waits for another Uploader operation.",
+    "WriteAsync does not call back into the Uploader or its PermitGate."
+  ],
+  "evidence": []
+}

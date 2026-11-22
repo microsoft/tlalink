@@ -70,7 +70,7 @@ public sealed class WorkflowRun
 public static class ProjectInputs
 {
     internal static readonly string[] StageKinds = [
-        "inspect", "verify", "oracle", "inputs", "tlc", "trace", "csharp-regression", "dafny-verify",
+        "inspect", "verify", "oracle", "inputs", "tlc", "trace", "synchronization", "csharp-regression", "dafny-verify",
         "apalache-typecheck", "apalache-check", "apalache-inductive",
         "p-inspect", "p-pchecker", "p-pex", "p-psym", "p-pverifier", "p-pobserve"
     ];
@@ -195,6 +195,14 @@ public static class ProjectInputs
                         if (manifest.Models.Count > 0 && project.Tools.Jar == null)
                             throw new InputException(ErrorCode.InvalidWorkflowInput, "Selected TLA+ targets require a pinned JAR.");
                     }
+                    else if (stage.Kind == "synchronization")
+                    {
+                        if (stage.Scope == null || stage.Target != null || stage.Bindings != null || stage.Models != null ||
+                            stage.Sources != null || stage.Config != null || stage.Arguments != null || stage.Primitives != null)
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "Synchronization stages take exactly one correspondence scope.");
+                        if (CorrespondenceInputs.Load(Resolve(path, stage.Scope), new(FilePaths.Comparer)).Synchronization?.Region == null)
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "Synchronization stage scopes must declare synchronization.region.");
+                    }
                     else if (stage.Models is not { Count: > 0 } || project.Tools.Jar == null)
                         throw new InputException(ErrorCode.InvalidWorkflowInput, "TLA stages require explicit models and a pinned JAR.");
                     if (stage.Kind is "tlc" or "trace" && (stage.Config == null || stage.Models?.Count != 1))
@@ -210,8 +218,8 @@ public static class ProjectInputs
                         if (!target.Inputs.SequenceEqual(stage.Models!.Select(p => Resolve(path, p)), FilePaths.Comparer))
                             throw new InputException(ErrorCode.InvalidWorkflowInput, "Trace model contradicts the selected correspondence target.");
                     }
-                    else if (stage.Scope != null || stage.Target != null)
-                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Only trace stages take scope/target directly; other native stages use their own configuration.");
+                    else if (stage.Kind != "synchronization" && (stage.Scope != null || stage.Target != null))
+                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Only trace and synchronization stages take a scope directly; other native stages use their own configuration.");
                     if (stage.Kind is "inputs" or "tlc" or "trace" && stage.Bindings != null ||
                         stage.Kind is "inputs" or "tlc" && (stage.Sources != null || stage.Arguments != null) ||
                         stage.Kind == "inputs" && stage.Config != null)
@@ -237,6 +245,7 @@ public static class ProjectInputs
             foreach (string input in obligation.Inputs) _ = Resolve(path, input);
         }
         Primitives.Select(path, project, project.Scenarios.SelectMany(s => s.Stages));
+        SynchronizationWorkflow.ValidateEvidence(path, project);
         if (string.IsNullOrWhiteSpace(project.ReviewDirectory))
             throw new InputException(ErrorCode.InvalidWorkflowInput, "A review directory must be explicitly selected.");
         if (project.ResultStore != null && string.IsNullOrWhiteSpace(project.ResultStore))

@@ -1,6 +1,9 @@
 # Synchronization primitives and environments
 
-Status: proposal. First consumer: a private multiplexed RPC and bulk-transfer
+Status: increments 1 and 2 and the environment manifests of increment 4 are
+implemented; see [synchronization primitives](../../REFERENCE.md#synchronization-primitives)
+for the current contract and section 14 for what differs. The rest is a
+proposal. First consumer: a private multiplexed RPC and bulk-transfer
 library, a two-endpoint protocol over one ordered frame transport. Its mapping
 stays with that consumer; every example here is synthetic.
 
@@ -439,10 +442,27 @@ validated on the first consumer before the next starts.
    of `method_summaries`. `state_mapping` arrives with increment 5.
 2. **Region checks without models.** Raw synchronization, undeclared operation
    and wait, lock region and spawn checks as a source-only stage.
+   *Implemented* as `SR100`..`SR106` (`SR200` for an incomplete compilation),
+   the `synchronization` stage kind and the `check-synchronization` command,
+   with library primitives (`sources: []`) and the static `signals-async` and
+   `non-blocking` guarantee checks. Differences from the text above: spawns
+   and awaits that are not declared waits use scope-owned typed `spawns` and
+   `waits` entries instead of model bindings or `exclude`, because no model
+   exists yet; spawns are declared `joined` or `detached` rather than bound;
+   `try-acquire` counts as a role that can resume waiters; the checks also run
+   in preflight for model stages that use a primitive from a region scope,
+   except the primitive's own verification stages; events are not raw
+   synchronization by themselves, but invoking one under a lock is `SR103`.
 3. **Instances and sites.** The `instance` annotation, unbound-site and
    contract-mismatch checks.
 4. **Environments and reports.** Environment manifests, `lock_safe`,
    obligations and fairness assumptions in the evidence report.
+   *Environment manifests are implemented* with `types` (one or more source or
+   metadata types) instead of one `type`, operations limited to the members a
+   region uses, SANY resolution of `actions`/`wait` when a `module` is given,
+   and `evidence` validated against project scenario and stage IDs. Plans
+   list obligations, and project reports carry them as assumptions of
+   synchronization stages; fairness assumptions remain for this increment.
 5. **Scale.** Instance sets, symmetry rules, trace capture through
    `state_mapping` and per-component projection.
 

@@ -25,6 +25,21 @@
       "stage": "uploader",
       "expected": "passed",
       "config_sha256": "8D4DA8B8E0E5F734F7F7117428B4E2EE60AB763E2089D41C38B66F0544A3FB03"
+    },
+    {
+      "id": "uploader-region-checked",
+      "scenario": "region",
+      "stage": "uploader-region",
+      "expected": "passed"
+    },
+    {
+      "id": "uploader-detached-write-rejected",
+      "scenario": "region",
+      "stage": "uploader-detached-write",
+      "expected": "rejected",
+      "diagnostic": "SR104",
+      "diagnostic_text": "undeclared spawn (discarded task)",
+      "diagnostic_count": 1
     }
   ]
 }

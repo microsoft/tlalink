@@ -157,8 +157,14 @@ Skills do not install tools, approve correspondence or discharge human gates.
   own scenario with negative controls, then justify it through source-pinned
   inspection, including competing accesses, failures and inline effects. Check
   caller preconditions explicitly, not merely as disabling guards. Guarantees
-  remain outstanding obligations until checks discharge them. Record agent
-  inspection with `origin=agent`; it cannot discharge a human obligation. See
+  remain outstanding obligations unless their static check discharges them.
+  Record agent inspection with `origin=agent`; it cannot discharge a human
+  obligation. Declare synchronization regions as explicit file lists with
+  environments, locks and typed `spawns`/`waits` dispositions; give every
+  disposition a real reason, keep negative controls as named mutant files, and
+  never add dispositions or `lock_safe` merely to clear a diagnostic. Region
+  checks are syntactic Roslyn checks, not a deadlock or progress proof, and
+  environment obligations stay visible assumptions. See
   [synchronization primitives](REFERENCE.md#synchronization-primitives).
 - Use annotation version 4 with standard JSON inside native `@link` comments:
   typed `bind`, `capture` and `exclude` arrays. Do not introduce XML, another

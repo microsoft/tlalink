@@ -15,7 +15,9 @@ public static class CommandSummary
                 plan.Primitives.Select(p => new PlannedPrimitiveView(p.Scope, p.Primitive.Id, p.Primitive.PrimitiveKind,
                     p.Primitive.Type, p.Module, p.Primitive.Operations.Count, p.Primitive.Verification.Scenarios,
                     p.Primitive.Verification.Inspection, p.InspectionStatus, p.InspectionOrigin, p.Primitive.DependsOn ?? [],
-                    p.OutstandingGuarantees, p.Boundary)).ToList(),
+                    p.Guarantees.Select(g => new GuaranteeSummary(g.Guarantee, g.Status)).ToList(), p.OutstandingGuarantees,
+                    p.Boundary)).ToList(),
+                plan.Regions.Select(r => Region(r.Region, r.Role, r.Stages)).ToList(),
                 plan.CheckCoverage.Select(Coverage).ToList(), plan.Diagnostics,
                 plan.Scenarios.Select(s => new PlannedScenarioSummary(s.Id, s.Stages.Select(stage =>
                     new PlannedStageSummary(stage.Id, stage.Kind, stage.DependsOn, stage.RequestedResources,
@@ -79,6 +81,8 @@ public static class CommandSummary
                 review.Decision.Disposition, review.Decision.Reviewer, review.Decision.Rationale,
                 review.Decision.Origin), review.Boundary),
             ModelInputsResult inputs => new ModelInputsSummary(inputs.Command, inputs.Status, inputs.Diagnostics),
+            SynchronizationResult synchronization => new SynchronizationSummary(synchronization.Status,
+                Region(synchronization.Region, "stage", []), synchronization.Boundary),
             InstrumentManifest manifest => new InstrumentationSummary(manifest.AnnotationVersion, manifest.Boundary),
             ProjectExpansion expansion => new ProjectExpansionSummary(expansion.Project),
             LinkMaintenanceResult links => new LinkMaintenanceSummary(links.Action, links.Status, links.Target,
@@ -116,6 +120,13 @@ public static class CommandSummary
 
     private static CoverageSummary Coverage(CheckCoverage c) =>
         new(c.Id, c.Kind, c.Scenario, c.Status, c.Requirements, c.Gaps);
+
+    private static RegionSummary Region(SynchronizationRegionReport region, string role, List<string> stages) =>
+        new(region.Scope, role, stages, region.Status, region.Files.Count, region.Sites,
+            region.Primitives.Select(p => new RegionPrimitiveSummary(p.Id, p.Origin,
+                p.Guarantees.Select(g => new GuaranteeSummary(g.Guarantee, g.Status)).ToList())).ToList(),
+            region.Environments.Select(e => new RegionEnvironmentSummary(e.Id, e.EnvironmentKind, e.LockSafe, e.Obligations,
+                e.Evidence, e.Support)).ToList(), region.Diagnostics);
 
     private static AcceptanceSummary Acceptance(AcceptanceResult result, AcceptanceWorklist? worklist)
     {

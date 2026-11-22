@@ -1,0 +1,17 @@
+{
+  "schema_version": 4,
+  "kind": "environment",
+  "id": "frame-sink",
+  "environment_kind": "interface",
+  "types": ["M:SyncFixture.IFrameSink.Flush"],
+  "operations": [
+    { "member": "M:SyncFixture.IFrameSink.SendAsync(System.ReadOnlyMemory{System.Byte},System.Threading.CancellationToken)", "role": "submit" },
+    { "member": "M:SyncFixture.IFrameSink.Post(System.Int32)", "role": "enqueue", "lock_safe": true },
+    { "member": "M:SyncFixture.IFrameSink.Flush", "role": "submit" }
+  ],
+  "obligations": [
+    "A SendAsync call completes or faults once its frame is written or its token is canceled.",
+    "Post buffers its frame without blocking and never calls back into the connection."
+  ],
+  "evidence": []
+}

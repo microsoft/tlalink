@@ -36,7 +36,7 @@ public sealed record PlannedStage(string Id, string Kind, List<string> DependsOn
 public sealed record PlannedScenario(string Id, List<PlannedStage> Stages);
 public sealed record PlannedReview(string Id, ReviewOrigin Origin, string ClaimSha256, string Status);
 public sealed record ProjectPlan(int SchemaVersion, string Kind, string Project, string Status,
-    CompilerProfile Compiler, int AnnotationVersion, List<PlannedPrimitive> Primitives,
+    CompilerProfile Compiler, int AnnotationVersion, List<PlannedPrimitive> Primitives, List<PlannedRegion> Regions,
     List<CheckCoverage> CheckCoverage, List<Issue> Diagnostics, Dictionary<string, string> Fingerprints,
     List<PlannedScenario> Scenarios, List<PlannedReview> ReviewStatus, string Boundary);
 public sealed record RecordedReview(int SchemaVersion, string Kind, string Path, ReviewDecision Decision, string Boundary);

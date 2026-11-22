@@ -12,6 +12,11 @@
   ],
   "omissions": [],
   "synchronization": {
-    "primitives": ["..\\primitives\\permit-gate\\primitive.json"]
+    "region": ["..\\src\\Uploader.cs"],
+    "primitives": ["..\\primitives\\permit-gate\\primitive.json"],
+    "environments": ["..\\environments\\chunk-sink\\environment.json"],
+    "locks": [
+      { "field": "F:PrimitivesExample.Uploader.statsLock" }
+    ]
   }
 }

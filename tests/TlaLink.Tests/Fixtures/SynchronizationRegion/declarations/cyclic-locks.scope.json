@@ -1,0 +1,35 @@
+{
+  "schema_version": 4,
+  "kind": "correspondence-scope",
+  "annotation_version": 4,
+  "targets": [],
+  "omissions": [],
+  "synchronization": {
+    "region": ["Connection.cs"],
+    "primitives": ["primitives/gate.primitive.json", "primitives/latch.primitive.json", "primitives/shutdown.primitive.json"],
+    "environments": ["environments/frame-sink.environment.json"],
+    "locks": [
+      { "field": "F:SyncFixture.Connection.stateLock", "may_hold": ["F:SyncFixture.Connection.tableLock"] },
+      { "field": "F:SyncFixture.Connection.tableLock", "may_hold": ["F:SyncFixture.Connection.stateLock"] }
+    ],
+    "spawns": [
+      {
+        "site": { "symbol": "M:SyncFixture.Connection.Start", "syntax": "InvocationExpression", "tokens": "Task.Run(this.PumpAsync)" },
+        "disposition": "joined",
+        "reason": "CloseAsync awaits the stored pump task."
+      },
+      {
+        "site": { "symbol": "M:SyncFixture.Connection.Start", "syntax": "InvocationExpression", "tokens": "Task.Run(this.Heartbeat)" },
+        "disposition": "detached",
+        "reason": "The heartbeat only posts one lock-safe frame; nothing waits for it."
+      }
+    ],
+    "waits": [
+      {
+        "site": { "symbol": "M:SyncFixture.Connection.CloseAsync", "syntax": "AwaitExpression", "tokens": "await this.pump.ConfigureAwait(false)" },
+        "kind": "join",
+        "reason": "Joins the pump spawned by Start."
+      }
+    ]
+  }
+}
