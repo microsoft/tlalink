@@ -7,10 +7,9 @@
       "id": "uploader",
       "language": "tla",
       "inputs": ["Uploader.tla"],
-      "required_bindings": ["uploader::send"]
+      "required_bindings": ["uploader::acquire", "uploader::send", "uploader::release"]
     }
   ],
-  "omissions": [],
   "synchronization": {
     "region": ["..\\src\\Uploader.cs"],
     "primitives": ["..\\primitives\\permit-gate\\primitive.json"],

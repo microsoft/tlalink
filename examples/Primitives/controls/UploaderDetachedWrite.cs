@@ -12,6 +12,7 @@ public interface IChunkSink
 // Negative control: the write is discarded, so the permit is released before the chunk is written.
 public sealed class Uploader(PermitGate gate, IChunkSink sink)
 {
+    private readonly PermitGate gate = gate;
     private readonly object statsLock = new();
     private long sent;
 
@@ -22,7 +23,7 @@ public sealed class Uploader(PermitGate gate, IChunkSink sink)
 
     public async Task SendAsync(ReadOnlyMemory<byte> chunk)
     {
-        await gate.AcquireAsync().ConfigureAwait(false);
+        await this.gate.AcquireAsync().ConfigureAwait(false);
         try
         {
             _ = sink.WriteAsync(chunk);
@@ -30,7 +31,7 @@ public sealed class Uploader(PermitGate gate, IChunkSink sink)
         }
         finally
         {
-            gate.Release();
+            this.gate.Release();
         }
     }
 }

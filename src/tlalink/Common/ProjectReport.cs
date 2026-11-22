@@ -201,17 +201,33 @@ public static class ProjectReport
         return EvidenceReport.Run(new(["report", "--manifest", manifestPath, "--output", output, "--format", options.Get("format", "json")]));
     }
 
-    /// <summary>Environment obligations of a recorded synchronization stage are report assumptions; missing evidence is a gap.</summary>
+    /// <summary>
+    /// Environment obligations of a recorded synchronization stage are report assumptions; missing evidence is a gap. With TLA+
+    /// targets, the instance coverage summary and its boundary are assumptions, and excluded or uncovered sites are gaps.
+    /// </summary>
     private static (List<string> Assumptions, List<string> Gaps) EnvironmentAssumptions(AnalysisStage stage, WorkflowStageResult? recorded, string run)
     {
         if (stage.Kind != "synchronization" || recorded?.Evidence is not { Length: > 0 } evidence ||
             AnalysisDocuments.Read(ProjectAcceptance.SafePath(run, evidence)) is not SynchronizationResult result)
             return ([], []);
-        return (result.Region.Environments.SelectMany(e => e.Obligations.Select(o => "Environment " + e.Id + " (" + e.EnvironmentKind + "): " + o)
+        List<string> assumptions = result.Region.Environments.SelectMany(e => e.Obligations.Select(o => "Environment " + e.Id + " (" + e.EnvironmentKind + "): " + o)
                 .Concat(e.LockSafe.Select(m => "Environment " + e.Id + " operation " + m +
-                    " is lock_safe: it does not block, take region locks or run region code inline."))).ToList(),
-            result.Region.Environments.Where(e => e.Support == "unsupported-assumption")
-                .Select(e => "Environment " + e.Id + " obligations have no declared supporting evidence.").ToList());
+                    " is lock_safe: it does not block, take region locks or run region code inline."))).ToList();
+        List<string> gaps = result.Region.Environments.Where(e => e.Support == "unsupported-assumption")
+            .Select(e => "Environment " + e.Id + " obligations have no declared supporting evidence.").ToList();
+        if (result.Region.Coverage is { } coverage)
+        {
+            int Sites(string status) => coverage.Sites.Count(s => s.Status == status);
+            assumptions.Add("Instance coverage: " + coverage.Instances.Count(i => i.Status == "declared") + " declared, " +
+                coverage.Instances.Count(i => i.Status == "excluded") + " excluded and " + coverage.Instances.Count(i => i.Status == "undeclared") +
+                " undeclared instances; " + Sites("bound") + " bound, " + Sites("excluded") + " excluded, " + Sites("unbound") + " unbound and " +
+                Sites("unresolved") + " unresolved sites; " + coverage.Contracts.Count(c => c.Status == "matched") + " of " +
+                coverage.Contracts.Count + " binds match their kind contracts.");
+            assumptions.Add(coverage.Boundary);
+            if (Sites("excluded") + coverage.Instances.Count(i => i.Status == "excluded") > 0)
+                gaps.Add("Excluded instances and sites are not modeled by the scope's TLA+ targets.");
+        }
+        return (assumptions, gaps);
     }
 
     internal static List<ReportMetric> Metrics(WorkflowStageResult? stage, string run,

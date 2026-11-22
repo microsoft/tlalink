@@ -1468,11 +1468,14 @@
               }
             ]
           },
-          "minItems": 1,
+          "minItems": 0,
           "maxItems": 1000
         },
         "omissions": {
-          "type": "array",
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {
             "type": [
               "object",
@@ -1529,6 +1532,7 @@
             ],
             "additionalProperties": false
           },
+          "default": null,
           "maxItems": 1000
         },
         "synchronization": {
@@ -1575,7 +1579,7 @@
                 ]
               },
               "default": null,
-              "minItems": 1,
+              "minItems": 0,
               "maxItems": 1000
             },
             "locks": {
@@ -1619,7 +1623,7 @@
                 "additionalProperties": false
               },
               "default": null,
-              "minItems": 1,
+              "minItems": 0,
               "maxItems": 1000
             },
             "spawns": {
@@ -1686,7 +1690,7 @@
                 "additionalProperties": false
               },
               "default": null,
-              "minItems": 1,
+              "minItems": 0,
               "maxItems": 1000
             },
             "waits": {
@@ -1755,7 +1759,7 @@
                 "additionalProperties": false
               },
               "default": null,
-              "minItems": 1,
+              "minItems": 0,
               "maxItems": 1000
             }
           },
@@ -1770,8 +1774,7 @@
         "schema_version",
         "kind",
         "annotation_version",
-        "targets",
-        "omissions"
+        "targets"
       ],
       "additionalProperties": false
     },
@@ -1893,6 +1896,10 @@
                   "null"
                 ],
                 "default": null
+              },
+              "inline_callbacks": {
+                "type": "boolean",
+                "default": false
               }
             },
             "required": [
@@ -1962,8 +1969,7 @@
               "signals-async",
               "non-blocking",
               "fifo-waiters",
-              "cancellable-wait",
-              "inline-callbacks"
+              "cancellable-wait"
             ]
           },
           "default": null,

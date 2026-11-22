@@ -10,7 +10,7 @@ namespace TlaLink;
 /// Synchronization regions: explicit C# files in which only declared primitives, environments and locks synchronize.
 /// Roslyn checks over those files and region methods they call; no alias, data-flow or runtime analysis.
 /// </summary>
-public static class SynchronizationRegion
+public static partial class SynchronizationRegion
 {
     internal static readonly string[] SpawnDispositions = ["joined", "detached"];
     internal static readonly string[] WaitKinds = ["join", "timer", "yield", "external"];
@@ -45,18 +45,19 @@ public static class SynchronizationRegion
         Paths(declaration.Primitives ?? throw Invalid("synchronization.primitives is required."), ".json",
             declaration.Region == null ? 1 : 0, "primitives");
         Paths(declaration.Region, ".cs", 1, "region");
-        Paths(declaration.Environments, ".json", 1, "environments");
-        if (declaration.Region == null && (declaration.Environments ?? (object?)declaration.Locks ?? declaration.Spawns ?? (object?)declaration.Waits) != null)
+        Paths(declaration.Environments, ".json", 0, "environments");
+        if (declaration.Region == null && new[] { declaration.Environments?.Count, declaration.Locks?.Count, declaration.Spawns?.Count,
+                declaration.Waits?.Count }.Any(c => c > 0))
             throw Invalid("synchronization environments, locks, spawns and waits require an explicit region.");
         if (declaration.Locks is { } locks)
         {
-            if (locks.Count is 0 or > 1000 || locks.Any(l => l == null || !Documentation(l.Field, "F:") ||
+            if (locks.Count > 1000 || locks.Any(l => l == null || !Documentation(l.Field, "F:") ||
                     l.IndexedBy != null && !Documentation(l.IndexedBy, "T:")) ||
                 locks.Select(l => l.Field).Distinct(StringComparer.Ordinal).Count() != locks.Count)
-                throw Invalid("synchronization.locks requires 1..1000 unique F: lock fields; indexed_by is a T: type ID.");
+                throw Invalid("synchronization.locks requires at most 1000 unique F: lock fields; indexed_by is a T: type ID.");
             Dictionary<string, SynchronizationLock> declared = locks.ToDictionary(l => l.Field, StringComparer.Ordinal);
             foreach (SynchronizationLock item in locks)
-                if (item.MayHold is { } held && (held.Count is 0 or > 1000 || held.Distinct(StringComparer.Ordinal).Count() != held.Count ||
+                if (item.MayHold is { } held && (held.Count > 1000 || held.Distinct(StringComparer.Ordinal).Count() != held.Count ||
                     held.Any(h => h == item.Field || !declared.ContainsKey(h))))
                     throw Invalid("may_hold lists other declared locks without duplicates: " + item.Field);
             HashSet<string> active = new(StringComparer.Ordinal), done = new(StringComparer.Ordinal);
@@ -70,13 +71,13 @@ public static class SynchronizationRegion
             }
             foreach (string field in declared.Keys) Visit(field);
         }
-        if (declaration.Spawns is { } spawns && (spawns.Count is 0 or > 1000 || spawns.Any(s => s?.Site == null ||
+        if (declaration.Spawns is { } spawns && (spawns.Count > 1000 || spawns.Any(s => s?.Site == null ||
                 !Markup.IsSelector(s.Site) || !SpawnDispositions.Contains(s.Disposition, StringComparer.Ordinal) ||
                 string.IsNullOrWhiteSpace(s.Reason))))
-            throw Invalid("synchronization.spawns requires 1..1000 entries with a source selector site, joined or detached, and a reason.");
-        if (declaration.Waits is { } waits && (waits.Count is 0 or > 1000 || waits.Any(w => w?.Site == null ||
+            throw Invalid("synchronization.spawns allows at most 1000 entries, each with a source selector site, joined or detached, and a reason.");
+        if (declaration.Waits is { } waits && (waits.Count > 1000 || waits.Any(w => w?.Site == null ||
                 !Markup.IsSelector(w.Site) || !WaitKinds.Contains(w.Kind, StringComparer.Ordinal) || string.IsNullOrWhiteSpace(w.Reason))))
-            throw Invalid("synchronization.waits requires 1..1000 entries with a source selector site, a kind (" +
+            throw Invalid("synchronization.waits allows at most 1000 entries, each with a source selector site, a kind (" +
                 string.Join(", ", WaitKinds) + ") and a reason.");
     }
 
@@ -102,9 +103,14 @@ public static class SynchronizationRegion
         return report.Status switch { "passed" => 0, "rejected" => 1, _ => 2 };
     }
 
-    /// <summary>Loads the scope's region, primitives and environments, compiles them together and runs every region check.</summary>
+    /// <summary>
+    /// Loads the scope's region, primitives and environments, compiles them together and runs every region check. When the
+    /// scope has TLA+ targets, instance and site checks resolve them through <paramref name="parse"/>; <paramref name="check"/>
+    /// parses generated instance-expression modules without pinning them (defaults to <paramref name="parse"/>).
+    /// </summary>
     public static SynchronizationRegionReport Analyze(string scopePath, IEnumerable<string> references, IEnumerable<string>? defines,
-        string languageVersion, Dictionary<string, string> pins, Func<string, IReadOnlyList<string>, TlaDocument>? parse)
+        string languageVersion, Dictionary<string, string> pins, Func<string, IReadOnlyList<string>, TlaDocument>? parse,
+        Func<string, IReadOnlyList<string>, TlaDocument>? check = null)
     {
         scopePath = FilePaths.Full(scopePath);
         CorrespondenceConfiguration config = CorrespondenceInputs.Load(scopePath, pins);
@@ -133,7 +139,7 @@ public static class SynchronizationRegion
             throw new InputException(ErrorCode.InvalidWorkflowInput, "Region and primitive sources must be existing explicit C# files.");
         CSharpScope source = CSharpScope.Parse(files, references, defines, languageVersion: languageVersion, annotations: false);
         foreach (var pin in source.Fingerprints) Files.Pin(pins, pin.Key, pin.Value);
-        return new Analysis(scopePath, declaration, region, source, primitives, environments, pins, parse).Run();
+        return new Analysis(scopePath, declaration, region, source, primitives, environments, pins, parse, config, check ?? parse).Run();
     }
 
     internal static InputException Invalid(string message) => new(ErrorCode.InvalidAnnotation, message);
@@ -148,10 +154,11 @@ public static class SynchronizationRegion
 
     private sealed record Entry(SyntaxNode? Node, string Description);
 
-    private sealed class Analysis(string scope, SynchronizationDeclaration declaration, List<string> region, CSharpScope source,
+    private sealed partial class Analysis(string scope, SynchronizationDeclaration declaration, List<string> region, CSharpScope source,
         List<(string Path, PrimitiveManifest Manifest, List<string> Sources)> primitives,
         List<(string Path, EnvironmentManifest Manifest)> environments, Dictionary<string, string> pins,
-        Func<string, IReadOnlyList<string>, TlaDocument>? parse)
+        Func<string, IReadOnlyList<string>, TlaDocument>? parse, CorrespondenceConfiguration config,
+        Func<string, IReadOnlyList<string>, TlaDocument>? check)
     {
         private readonly CSharpCompilation compilation = source.Compilation;
         private readonly List<Issue> issues = [];
@@ -162,8 +169,7 @@ public static class SynchronizationRegion
         private readonly Dictionary<INamedTypeSymbol, (PrimitiveManifest Manifest, Dictionary<string, PrimitiveOperation> Operations)> primitiveTypes =
             new(SymbolEqualityComparer.Default);
         private readonly Dictionary<INamedTypeSymbol, EnvironmentManifest> environmentTypes = new(SymbolEqualityComparer.Default);
-        private readonly Dictionary<ISymbol, (EnvironmentManifest Manifest, EnvironmentOperation Operation)> environmentOperations =
-            new(SymbolEqualityComparer.Default);
+        private readonly Dictionary<string, Dictionary<ISymbol, EnvironmentOperation>> environmentOperations = new(StringComparer.Ordinal);
         private readonly Dictionary<IFieldSymbol, SynchronizationLock> lockFields = new(SymbolEqualityComparer.Default);
         private readonly HashSet<SyntaxNode> lockDeclarations = [];
         private readonly HashSet<string> usedLocks = new(StringComparer.Ordinal);
@@ -209,8 +215,12 @@ public static class SynchronizationRegion
             foreach (SynchronizationLock item in declaration.Locks ?? [])
                 if (lockFields.Values.Contains(item) && !usedLocks.Contains(item.Field))
                     Declaration(ErrorCode.StaleSynchronizationDeclaration, "Declared lock " + item.Field + " is not the target of any lock statement in the region.");
-            return Report(issues.Any(i => i.Severity == "error") ? "rejected" : "passed", regionPrimitives, regionEnvironments);
+            coverage = config.Targets.Any(t => t.Language == "tla") ? Instances() : null;
+            return Report(issues.Any(i => i.Code == ErrorCode.SynchronizationRegionIncomplete.Id()) ? "incomplete" :
+                issues.Any(i => i.Severity == "error") ? "rejected" : "passed", regionPrimitives, regionEnvironments);
         }
+
+        private RegionCoverage? coverage;
 
         private SynchronizationRegionReport Report(string status, List<RegionPrimitive> regionPrimitives, List<RegionEnvironment> regionEnvironments)
         {
@@ -219,7 +229,7 @@ public static class SynchronizationRegion
                 (declaration.Locks ?? []).Select(l => l.Field).ToList(),
                 new(awaits.Count, lockStatements, spawns.Count, primitiveSites, environmentSites, declaration.Waits?.Count ?? 0),
                 issues.OrderBy(i => i.Location?.Path ?? "", FilePaths.Comparer).ThenBy(i => i.Location?.Line ?? 0)
-                    .ThenBy(i => i.Code, StringComparer.Ordinal).ThenBy(i => i.Message, StringComparer.Ordinal).ToList());
+                    .ThenBy(i => i.Code, StringComparer.Ordinal).ThenBy(i => i.Message, StringComparer.Ordinal).ToList(), coverage);
         }
 
         private SemanticModel Model(SyntaxTree tree)
@@ -299,7 +309,8 @@ public static class SynchronizationRegion
                                 " is declared by more than one primitive or environment.");
                         environmentTypes[type.OriginalDefinition] = manifest;
                     }
-                    foreach (var operation in operations) environmentOperations[operation.Key.OriginalDefinition] = (manifest, operation.Value);
+                    environmentOperations[manifest.Id] = operations.ToDictionary(o => o.Key.OriginalDefinition, o => o.Value,
+                        SymbolEqualityComparer.Default);
                 }
                 catch (InputException error) { Declaration(ErrorCode.StaleSynchronizationDeclaration, error.Message); }
                 if (manifest.Module != null)
@@ -405,31 +416,60 @@ public static class SynchronizationRegion
         /// <summary>Counts declared primitive/environment operation sites and reports undeclared members; true for declared operations.</summary>
         private bool Operation(ISymbol symbol, SyntaxNode node)
         {
+            if (Classify(symbol, node) is not { } member) return false;
             ISymbol original = symbol.OriginalDefinition;
-            if (original.ContainingType?.OriginalDefinition is not { } owner) return false;
-            string id = original.GetDocumentationCommentId() ?? original.ToDisplayString();
-            if (primitiveTypes.TryGetValue(owner, out var primitive))
+            if (member.Primitive is { } primitive)
             {
-                if (primitive.Operations.ContainsKey(id) || original.IsImplicitlyDeclared && !Primitives.IsLibrary(primitive.Manifest))
+                if (member.Operation != null || original.IsImplicitlyDeclared && !Primitives.IsLibrary(primitive))
                 {
                     primitiveSites++;
+                    if (member.Operation != null) Site(node, primitive, member.Operation);
                     return true;
                 }
                 if (original is IMethodSymbol or IPropertySymbol or IEventSymbol)
-                    Report(ErrorCode.UndeclaredOperation, node, "uses " + id + " of primitive " + primitive.Manifest.Id +
+                    Report(ErrorCode.UndeclaredOperation, node, "uses " + member.Id + " of primitive " + primitive.Id +
                         ", which its manifest does not declare.");
                 return true;
             }
-            if (environmentTypes.TryGetValue(owner, out EnvironmentManifest? environment))
-            {
-                if (environmentOperations.ContainsKey(original)) { environmentSites++; return true; }
-                if (original is IMethodSymbol or IPropertySymbol or IEventSymbol)
-                    Report(ErrorCode.UndeclaredOperation, node, "uses " + id + " of environment " + environment.Id +
-                        ", which its manifest does not declare.");
-                return true;
-            }
-            return false;
+            if (member.EnvironmentOperation != null) { environmentSites++; return true; }
+            if (original is IMethodSymbol or IPropertySymbol or IEventSymbol)
+                Report(ErrorCode.UndeclaredOperation, node, "uses " + member.Id + " of environment " + member.Environment!.Id +
+                    ", which its manifest does not declare.");
+            return true;
         }
+
+        private sealed record Declared(string Id, PrimitiveManifest? Primitive, PrimitiveOperation? Operation,
+            EnvironmentManifest? Environment, EnvironmentOperation? EnvironmentOperation);
+
+        /// <summary>
+        /// The declared owner of a member use: its containing type, or the receiver's static type when that is a declared
+        /// environment or library primitive type and the member is inherited from a base type or interface.
+        /// </summary>
+        private Declared? Classify(ISymbol symbol, SyntaxNode node)
+        {
+            ISymbol original = symbol.OriginalDefinition;
+            if (original.ContainingType?.OriginalDefinition is not { } owner) return null;
+            string id = original.GetDocumentationCommentId() ?? original.ToDisplayString();
+            if (!primitiveTypes.ContainsKey(owner) && !environmentTypes.ContainsKey(owner) && !original.IsStatic &&
+                symbol is not IMethodSymbol { IsExtensionMethod: true } && Receiver(node) is { } receiver &&
+                Model(node.SyntaxTree).GetTypeInfo(receiver).Type is INamedTypeSymbol type &&
+                (environmentTypes.ContainsKey(type.OriginalDefinition) || primitiveTypes.TryGetValue(type.OriginalDefinition, out var library) &&
+                    Primitives.IsLibrary(library.Manifest)) && Primitives.IsMemberOf(original, type))
+                owner = type.OriginalDefinition;
+            if (primitiveTypes.TryGetValue(owner, out var primitive))
+                return new(id, primitive.Manifest, primitive.Operations.GetValueOrDefault(id), null, null);
+            if (environmentTypes.TryGetValue(owner, out EnvironmentManifest? environment))
+                return new(id, null, null, environment, environmentOperations.GetValueOrDefault(environment.Id)?.GetValueOrDefault(original));
+            return null;
+        }
+
+        /// <summary>The explicit receiver of a member name: <c>r.M</c>, or <c>r?.M</c> through its conditional access.</summary>
+        private static ExpressionSyntax? Receiver(SyntaxNode node) => node switch {
+            SimpleNameSyntax { Parent: MemberAccessExpressionSyntax access } name when access.Name == name => access.Expression,
+            SimpleNameSyntax { Parent: MemberBindingExpressionSyntax binding } =>
+                binding.FirstAncestorOrSelf<ConditionalAccessExpressionSyntax>()?.Expression,
+            _ => null
+        };
 
         private INamedTypeSymbol? Raw(ITypeSymbol? type) =>
             type is INamedTypeSymbol named && !primitiveTypes.ContainsKey(named.OriginalDefinition) &&
@@ -459,6 +499,16 @@ public static class SynchronizationRegion
 
         private static bool IsTask(ITypeSymbol? type) => DerivesFrom(type, "System.Threading.Tasks.Task") ||
             IsType(type, "System.Threading.Tasks.ValueTask", "System.Threading.Tasks.ValueTask`1");
+
+        /// <summary>The member name an expression ends in (<c>a.b.M(...)</c>, <c>a?.M()</c>), or the expression itself.</summary>
+        private static SyntaxNode NameOf(ExpressionSyntax expression) => expression switch {
+            InvocationExpressionSyntax invocation => NameOf(invocation.Expression),
+            MemberAccessExpressionSyntax access => access.Name,
+            MemberBindingExpressionSyntax binding => binding.Name,
+            ConditionalAccessExpressionSyntax conditional => NameOf(conditional.WhenNotNull),
+            ParenthesizedExpressionSyntax parenthesized => NameOf(parenthesized.Expression),
+            _ => expression
+        };
 
         private static ExpressionSyntax Strip(ExpressionSyntax expression)
         {
@@ -543,16 +593,15 @@ public static class SynchronizationRegion
         {
             ISymbol? original = symbol?.OriginalDefinition;
             string id = original?.GetDocumentationCommentId() ?? operand.ToString();
-            if (original is IMethodSymbol or IPropertySymbol && original.ContainingType?.OriginalDefinition is { } owner)
+            if (symbol is IMethodSymbol or IPropertySymbol && Classify(symbol, NameOf(operand)) is { } member)
             {
-                if (primitiveTypes.TryGetValue(owner, out var primitive))
+                if (member.Primitive is { } primitive)
                 {
-                    if (!primitive.Operations.TryGetValue(id, out PrimitiveOperation? operation)) return ("undeclared operation", "");
+                    if (member.Operation is not { } operation) return ("undeclared operation", "");
                     return operation.Role == "wait" ? ("primitive wait", "") :
-                        (null, "awaits " + id + " of primitive " + primitive.Manifest.Id + " with role " + operation.Role + "; only wait operations may be awaited.");
+                        (null, "awaits " + id + " of primitive " + primitive.Id + " with role " + operation.Role + "; only wait operations may be awaited.");
                 }
-                if (environmentTypes.ContainsKey(owner))
-                    return (environmentOperations.ContainsKey(original) ? "environment operation" : "undeclared operation", "");
+                return (member.EnvironmentOperation != null ? "environment operation" : "undeclared operation", "");
             }
             return original switch {
                 IMethodSymbol method when operand is InvocationExpressionSyntax && IsRegionMethod(method) => ("region call", ""),
@@ -663,24 +712,23 @@ public static class SynchronizationRegion
 
         private void Operation(ISymbol called, SyntaxNode node, string inside)
         {
-            ISymbol original = called.OriginalDefinition;
-            string id = original.GetDocumentationCommentId() ?? original.ToDisplayString();
-            if (original.ContainingType?.OriginalDefinition is { } owner && primitiveTypes.TryGetValue(owner, out var primitive) &&
-                primitive.Operations.TryGetValue(id, out PrimitiveOperation? operation))
+            if (Classify(called, node) is not { } member) return;
+            if (member.Primitive is { } primitive && member.Operation is { } operation)
             {
-                List<string> guarantees = primitive.Manifest.Guarantees ?? [];
-                string name = "calls " + id + " of primitive " + primitive.Manifest.Id + inside;
-                string? reason = primitive.Manifest.PrimitiveKind == "cancellation-source" ? "cancellation-source operations run registered callbacks inline" :
-                    primitive.Manifest.PrimitiveKind == "once" ? "once operations run or wait for the shared action" :
-                    guarantees.Contains("inline-callbacks") ? "the primitive declares inline-callbacks" :
+                List<string> guarantees = primitive.Guarantees ?? [];
+                string name = "calls " + member.Id + " of primitive " + primitive.Id + inside;
+                string? reason = operation.InlineCallbacks ? "the operation declares inline_callbacks" :
                     operation.Role == "wait" ? "it is a wait operation" :
-                    ResumingRoles.Contains(operation.Role) && !guarantees.Contains("signals-async")
+                    ResumingRoles.Contains(operation.Role) && HasWaiters(primitive) && !guarantees.Contains("signals-async")
                         ? "role " + operation.Role + " can resume waiters inline and the primitive does not claim signals-async" : null;
                 if (reason != null) Report(ErrorCode.LockRegionViolation, node, name + "; " + reason + ".");
             }
-            else if (environmentOperations.TryGetValue(original, out var environment) && !environment.Operation.LockSafe)
-                Report(ErrorCode.LockRegionViolation, node, "calls environment operation " + id + " of " + environment.Manifest.Id + inside +
+            else if (member.EnvironmentOperation is { LockSafe: false })
+                Report(ErrorCode.LockRegionViolation, node, "calls environment operation " + member.Id + " of " + member.Environment!.Id + inside +
                     "; it is not declared lock_safe.");
         }
+
+        /// <summary>Only a primitive with a declared wait operation has waiters a release, signal or completion could resume.</summary>
+        private static bool HasWaiters(PrimitiveManifest primitive) => primitive.Operations.Any(o => o.Role == "wait");
     }
 }

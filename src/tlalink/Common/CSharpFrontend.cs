@@ -95,8 +95,8 @@ public sealed partial class CSharpScope
                 {
                     foreach (LocatedAnnotation annotation in Markup.Parse(content, trivia.SpanStart, trivia.Span.End))
                     {
-                        if (annotation.Declaration is BindAnnotation { Source: not null })
-                            throw new InputException(ErrorCode.InvalidAttachment, "Source selectors are owned by formal comments, not C# annotations.");
+                        if (annotation.Declaration is BindAnnotation { Source: not null } or InstanceAnnotation)
+                            throw new InputException(ErrorCode.InvalidAttachment, "Source selectors and instances are owned by formal comments, not C# annotations.");
                         SyntaxNode? target = Attachment(targets, text, trivia.Span.End);
                         if (target is null || target is FieldDeclarationSyntax field && field.Declaration.Variables.Count != 1 ||
                             annotation.Declaration is ExcludeAnnotation && target is InvocationExpressionSyntax)

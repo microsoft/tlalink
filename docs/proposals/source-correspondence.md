@@ -28,9 +28,10 @@ annotation versions and source-side `target` properties are rejected.
 | `bind` | Name a correspondence; formal-owned entries select C# through `source` |
 | `capture` | C# observation metadata alongside the formal-owned binding, for a supported adapter |
 | `exclude` | C# correspondence-scope disposition, not code removal |
+| `instance` | TLA+ only: the synchronization-region field a kind-module INSTANCE definition models; see [instances and sites](../../REFERENCE.md#instances-and-sites) |
 
-`BindAnnotation`, `CaptureAnnotation`, `ExcludeAnnotation` and resolved
-`FormalLinkDeclaration` / `ResolvedCorrespondence` records are the data model.
+`BindAnnotation`, `CaptureAnnotation`, `ExcludeAnnotation`, `InstanceAnnotation` and resolved
+`FormalLinkDeclaration` / `FormalInstanceDeclaration` / `ResolvedCorrespondence` records are the data model.
 `System.Text.Json` handles syntax; enums represent finite capture choices.
 Unknown properties, duplicate JSON properties, invalid IDs, null entries and
 unsupported attachments fail explicitly. No XML or custom token DSL is accepted.

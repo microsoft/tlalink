@@ -186,8 +186,11 @@ TlaLink does not model a whole program at once. For a larger system:
   files in which only declared primitives, environments and locks may
   synchronize. A source-only stage checks raw synchronization, undeclared
   operations and waits, lock bodies and spawned work with Roslyn, and lists
-  environment obligations as assumptions. These checks cover declared sites;
-  they are not a deadlock or progress proof.
+  environment obligations as assumptions. With TLA+ models in the scope, every
+  primitive field must be declared as a model instance and every operation on
+  it bound to a model action that uses the mapped kind operations, or excluded
+  with a reason. These checks cover declared sites; they are not a deadlock or
+  progress proof.
 - **Only re-check what changed.** With a declared result store, completed
   TLC searches are reused while their models and configurations are unchanged,
   like an incremental build. Expensive searches can run once, separately,

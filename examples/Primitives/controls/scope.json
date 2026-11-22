@@ -3,7 +3,6 @@
   "kind": "correspondence-scope",
   "annotation_version": 4,
   "targets": [],
-  "omissions": [],
   "synchronization": {
     "region": ["UploaderDetachedWrite.cs"],
     "primitives": ["..\\primitives\\permit-gate\\primitive.json"],

@@ -164,10 +164,16 @@ Skills do not install tools, approve correspondence or discharge human gates.
   disposition a real reason, keep negative controls as named mutant files, and
   never add dispositions or `lock_safe` merely to clear a diagnostic. Region
   checks are syntactic Roslyn checks, not a deadlock or progress proof, and
-  environment obligations stay visible assumptions. See
+  environment obligations stay visible assumptions. With TLA+ targets, declare
+  each primitive field with an `instance` entry on its kind INSTANCE definition
+  and bind every operation site to an action that uses the operation's kind
+  operators (compose multi-step operations rather than splitting the check);
+  never add exclusions, `inline_callbacks` omissions or unused operator
+  references merely to clear `SR107`..`SR111`. Contract checks show which kind
+  operators an action references, not that it applies them correctly. See
   [synchronization primitives](REFERENCE.md#synchronization-primitives).
 - Use annotation version 4 with standard JSON inside native `@link` comments:
-  typed `bind`, `capture` and `exclude` arrays. Do not introduce XML, another
+  typed `bind`, `capture`, `exclude` and (TLA+ only) `instance` arrays. Do not introduce XML, another
   tokenizer, raw JSON binding stores or version-2 acceptance branches. Formal
   aliases and exact logging API omissions use one schema-4
   `correspondence-scope`. Each formal endpoint owns its unique `scope::name`

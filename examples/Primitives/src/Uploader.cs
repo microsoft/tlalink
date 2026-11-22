@@ -12,6 +12,7 @@ public interface IChunkSink
 // Caller component and synchronization region: at most one chunk is in flight per gate permit.
 public sealed class Uploader(PermitGate gate, IChunkSink sink)
 {
+    private readonly PermitGate gate = gate;
     private readonly object statsLock = new();
     private long sent;
 
@@ -22,7 +23,7 @@ public sealed class Uploader(PermitGate gate, IChunkSink sink)
 
     public async Task SendAsync(ReadOnlyMemory<byte> chunk)
     {
-        await gate.AcquireAsync().ConfigureAwait(false);
+        await this.gate.AcquireAsync().ConfigureAwait(false);
         try
         {
             await sink.WriteAsync(chunk).ConfigureAwait(false);
@@ -30,7 +31,7 @@ public sealed class Uploader(PermitGate gate, IChunkSink sink)
         }
         finally
         {
-            gate.Release();
+            this.gate.Release();
         }
     }
 }

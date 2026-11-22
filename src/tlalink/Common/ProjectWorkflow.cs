@@ -195,7 +195,7 @@ public static partial class ProjectWorkflow
             {
                 needJar = true;
                 if (project.Tools.Jar == null)
-                    throw new InputException(ErrorCode.WorkflowPrerequisiteMissing, "Environment modules resolve through SANY and require a pinned TLA+ JAR: " + stage.Id);
+                    throw new InputException(ErrorCode.WorkflowPrerequisiteMissing, "Environment modules and TLA+ targets of a region scope resolve through SANY and require a pinned TLA+ JAR: " + stage.Id);
             }
             if (stage.Sources is { Count: > 0 })
                 foreach (string file in Files.Discover(stage.Sources.Select(p => ProjectInputs.Resolve(path, p)).ToList(), ".cs")) Pin(file);
@@ -253,7 +253,8 @@ public static partial class ProjectWorkflow
             SynchronizationRegionReport region = SynchronizationRegion.Analyze(scope,
                 project.Compiler.References.Select(p => ProjectInputs.Resolve(path, p)), project.Compiler.Defines,
                 project.Compiler.LanguageVersion, regionPins, project.Tools.Jar == null ? null :
-                    (model, modulePath) => ParsedModel(model, timeout, modulePath));
+                    (model, modulePath) => ParsedModel(model, timeout, modulePath), project.Tools.Jar == null ? null :
+                    (model, modulePath) => TlaBackend.Parse(model, ProjectInputs.Resolve(path, project.Tools.Jar.Path), timeout, modulePath));
             foreach (var pin in regionPins) Files.Pin(pins, pin.Key, pin.Value);
             analyzed.Add(new(role, stages, region));
         }

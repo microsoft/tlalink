@@ -15,7 +15,7 @@ public static class SynchronizationRegionTests
         ("wait-in-lock", "Connection.cs", "SR103", "via M:SyncFixture.Connection.Watch); it is a wait operation"),
         ("delegate-in-lock", "Connection.cs", "SR103", "invokes delegate this.Sent?.Invoke inside lock F:SyncFixture.Connection.stateLock"),
         ("unsafe-environment-in-lock", "Connection.cs", "SR103", "M:SyncFixture.IFrameSink.Flush of frame-sink inside lock"),
-        ("cancel-in-lock", "Connection.cs", "SR103", "cancellation-source operations run registered callbacks inline"),
+        ("cancel-in-lock", "Connection.cs", "SR103", "M:System.Threading.CancellationTokenSource.Cancel of primitive shutdown inside lock"),
         ("unawaited-task", "Connection.cs", "SR104", "M:SyncFixture.Connection.CloseAsync: undeclared spawn (unawaited task)"),
         ("undeclared-spawn", "Connection.cs", "SR104", "undeclared spawn (ThreadPool.QueueUserWorkItem)"),
         ("async-void", "Connection.cs", "SR104", "undeclared spawn (async void call)"),
@@ -33,7 +33,12 @@ public static class SynchronizationRegionTests
             string directory = Copy(work, "region-declarations");
             CorrespondenceConfiguration scope = CorrespondenceInputs.Load(Path.Combine(directory, "scope.json"), new(FilePaths.Comparer));
             CoreTests.Equal(0, scope.Targets.Count);
-            CoreTests.Equal(2, scope.Synchronization!.Locks!.Count);
+            CoreTests.True(scope.Synchronization!.Locks!.Count == 3 && scope.Omissions!.Count == 0);
+            CoreTests.Equal(0, scope.Synchronization.Locks.Single(l => l.Field == "F:SyncFixture.Ledger.sync").MayHold!.Count);
+            File.Copy(Declaration(directory, "empty-lists"), Path.Combine(directory, "scope.json"), overwrite: true);
+            CorrespondenceConfiguration empty = CorrespondenceInputs.Load(Path.Combine(directory, "scope.json"), new(FilePaths.Comparer));
+            CoreTests.True(empty.Synchronization!.Spawns!.Count == 0 && empty.Synchronization.Waits!.Count == 0 &&
+                empty.Synchronization.Environments!.Count == 0);
             foreach (string name in new[] { "cyclic-locks", "unknown-may-hold", "bad-disposition", "empty-reason", "waits-without-region" })
             {
                 File.Copy(Declaration(directory, name), Path.Combine(directory, "scope.json"), overwrite: true);
@@ -66,9 +71,17 @@ public static class SynchronizationRegionTests
             CoreTests.True(Primitives.IsLibrary(library) && library.Verification.Scenarios.Count == 0);
             CSharpScope metadata = CSharpScope.Parse([], annotations: false);
             CoreTests.Equal(3, Primitives.Members(metadata, library).Count);
-            CoreTests.Equal("outstanding", SynchronizationGuarantees.Check(metadata, library).Single().Status);
+            CoreTests.Equal(0, SynchronizationGuarantees.Check(metadata, library).Count);
+            CoreTests.Equal("outstanding", SynchronizationGuarantees.Check(metadata, library with { Guarantees = ["signals-async"] }).Single().Status);
             CoreTests.ThrowsAny<InputException>(() => Primitives.Members(metadata, library with {
                 Operations = [.. library.Operations, new("M:System.Threading.CancellationToken.ThrowIfCancellationRequested", "query")] }));
+            CoreTests.Equal(4, Primitives.Members(metadata, library with {
+                Operations = [.. library.Operations, new("M:System.IDisposable.Dispose", "close", ["Cancel"], InlineCallbacks: true)] }).Count);
+            CoreTests.ThrowsAny<InputException>(() => Primitives.Validate(library with {
+                Operations = [.. library.Operations.Select(o => o with { InlineCallbacks = false })] }));
+            CoreTests.ThrowsAny<InputException>(() => Primitives.Validate(library with {
+                Operations = [.. library.Operations.Select(o => o.Role == "query" ? o with { InlineCallbacks = true } : o)] }));
+            CoreTests.ThrowsAny<InputException>(() => Primitives.Validate(library with { Guarantees = ["inline-callbacks"] }));
             CSharpScope source = CSharpScope.Parse([Path.Combine(directory, "Gate.cs")], annotations: false);
             CoreTests.ThrowsAny<InputException>(() => Primitives.Members(source, library with { Type = "T:SyncFixture.Gate" }));
             PrimitiveManifest gate = Primitives.Load(Path.Combine(directory, "primitives", "gate.primitive.json"), new(FilePaths.Comparer));
@@ -84,16 +97,29 @@ public static class SynchronizationRegionTests
             SynchronizationRegionReport report = Analyze(directory, pins);
             CoreTests.Equal("passed", report.Status);
             CoreTests.Equal(0, report.Diagnostics.Count);
-            CoreTests.Equal(new RegionSites(5, 4, 2, 13, 4, 1), report.Sites);
+            CoreTests.Equal(new RegionSites(5, 5, 2, 18, 6, 1), report.Sites);
             CoreTests.True(pins.Keys.Any(k => Path.GetFileName(k) == "Connection.cs") && pins.Keys.Any(k => Path.GetFileName(k) == "Gate.cs") &&
                 pins.Keys.Any(k => Path.GetFileName(k) == "frame-sink.environment.json"));
             RegionPrimitive gate = report.Primitives.Single(p => p.Id == "sends");
             CoreTests.True(gate.Origin == "source" && gate.Guarantees.All(g => g.Status == "discharged"));
             RegionPrimitive shutdown = report.Primitives.Single(p => p.Id == "shutdown");
-            CoreTests.True(shutdown.Origin == "library" && shutdown.Guarantees.Single().Status == "outstanding");
-            RegionEnvironment sink = report.Environments.Single();
+            CoreTests.True(shutdown.Origin == "library" && shutdown.Guarantees.Count == 0);
+            RegionEnvironment sink = report.Environments.Single(e => e.Id == "frame-sink");
             CoreTests.Equal("unsupported-assumption", sink.Support);
             CoreTests.Equal("M:SyncFixture.IFrameSink.Post(System.Int32)", sink.LockSafe.Single());
+            CoreTests.Equal("M:SyncFixture.IJournal.Append(System.Int32)", report.Environments.Single(e => e.Id == "journal").LockSafe.Single());
+            CoreTests.True(report.Coverage == null);
+        });
+        test("only primitives with waiters must claim signals-async to resume under a lock", () =>
+        {
+            string directory = Copy(work, "region-waiters");
+            File.Copy(Path.Combine(directory, "mutants", "ledger-latch-in-lock.cs"), Path.Combine(directory, "Ledger.cs"), overwrite: true);
+            CoreTests.Equal("passed", Analyze(directory, new(FilePaths.Comparer)).Status);
+            File.Copy(Path.Combine(directory, "primitives", "mutants", "latch-unclaimed.primitive.json"),
+                Path.Combine(directory, "primitives", "latch.primitive.json"), overwrite: true);
+            Issue issue = Analyze(directory, new(FilePaths.Comparer)).Diagnostics.Single();
+            CoreTests.True(issue.Code == "SR103" && issue.Message.Contains("M:SyncFixture.Latch.TrySet of primitive closed inside lock " +
+                "F:SyncFixture.Ledger.sync", StringComparison.Ordinal) && issue.Message.Contains("role signal can resume waiters inline", StringComparison.Ordinal));
         });
         test("named region and primitive mutants fail with their exact diagnostic", () =>
         {

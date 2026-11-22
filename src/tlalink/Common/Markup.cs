@@ -43,7 +43,8 @@ public static class Markup
         {
             AnnotationPayload document = JsonSerializer.Deserialize<AnnotationPayload>(payload[5..], AnnotationJson)
                 ?? throw new JsonException("Annotation payload must be an object.");
-            if (document.Bind.Any(b => b is null) || document.Capture.Any(c => c is null) || document.Exclude.Any(e => e is null))
+            if (document.Bind.Any(b => b is null) || document.Capture.Any(c => c is null) || document.Exclude.Any(e => e is null) ||
+                document.Instance.Any(i => i is null))
                 throw new JsonException("Annotation entries cannot be null.");
             foreach (BindAnnotation binding in document.Bind)
             {
@@ -69,6 +70,17 @@ public static class Markup
                 if (exclusion.From.Count == 0 || string.IsNullOrWhiteSpace(exclusion.Reason)) throw new JsonException("Exclusion needs targets and a reason.");
                 result.Add(new(exclusion, start, end));
             }
+            foreach (InstanceAnnotation instance in document.Instance)
+            {
+                Name(instance.Id);
+                if (!instance.Field.StartsWith("F:", StringComparison.Ordinal) || instance.Field.Length < 3 ||
+                    !IsTlaIdentifier(instance.KindInstance) || string.IsNullOrWhiteSpace(instance.Model) || instance.Model.Length > 1000 ||
+                    instance.Model.Any(char.IsControl) || instance.Index is { Count: 0 or > 10 } ||
+                    instance.Index?.Any(i => !IsTlaIdentifier(i)) == true ||
+                    instance.Index?.Distinct(StringComparer.Ordinal).Count() != instance.Index?.Count)
+                    throw new JsonException("Instances need an F: field, a kind_instance name, a one-line model expression and 1..10 unique index names when indexed.");
+                result.Add(new(instance, start, end));
+            }
         }
         catch (JsonException error)
         {
@@ -82,6 +94,9 @@ public static class Markup
     {
         if (!Schema.IsStableId(value)) throw new JsonException("Expected a stable annotation ID.");
     }
+
+    internal static bool IsTlaIdentifier(string? value) => value != null &&
+        System.Text.RegularExpressions.Regex.IsMatch(value, "^[A-Za-z_][A-Za-z0-9_]*$") && value.Any(char.IsLetter);
 
     private static void ValidateList(List<string>? values, bool identifiers, bool qualified = true)
     {

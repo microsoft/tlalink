@@ -36,6 +36,16 @@ public enum ErrorCode
     StaleSynchronizationDeclaration,
     [DiagnosticInfo("SR106", IssueSeverity.Error)]
     GuaranteeCheckFailed,
+    [DiagnosticInfo("SR107", IssueSeverity.Error)]
+    UndeclaredInstance,
+    [DiagnosticInfo("SR108", IssueSeverity.Error)]
+    UnboundSite,
+    [DiagnosticInfo("SR109", IssueSeverity.Error)]
+    ContractMismatch,
+    [DiagnosticInfo("SR110", IssueSeverity.Error)]
+    StaleInstance,
+    [DiagnosticInfo("SR111", IssueSeverity.Error)]
+    UnresolvedInstanceReceiver,
     [DiagnosticInfo("SR200", IssueSeverity.Error)]
     SynchronizationRegionIncomplete,
     [DiagnosticInfo("RP001", IssueSeverity.Error)]

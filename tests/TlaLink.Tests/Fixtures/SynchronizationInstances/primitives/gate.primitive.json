@@ -1,0 +1,18 @@
+{
+  "schema_version": 4,
+  "kind": "primitive",
+  "id": "gate",
+  "type": "T:InstanceFixture.Gate",
+  "sources": ["../Gate.cs"],
+  "primitive_kind": "admission-gate",
+  "operations": [
+    { "member": "M:InstanceFixture.Gate.TryEnter", "role": "try-acquire", "actions": ["TryEnter"] },
+    { "member": "M:InstanceFixture.Gate.Exit", "role": "release", "actions": ["Exit", "Signal?"] },
+    { "member": "M:InstanceFixture.Gate.Close", "role": "close", "actions": ["Close", "Signal?"] },
+    { "member": "M:InstanceFixture.Gate.WaitDrainedAsync", "role": "wait", "wait": "CanWaitDrained" }
+  ],
+  "guarantees": ["signals-async", "non-blocking"],
+  "verification": { "scenarios": ["gate"], "inspection": "gate-inspection" },
+  "assumptions": ["Each successful TryEnter is paired with exactly one Exit."],
+  "limits": ["Synthetic instance fixture; its kind verification is not part of these checks."]
+}

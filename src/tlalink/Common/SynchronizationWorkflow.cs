@@ -61,9 +61,14 @@ internal static class SynchronizationWorkflow
             }
     }
 
-    internal static bool NeedsJar(string scope, Dictionary<string, string> pins) =>
-        (CorrespondenceInputs.Load(scope, pins).Synchronization?.Environments ?? [])
-            .Any(file => Environments.Load(FilePaths.Full(file, Path.GetDirectoryName(scope)!), pins).Module != null);
+    /// <summary>Environment modules and, for instance and site checks, the scope's TLA+ targets resolve through SANY.</summary>
+    internal static bool NeedsJar(string scope, Dictionary<string, string> pins)
+    {
+        CorrespondenceConfiguration config = CorrespondenceInputs.Load(scope, pins);
+        return config.Synchronization?.Region != null && config.Targets.Any(t => t.Language == "tla") ||
+            (config.Synchronization?.Environments ?? [])
+                .Any(file => Environments.Load(FilePaths.Full(file, Path.GetDirectoryName(scope)!), pins).Module != null);
+    }
 
     /// <summary>Failing preflight regions and failed primitive guarantee checks block runs and acceptance.</summary>
     internal static List<Issue> Blocking(IEnumerable<PlannedRegion> regions, IEnumerable<PrimitiveResolution> primitives) =>

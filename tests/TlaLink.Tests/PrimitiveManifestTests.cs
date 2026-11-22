@@ -249,11 +249,18 @@ public static class PrimitiveManifestTests
                 JsonElement verification = regions.Single(r => r.GetProperty("scope").GetString()!.EndsWith(System.IO.Path.Combine("verification", "scope.json"), StringComparison.Ordinal));
                 CoreTests.True(verification.GetProperty("role").GetString() == "preflight" && verification.GetProperty("status").GetString() == "passed");
                 CoreTests.True(verification.GetProperty("stages").EnumerateArray().Select(s => s.GetString()).SequenceEqual(["uploader/uploader", "region/uploader-region"]));
-                CoreTests.Equal("rejected", regions.Single(r => r.GetProperty("role").GetString() == "stage").GetProperty("status").GetString());
+                JsonElement coverage = verification.GetProperty("coverage");
+                CoreTests.True(coverage.GetProperty("bound").GetInt32() == 2 && coverage.GetProperty("unbound").GetInt32() == 0 &&
+                    coverage.GetProperty("instances").EnumerateArray().Single().GetProperty("status").GetString() == "declared");
+                CoreTests.True(coverage.GetProperty("contracts").EnumerateArray().All(c => c.GetProperty("status").GetString() == "matched"));
+                JsonElement[] controls = [.. regions.Where(r => r.GetProperty("role").GetString() == "stage")];
+                CoreTests.True(controls.Length == 2 && controls.All(r => r.GetProperty("status").GetString() == "rejected"));
+                CoreTests.Equal(1, controls.Single(r => r.GetProperty("scope").GetString()!.EndsWith("unbound-scope.json", StringComparison.Ordinal))
+                    .GetProperty("coverage").GetProperty("unbound").GetInt32());
             }
             string run = f.Run("region", "region");
             WorkflowRun recorded = ProjectInputs.Read<WorkflowRun>(System.IO.Path.Combine(run, "run.json"));
-            CoreTests.True(recorded.Stages.Select(s => s.Outcome).SequenceEqual(["passed", "rejected"]));
+            CoreTests.True(recorded.Stages.Select(s => s.Outcome).SequenceEqual(["passed", "rejected", "rejected"]));
             CoreTests.Equal(0, f.Cli("accept", "--run", run).Code);
         });
         test("a failing region blocks caller model stages in preflight but not the primitive's own verification", () =>

@@ -1,0 +1,16 @@
+{
+  "schema_version": 4,
+  "kind": "environment",
+  "id": "journal",
+  "environment_kind": "interface",
+  "types": ["T:SyncFixture.IJournal"],
+  "operations": [
+    { "member": "M:SyncFixture.IJournal.Append(System.Int32)", "role": "submit", "lock_safe": true },
+    { "member": "M:System.IDisposable.Dispose", "role": "submit" }
+  ],
+  "obligations": [
+    "Append buffers its value without blocking and never calls back into the ledger.",
+    "Dispose flushes buffered values and does not call back into the ledger."
+  ],
+  "evidence": []
+}

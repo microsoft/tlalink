@@ -1692,7 +1692,7 @@ contract by instancing its TLA+ module. Primitives replace the former reviewed
 method summaries: a stateless helper is a `custom` primitive whose operations
 are `pure`. Environments and synchronization regions declare the parties
 outside a region and the C# files inside it, checked without a model checker.
-The design and later increments (instances and sites, scale) are in the
+The design and the remaining increments (environment fairness, scale) are in the
 [proposal](docs/proposals/synchronization-primitives.md). See the runnable
 [synthetic example](examples/Primitives/README.md).
 
@@ -1755,7 +1755,8 @@ kind. Callers substitute their own variable and sets, for example
 | `operations` | For a source primitive, every public, internal or protected internal method, constructor, operator and property declared by the type, exactly once, by `M:`/`P:` ID. Compiler-generated members and nested types are excluded; unknown members are errors; visible non-constant fields and events are rejected. Asynchronous and `Task`-returning members are allowed. A library primitive lists the members a region uses. |
 | `role` | `create`, `query`, `acquire`, `try-acquire`, `release`, `signal`, `wait`, `close`, `complete`, `enqueue`, `dequeue` or `pure`. State-changing roles (`acquire` through `dequeue`, except `wait`) need at least one action. |
 | `actions`, `fails`, `wait`, `precondition` | Kind-module operator names. `actions` are in order, and a trailing `?` marks a conditional step; `fails` lists the actions modeling exceptional outcomes; `wait` names the wait predicate and is required exactly for `wait` operations; `precondition` names an operator the caller must establish. Each must resolve through SANY to a parameterized operator defined in the kind module. |
-| `guarantees` | Unique entries of `signals-async`, `non-blocking`, `fifo-waiters`, `cancellable-wait`, `inline-callbacks`. |
+| `inline_callbacks` | Optional `true` on an operation that can run foreign code on the caller's stack, for example a queue completion that runs discard callbacks or a run-once operation that starts the shared action inline. Rejected on `create` and `query` operations; required on a `cancellation-source` operation that maps to `Cancel`. |
+| `guarantees` | Unique entries of `signals-async`, `non-blocking`, `fifo-waiters`, `cancellable-wait`. |
 | `verification` | Up to 100 project scenario IDs that verify the primitive, each with a TLC/trace stage directly using it (at least one for a source primitive), and one existing review obligation. |
 | `depends_on` | Other primitive IDs in the same scope; unknown IDs and cycles are errors. |
 | `assumptions`, `limits` | Nonempty entries; at least one limit. Carried into acceptance results and reports. |
@@ -1780,7 +1781,11 @@ scope (it may be empty beside a region).
 A primitive with `sources: []` declares a type from a compiler reference, for
 example a `cancellation-source` over `T:System.Threading.CancellationTokenSource`.
 The type must resolve to exactly one metadata type and each declared member to
-one of its methods or properties. Completeness is over the members a region
+one of its methods or properties, or to a member it inherits from a base type
+or an implemented interface (for example `M:System.IDisposable.Dispose`). A use
+is classified by the receiver's static type when that is a declared library
+primitive or environment type, so `source.Dispose()` matches the inherited
+declaration. Completeness is over the members a region
 uses (`SR101` reports others), not all members. `verification.scenarios` may be
 empty: support is the inspection plus any listed scenarios, and every listed
 guarantee stays outstanding because there are no sources to check.
@@ -1809,7 +1814,7 @@ One `environment` manifest per party outside a region:
 |---|---|
 | `environment_kind` | `interface` (code outside the region implementing a type the region calls) or `consumer` (code calling into the region or reading what it produces). The scheduler is built in and cannot be declared. |
 | `types` | 1..100 unique `T:` IDs, each resolving to exactly one source or referenced (metadata) type, for example `T:System.IO.Pipelines.PipeWriter` through a compiler reference. |
-| `operations` | 1..1000 unique `M:`/`P:` members of those types, with a `role` from the primitive roles plus `submit`. Only members the region uses must be declared. `lock_safe: true` marks an operation whose synchronous part may run inside a declared lock: it does not block, take region locks or run region code inline. |
+| `operations` | 1..1000 unique `M:`/`P:` members of those types or of their base types and interfaces (for example `M:System.IDisposable.Dispose` for an interface that extends `IDisposable`), with a `role` from the primitive roles plus `submit`. A use is classified by the receiver's static type when that is a declared type. Only members the region uses must be declared. `lock_safe: true` marks an operation whose synchronous part may run inside a declared lock: it does not block, take region locks or run region code inline. |
 | `module`, `actions`, `wait` | Optional `.tla` contract relative to the manifest. `actions` and `wait` name operators that SANY must resolve in it; they require a module. |
 | `obligations` | 1..100 nonempty statements the region relies on. They are assumptions, listed in plans and in project reports of synchronization stages. |
 | `evidence` | Up to 100 unique project scenario or stage IDs supporting the obligations; unknown IDs are errors at project load. Without evidence the obligations are reported as unsupported assumptions. |
@@ -1840,15 +1845,20 @@ One `environment` manifest per party outside a region:
 
 | Field | Rule |
 |---|---|
-| `region` | 1..1000 unique existing `.cs` files relative to the scope. A scope with a region may declare no formal `targets`. `environments`, `locks`, `spawns` and `waits` require a region. |
-| `environments` | 1..1000 unique environment manifest paths. |
-| `locks` | Every `lock` target in the region: unique `F:` fields declared in the region. `may_hold` lists other declared locks that may be acquired while this one is held; the graph must be acyclic. `indexed_by` is a `T:` owner type (used by later model instances). Unresolved or unused locks are `SR105`. |
+| `region` | 1..1000 unique existing `.cs` files relative to the scope. A scope with a region may declare no formal `targets`. `environments`, `locks`, `spawns` and `waits` require a region unless empty. |
+| `environments` | Up to 1000 unique environment manifest paths. |
+| `locks` | Every `lock` target in the region: unique `F:` fields declared in the region. `may_hold` lists other declared locks that may be acquired while this one is held (`[]` or omitted: none); the graph must be acyclic. `indexed_by` is a `T:` owner type (used by later model instances). Unresolved or unused locks are `SR105`. |
 | `spawns` | One entry per spawn site: a `site` using the typed source selector of `bind` entries (`symbol`, `syntax`, `tokens`, `match`, `expected_matches`), `disposition` `joined` or `detached`, and a nonempty `reason`. An entry matches a site that its selected node contains within the same statement. |
 | `waits` | Explicit dispositions for awaits that are not declared waits: a `site` selector (an `AwaitExpression`, or the statement of an `await foreach`/`await using`), a `kind` (`join`, `timer`, `yield` or `external`) and a `reason`. |
 
 Waits and spawns are scope-owned dispositions rather than formal `exclude`
 entries: region checks run without models and their sites belong to the region,
 not to a formal target.
+
+Every optional list of a region declaration (`environments`, `locks`,
+`may_hold`, `spawns`, `waits`) and the scope's `omissions` may be omitted or
+empty; both mean "none" and are at most 1000 entries. Only `region` needs at
+least one file, and `primitives` at least one manifest without a region.
 
 Primitive types declared inside a region file, for example a nested class, are
 exempt from region rules inside their own declarations; their guarantee checks
@@ -1867,11 +1877,16 @@ with the scope file name.
 | `SR100` | Raw synchronization | Outside declared primitive bodies, any use of `Interlocked`, `Volatile`, `volatile` fields, `Monitor`, `Lock`, `SemaphoreSlim`, `Semaphore`, `Mutex`, `EventWaitHandle`, `ManualResetEvent(Slim)`, `AutoResetEvent`, `CountdownEvent`, `Barrier`, `SpinLock`, `ReaderWriterLock(Slim)`, `TaskCompletionSource` (generic and not), `ManualResetValueTaskSourceCore`, `System.Threading.Channels` types, an `IValueTaskSource` implementation, or a `lock` whose target is not a declared lock field. Declared primitive and environment types are exempt; the type of a declared lock field may be `Lock`. |
 | `SR101` | Undeclared operation | A member of a declared primitive or environment type is used but not declared in its manifest, including an undeclared visible member of a source primitive. Implicit constructors of source primitives need no declaration. |
 | `SR102` | Undeclared wait | An `await` (after stripping `ConfigureAwait`) that does not target a primitive operation with role `wait`, a declared environment operation, an invocation of a region method or local function, or a `Task.Run`/`TaskFactory.StartNew` spawn site, and is not covered by a `waits` disposition. Awaiting a Task-typed field, local, parameter or property, `Task.WhenAll`, `Task.Delay` or `Task.Yield` needs a disposition; `await foreach` and `await using` always do. |
-| `SR103` | Lock region | Inside a declared lock, and transitively in the region methods, constructors and accessors it calls: no primitive `wait` operation; no `release`, `signal`, `complete`, `close`, `enqueue` or `try-acquire` operation unless its primitive claims `signals-async`; no operation of a `once` or `cancellation-source` primitive or of a primitive claiming `inline-callbacks`; environment operations only when `lock_safe`; no delegate or event invocation; nested locks only when listed in the held lock's `may_hold`. |
+| `SR103` | Lock region | Inside a declared lock, and transitively in the region methods, constructors and accessors it calls: no primitive `wait` operation; no operation declared `inline_callbacks`; no `release`, `signal`, `complete`, `close`, `enqueue` or `try-acquire` operation of a primitive that has waiters (declares a `wait` operation) unless it claims `signals-async`; environment operations only when `lock_safe`; no delegate or event invocation; nested locks only when listed in the held lock's `may_hold`. Constructors and queries are never flagged. |
 | `SR104` | Spawn | A spawn site without a `spawns` entry, or a contradictory disposition (an awaited site declared `detached`; a discarded, unawaited, `async void` or `ThreadPool.QueueUserWorkItem` site declared `joined`). Spawn sites are `Task.Run`, `TaskFactory.StartNew`, `ThreadPool.QueueUserWorkItem`, `new Thread`, discards `_ = <task>`, expression statements whose value is an unawaited `Task`/`ValueTask`, and invocations of `async void` methods. |
 | `SR105` | Stale declaration | A `spawns` or `waits` entry that does not resolve, selects code outside the region, or matches no (or several) sites; a wait disposition on an already declared wait; an unresolved or unused lock; an unresolved primitive or environment type or member; an environment operator SANY does not resolve. |
 | `SR106` | Undischarged guarantee | A source primitive's `signals-async` or `non-blocking` static check failed. |
-| `SR200` | Incomplete | The region and primitive sources do not compile with the project compiler profile; the outcome is incomplete, not rejected. |
+| `SR107` | Undeclared instance | A region field whose declared type is a declared primitive has no `instance` declaration in any TLA+ target of the scope and no formal `exclude` whose `source` selects the field. |
+| `SR108` | Unbound site | An [instance site](#instances-and-sites) whose syntax no `bind` source selection of the scope's TLA+ targets contains, and no `exclude` covers. |
+| `SR109` | Contract mismatch | A `bind` covering a site does not reference, through the declared kind instance, every non-optional action of the site's operation (`A`, `AEnabled` or `AApply`) and, for role `wait`, the wait predicate; or its target declares no instance for the site's field. |
+| `SR110` | Stale instance | An `instance` whose field is not a region field of a declared primitive type, whose ID is not of its target or is used by a bind, whose `kind_instance` is not the INSTANCE definition it precedes or does not instantiate the primitive's kind module, whose model expression does not parse, or a second instance of one field in one target. |
+| `SR111` | Unresolved instance receiver | A site's receiver is not a region field (a local, parameter, property, call result, field outside the region or an implicit `this`) and no `exclude` covers it. |
+| `SR200` | Incomplete | The region and primitive sources do not compile with the project compiler profile, or a TLA+ target of the scope does not resolve through SANY or its annotations do not attach; the outcome is incomplete, not rejected. |
 
 The lock check follows region calls depth first, visiting each callee once per
 `lock` statement, so recursion terminates. Lambdas and local functions are not
@@ -1891,6 +1906,77 @@ anything else). `non-blocking` rejects `Wait`, `WaitAll`, `WaitAny`,
 acquiring a `lock` is not counted as blocking. Both checks are syntactic and
 may reject safe code, for example reading `Result` of a completed task.
 
+#### Instances and sites
+
+When a region scope has TLA+ `targets`, its models must account for every
+primitive instance in the region and every place the region changes or waits
+on one. These checks need SANY (the pinned TLA+ JAR) and run with the other
+region checks; Dafny and P targets are not read by them.
+
+An **instance** is a field declared in a region file whose declared type is a
+declared primitive (generic instantiations included). A TLA+ target declares
+the instances it models in an `instance` array, in a comment that holds only
+`instance` entries and immediately precedes the INSTANCE definition of the
+primitive's kind module:
+
+```tla
+(* @link {"instance":[{"id":"uploader::gate","field":"F:PrimitivesExample.Uploader.gate","kind_instance":"Gate","model":"\"g\""}]} *)
+Gate == INSTANCE TlaLinkCountingResource
+    WITH Instances <- {"g"}, Waiters <- Senders, Capacity <- [i \in {"g"} |-> 1], state <- gate
+```
+
+| Field | Rule |
+|---|---|
+| `id` | A `scope::name` ID of this target, unique among the file's instances and not used by a `bind`. |
+| `field` | The `F:` documentation ID of the region field, resolved with Roslyn in the region compilation. |
+| `kind_instance` | The name of the INSTANCE definition the comment precedes. SANY must resolve it to an INSTANCE of exactly the primitive's kind module (the shipped `TlaLink<Kind>` module or a `custom` primitive's `module`), at the resolved path in the target's import closure. |
+| `model` | A one-line TLA+ expression (at most 1000 characters) for the instance identifier within that kind instance's `Instances`, for example `"g"` or `<<"session", s>>`. |
+| `index` | Optional 1..10 unique bound names used in `model`, for fields of an owner type with many instances (one gate per session). |
+
+The model expression is checked by parsing it through SANY as the body of an
+operator over the `index` names, in a generated module that extends the
+target's root module; that is a parse and level check, not a check that the
+value belongs to `Instances` or that indexed owners are modeled faithfully.
+
+A **site** is a use, in a region file, of a declared operation with role
+`acquire`, `try-acquire`, `release`, `signal`, `wait`, `close`, `complete`,
+`enqueue` or `dequeue` (not `create`, `query` or `pure`): an invocation or
+property access whose receiver is the instance, as in `this.f.Op(...)`,
+`f.Op(...)` or `this.f?.Op(...)`, awaited or not (`ConfigureAwait` is not part
+of the receiver). Receivers that are not region fields are `SR111`, because
+instances are fields by design and TlaLink does not trace aliases.
+
+Sites are bound with ordinary `bind` entries: a bind **covers** a site when its
+resolved source selection contains the site's syntax, so a statement-level
+selector covers the sites in that statement and a member-level selector covers
+every site in the member. A formal `exclude` whose `source` contains a site, or
+selects the instance field (which also excludes all of that field's sites),
+accounts for it instead. Bind and exclude selectors that do not resolve to
+region code are ignored by these checks; ordinary link checks report them.
+
+For each bind covering a site, TlaLink resolves the bound operator through SANY
+and collects the kind operators it references through the declared
+`kind_instance` prefix, directly or through operators it uses in the root and
+extended author modules; it never descends into instantiated or kind modules.
+Each non-optional action `A` of the site's operation must be referenced as `A`,
+`AEnabled` or `AApply`, and a `wait` operation's predicate must be referenced;
+trailing-`?` actions are optional. A multi-step operation therefore binds an
+operator that composes its steps, as in `AcquirePermit(s) == Acquire(s) \/ Send(s)`.
+This checks which kind operations an action uses, not that their arguments
+equal the declared instance expression, the order of the steps or that the
+action is reachable.
+
+`check-synchronization` receipts, `doctor`/`plan` regions (in full and in
+`--format summary`) and project reports carry the coverage: each instance with
+status `declared`, `excluded` or `undeclared`, its declaring instance IDs and
+its counts of `bound`, `excluded` and `unbound` sites; each site with its
+field, operation, receiver, location, status (`bound`, `excluded`, `unbound`
+or `unresolved`) and covering binds; and each covering bind with its operator,
+site count, status `matched` or `mismatch` and the kind operators it misses.
+Project reports list the coverage summary and its boundary as assumptions of
+the synchronization stage and excluded instances or sites as a gap. Scopes
+without TLA+ targets carry no coverage.
+
 #### Synchronization stages
 
 A stage of kind `synchronization` names one scope with a region and takes no
@@ -1901,13 +1987,14 @@ models, config, sources, bindings, arguments, primitive uses or target:
 ```
 
 It runs `check-synchronization` with the project compiler profile (plus the
-pinned TLA+ JAR only when an environment declares a module) and records a
+pinned TLA+ JAR when an environment declares a module or the scope has TLA+
+targets) and records a
 `synchronization-result` receipt: status `passed`, `rejected` or `incomplete`,
 the region report (files, primitives with guarantee statuses, environments,
-locks, site counts) and every diagnostic. Requirements use `passed`, or
+locks, site counts and, with TLA+ targets, instance coverage) and every diagnostic. Requirements use `passed`, or
 `rejected` with an `SR` diagnostic, optional `diagnostic_text` and
 `diagnostic_count`, like other stages; no backend claim is selected. Every
-region, primitive and environment input is pinned and archived. Acceptance
+region, primitive, environment and TLA+ target input is pinned and archived. Acceptance
 checks the receipt against the declared scope and the archived pins; it does
 not rerun the checks, and any changed input makes the run stale. Project
 reports list each environment's obligations and `lock_safe` operations as
@@ -1921,8 +2008,11 @@ failed guarantee check makes their status `failed` (exit 1), and `run` refuses
 to start. Standalone:
 
 ```powershell
-.\TlaLink.ps1 check-synchronization --scope .\examples\Primitives\verification\scope.json --format summary
+.\TlaLink.ps1 check-synchronization --scope .\examples\Primitives\verification\scope.json --jar .\.tools\tla\v1.8.0\tla2tools.jar --format summary
 ```
+
+`--jar` is required when an environment declares a module or the scope has
+TLA+ targets.
 
 Exit codes are 0 (passed), 1 (rejected) and 2 (incomplete or invalid input).
 
@@ -2006,8 +2096,11 @@ acceptance results record each status, a failed check fails acceptance, and
 reports list the others as outstanding obligations. Region checks establish
 that declared vocabulary covers a region's synchronization sites under the
 stated syntactic rules, not that the region is deadlock free; environment
-obligations are assumptions. Instance and site bindings to models are a later
-increment of the proposal.
+obligations are assumptions. Instance and site checks establish that every
+instance field and site of a region is declared, bound or excluded and that
+each covering action references the mapped kind operators through the
+declared kind instance; they do not establish that the action applies them to
+that instance, in that order, or that the model refines the C# code.
 
 ### One current public format
 
@@ -3033,6 +3126,11 @@ example convention; existing nonmigrated inputs retain their explicit ownership.
 Formal-owned `exclude` entries require a `source` selector and retain their
 explicit `from` aliases and reason. They scope correspondence, not runtime
 execution, input retention or relevant effects.
+TLA+ comments may also carry an `instance` array that declares which region
+fields a model instance of a kind module represents; such a comment holds only
+`instance` entries and immediately precedes the INSTANCE definition (see
+[instances and sites](#instances-and-sites)). C#, Dafny and P comments cannot
+declare instances.
 `System.Text.Json`
 deserializes strict typed records, including enum-valued capture choices;
 unknown fields, duplicate properties, malformed JSON and invalid array entries
@@ -3169,7 +3267,7 @@ and attach to the next declaration, statement or block. They do not remove code
 from compilation/execution, source fingerprints or competing-access inspection.
 Same-target bindings inside excluded regions and overlapping exclusions fail.
 
-Scope `omissions` rules require `id`, `targets`, exact Roslyn method declaration
+Scope `omissions` rules are optional (omit the array or leave it empty) and require `id`, `targets`, exact Roslyn method declaration
 IDs in `calls`, `reason` and explicit boundary `assumptions`. They classify
 synchronous void invocation statements without a comment on every log call.
 They do not omit receiver/argument evaluation, transitively match wrappers,

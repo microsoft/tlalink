@@ -1,0 +1,15 @@
+{
+  "schema_version": 4,
+  "kind": "primitive",
+  "id": "closed",
+  "type": "T:SyncFixture.Latch",
+  "sources": ["../Latch.cs"],
+  "primitive_kind": "latch",
+  "operations": [
+    { "member": "M:SyncFixture.Latch.TrySet", "role": "signal", "actions": ["TrySet"] },
+    { "member": "M:SyncFixture.Latch.WaitAsync", "role": "wait", "wait": "CanWait" }
+  ],
+  "verification": { "scenarios": ["latch"], "inspection": "latch-inspection" },
+  "assumptions": [],
+  "limits": ["Mutant: the latch has waiters but does not claim signals-async."]
+}

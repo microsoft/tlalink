@@ -10,10 +10,14 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.Vector;
 
 import pcal.AST;
@@ -24,7 +28,13 @@ import pcal.Region;
 import pcal.TLAtoPCalMapping;
 import tla2sany.drivers.SANY;
 import tla2sany.modanalyzer.SpecObj;
+import tla2sany.semantic.InstanceNode;
+import tla2sany.semantic.ModuleNode;
+import tla2sany.semantic.OpApplNode;
+import tla2sany.semantic.OpArgNode;
 import tla2sany.semantic.OpDefNode;
+import tla2sany.semantic.SemanticNode;
+import tla2sany.semantic.SymbolNode;
 import tla2sany.st.Location;
 import util.SimpleFilenameToStream;
 import util.FilenameToStream.TLAFile;
@@ -93,6 +103,8 @@ public final class TlaIndex {
             entries.add(entry("variable", variable.getName().toString(), module,
                 place.beginLine(), place.beginColumn(), place.endLine(), place.endColumn()));
         }
+        addInstances(specification.getRootModule(), module);
+        addReferences(specification.getRootModule());
         metadata = "{\"module\":" + quote(module) + ",\"variables\":["
             + String.join(",", variables) + "],\"arities\":{" + String.join(",", arities) + "}}";
         if (args.length > 1) {
@@ -104,6 +116,68 @@ public final class TlaIndex {
             }
             entries.add("{\"kind\":\"dependency\",\"path\":" + quote(source.key)
                 + ",\"sha256\":" + quote(source.digest) + "}");
+        }
+    }
+
+    // Named INSTANCE definitions written in the root module, with the module each instantiates.
+    private void addInstances(ModuleNode root, String module) {
+        for (InstanceNode instance : root.getInstances()) {
+            Location place = instance.getLocation();
+            if (instance.getName() == null || !place.source().equals(module)) {
+                continue;
+            }
+            entries.add("{\"kind\":\"instance\",\"name\":" + quote(instance.getName().toString())
+                + ",\"module\":" + quote(instance.getModule().getName().toString())
+                + ",\"local\":" + instance.getLocal() + ",\"line\":" + place.beginLine()
+                + ",\"column\":" + place.beginColumn() + ",\"endLine\":" + place.endLine()
+                + ",\"endColumn\":" + place.endColumn() + "}");
+        }
+    }
+
+    // For each root or extended author-module definition, the top-level operators its body applies or passes.
+    // Instantiated (prefixed) definitions are references, never walked, so kind-module bodies are not descended into.
+    private void addReferences(ModuleNode root) {
+        Set<OpDefNode> definitions = Collections.newSetFromMap(new IdentityHashMap<>());
+        definitions.addAll(Arrays.asList(root.getOpDefs()));
+        for (OpDefNode operator : root.getOpDefs()) {
+            String from = operator.getName().toString();
+            if (from.indexOf('!') >= 0 || operator.isBuiltIn() || operator.isStandardModule()) {
+                continue;
+            }
+            Map<String, String> found = new TreeMap<>();
+            collect(operator.getBody(), definitions, found, Collections.newSetFromMap(new IdentityHashMap<>()));
+            for (Map.Entry<String, String> reference : found.entrySet()) {
+                String name = reference.getKey();
+                int prefix = name.lastIndexOf('!');
+                entries.add("{\"kind\":\"reference\",\"from\":" + quote(from)
+                    + ",\"name\":" + quote(name.substring(prefix + 1))
+                    + ",\"instance\":" + (prefix < 0 ? "null" : quote(name.substring(0, prefix)))
+                    + ",\"module\":" + quote(reference.getValue()) + "}");
+            }
+        }
+    }
+
+    private static void collect(SemanticNode node, Set<OpDefNode> definitions, Map<String, String> found,
+            Set<SemanticNode> seen) {
+        if (node == null || !seen.add(node)) {
+            return;
+        }
+        SymbolNode operator = node instanceof OpApplNode ? ((OpApplNode) node).getOperator()
+            : node instanceof OpArgNode ? ((OpArgNode) node).getOp() : null;
+        if (operator instanceof OpDefNode && definitions.contains(operator)
+                && !operator.isBuiltIn() && !operator.isStandardModule()) {
+            OpDefNode definition = (OpDefNode) operator;
+            while (definition.getSource() != null && definition.getSource() != definition) {
+                definition = definition.getSource();
+            }
+            ModuleNode owner = definition.getOriginallyDefinedInModuleNode();
+            found.put(operator.getName().toString(), owner == null ? "" : owner.getName().toString());
+        }
+        SemanticNode[] children = node.getChildren();
+        if (children != null) {
+            for (SemanticNode child : children) {
+                collect(child, definitions, found, seen);
+            }
         }
     }
 

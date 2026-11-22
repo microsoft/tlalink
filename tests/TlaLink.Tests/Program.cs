@@ -97,11 +97,16 @@ public static class Program
             if (selection == "--primitives")
             {
                 Suite("primitives-core", directory => PrimitiveManifestTests.RegisterCore(Test, directory));
-                Suite("synchronization-core", directory => SynchronizationRegionTests.RegisterCore(Test, directory));
+                Suite("synchronization-core", directory =>
+                {
+                    SynchronizationRegionTests.RegisterCore(Test, directory);
+                    SynchronizationInstanceTests.RegisterCore(Test, directory);
+                });
                 Suite("primitives-native", directory => PrimitiveManifestTests.RegisterNative(Test, root, directory));
                 Suite("synchronization-native", directory =>
                 {
                     SynchronizationRegionTests.RegisterNative(Test, root, directory);
+                    SynchronizationInstanceTests.RegisterNative(Test, root, directory);
                     PrimitiveManifestTests.RegisterRegion(Test, root, directory);
                 });
                 Suite("primitive-kinds-native", directory => PrimitiveKindTests.RegisterNative(Test, root, directory));
@@ -138,7 +143,11 @@ public static class Program
                 Suite("reports", directory => EvidenceReportTests.Register(Test, directory));
                 Suite("retention", directory => EvidenceRetentionTests.Register(Test, directory));
                 Suite("evidence-core", directory => StageEvidenceTests.RegisterCore(Test, root, directory));
-                Suite("synchronization-core", directory => SynchronizationRegionTests.RegisterCore(Test, directory));
+                Suite("synchronization-core", directory =>
+                {
+                    SynchronizationRegionTests.RegisterCore(Test, directory);
+                    SynchronizationInstanceTests.RegisterCore(Test, directory);
+                });
                 return Finish();
             }
             if (selection == "--integrated")
@@ -188,10 +197,15 @@ public static class Program
             Suite("prepare-native", directory => SourcePreparationTests.RegisterNative(Test, directory, TestTools.Jar(root)));
             Suite("arguments-native", directory => ActionArgumentTests.RegisterNative(Test, root, directory));
             Suite("primitives-native", directory => PrimitiveManifestTests.RegisterNative(Test, root, directory));
-            Suite("synchronization-core", directory => SynchronizationRegionTests.RegisterCore(Test, directory));
+            Suite("synchronization-core", directory =>
+            {
+                SynchronizationRegionTests.RegisterCore(Test, directory);
+                SynchronizationInstanceTests.RegisterCore(Test, directory);
+            });
             Suite("synchronization-native", directory =>
             {
                 SynchronizationRegionTests.RegisterNative(Test, root, directory);
+                SynchronizationInstanceTests.RegisterNative(Test, root, directory);
                 PrimitiveManifestTests.RegisterRegion(Test, root, directory);
             });
             Suite("primitive-kinds-native", directory => PrimitiveKindTests.RegisterNative(Test, root, directory));

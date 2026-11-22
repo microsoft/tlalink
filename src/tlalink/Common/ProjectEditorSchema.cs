@@ -44,7 +44,8 @@ public static class ProjectEditorSchema
             }
             if (document.Kind == "correspondence-scope")
             {
-                properties["targets"]!["minItems"] = 1;
+                // No targets is valid beside a synchronization region.
+                properties["targets"]!["minItems"] = 0;
                 properties["targets"]!["maxItems"] = 1000;
                 properties["omissions"]!["maxItems"] = 1000;
             }
@@ -114,7 +115,8 @@ public static class ProjectEditorSchema
                 if (properties.ContainsKey("region") && properties.ContainsKey("locks"))
                     foreach (string list in new[] { "region", "environments", "locks", "spawns", "waits" })
                     {
-                        properties[list]!["minItems"] = 1;
+                        // Optional lists may be empty; only an explicit region needs a file.
+                        properties[list]!["minItems"] = list == "region" ? 1 : 0;
                         properties[list]!["maxItems"] = 1000;
                     }
                 if (properties.ContainsKey("site") && properties.ContainsKey("disposition"))

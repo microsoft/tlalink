@@ -77,6 +77,12 @@
           "kind": "synchronization",
           "timeout_seconds": 60,
           "scope": "controls\\scope.json"
+        },
+        {
+          "id": "uploader-unbound-close",
+          "kind": "synchronization",
+          "timeout_seconds": 60,
+          "scope": "controls\\unbound-scope.json"
         }
       ]
     }

@@ -1,6 +1,6 @@
 # Synchronization primitives and environments
 
-Status: increments 1 and 2 and the environment manifests of increment 4 are
+Status: increments 1 to 3 and the environment manifests of increment 4 are
 implemented; see [synchronization primitives](../../REFERENCE.md#synchronization-primitives)
 for the current contract and section 14 for what differs. The rest is a
 proposal. First consumer: a private multiplexed RPC and bulk-transfer
@@ -279,7 +279,7 @@ rules of today's summaries.
 | `non-blocking` | No operation other than declared waits suspends or blocks. | Static check: no `await`, `Wait`, `Monitor.Wait` or blocking call outside wait operations. |
 | `fifo-waiters` | Blocked acquirers are granted in arrival order. | Kind contract and inspection. |
 | `cancellable-wait` | A wait can be abandoned by a token without changing primitive state. | Kind contract and inspection. |
-| `inline-callbacks` | An operation can run foreign code on the caller's stack. | Declaration only; it restricts where the operation may be used. |
+| `inline-callbacks` | An operation can run foreign code on the caller's stack. | Declaration only; it restricts where the operation may be used. *Implemented* as the operation-level `inline_callbacks` flag instead of a guarantee. |
 
 A guarantee whose discharge evidence is missing or stale is reported as an
 outstanding obligation, never silently assumed.
@@ -356,8 +356,8 @@ array, `instance`, beside `bind`, `capture` and `exclude`:
 
 ```tla
 (* @link {"instance":[
-  {"id":"conn::sends","field":"F:Demo.Mux.Connection.sends","model":"gates[\"sends\"]"},
-  {"id":"session::writes","field":"F:Demo.Mux.Session.writes","model":"sessionGates[s]","index":"s"}
+  {"id":"conn::sends","field":"F:Demo.Mux.Connection.sends","kind_instance":"Gate","model":"\"sends\""},
+  {"id":"conn::writes","field":"F:Demo.Mux.Session.writes","kind_instance":"Gate","model":"<<\"writes\", s>>","index":["s"]}
 ]} *)
 Gate == INSTANCE TlaLinkAdmissionGate WITH Instances <- GateIds, state <- gates
 ```
@@ -365,6 +365,13 @@ Gate == INSTANCE TlaLinkAdmissionGate WITH Instances <- GateIds, state <- gates
 Sites are bound with ordinary `bind` entries whose `source` selects the site.
 TlaLink resolves the site's instance and operation with Roslyn, so the binding
 needs no extra metadata.
+
+*Implemented* as shown, with these refinements: `kind_instance` names the
+INSTANCE definition explicitly and must be the one the comment precedes;
+`model` is the instance identifier within that instance's `Instances` set (not
+a state value), parse-checked by SANY with the `index` names (an array) bound;
+the comment holds only `instance` entries. A bind covers a site when its
+resolved selection contains the site.
 
 ## 10. Diagnostics
 
@@ -379,7 +386,7 @@ site.
 | Undeclared wait | Every leaf `await` in the region targets a primitive wait, an environment operation, or a task produced by a declared spawn. Awaiting another region method is a call, checked inside that method. |
 | Unbound site | Every site of an acquire, release, signal, wait, close, complete, enqueue or dequeue on an instance is bound in some component that declares the instance. |
 | Contract mismatch | An action bound to a site applies the kind action the operation maps to, on the instance the site uses, checked by SANY reference resolution. |
-| Lock region | Inside a declared critical section: no wait operations; no operations without `signals-async`; no `inline-callbacks` operations; environment operations only if `lock_safe`; no delegate invocations; nested locks only per `may_hold`. |
+| Lock region | Inside a declared critical section: no wait operations; no operations without `signals-async` (implemented for primitives that have waiters); no `inline-callbacks` operations; environment operations only if `lock_safe`; no delegate invocations; nested locks only per `may_hold`. |
 | Spawn | Every spawn site is bound, and either joined by a bound wait or declared `detached` with the reason nothing depends on it. |
 | Undischarged guarantee | A guarantee in use has current discharge evidence. |
 
@@ -421,7 +428,7 @@ A multiplexed RPC and bulk-transfer library touches every kind:
 |---|---|
 | One-shot flag, single-assignment reference | `register` |
 | Set-once completion signal with cancellable waits | `latch` |
-| Run-once cleanup shared by every caller, run on the winner's stack | `once` with `inline-callbacks` |
+| Run-once cleanup shared by every caller, run on the winner's stack | `once` whose run operation declares `inline_callbacks` |
 | Rundown gate for in-flight operations, with a bounded try-enter | `admission-gate` |
 | FIFO async semaphore guarding send admission or a buffer pool | `counting-resource` |
 | Single-consumer async queue with drain or abort completion | `channel` |
@@ -455,6 +462,26 @@ validated on the first consumer before the next starts.
    synchronization by themselves, but invoking one under a lock is `SR103`.
 3. **Instances and sites.** The `instance` annotation, unbound-site and
    contract-mismatch checks.
+   *Implemented* as `SR107` (undeclared instance), `SR108` (unbound site),
+   `SR109` (contract mismatch), `SR110` (stale instance) and `SR111`
+   (unresolved instance receiver), run with the region checks whenever a
+   region scope has TLA+ targets, in synchronization stages and in preflight.
+   Differences from the text above: instance comments attach to the INSTANCE
+   definition and carry an explicit `kind_instance`; exclusions reuse the
+   formal-owned `exclude` (selecting a field excludes it and its sites); a site
+   must be covered by a bind of any TLA+ target of the scope, and every bind
+   covering it must reference all non-optional actions of the operation and,
+   for a wait, its predicate, through the instance declared by the bind's own
+   target, so multi-step operations bind an operator composing their steps; the
+   SANY check establishes which kind operations an action references, not that
+   it applies them to the instance the site uses; receivers that are not region
+   fields are reported, not traced; Dafny and P targets are not read. Running
+   these checks against a first region also changed increment 2: optional
+   lists may be empty, `inline-callbacks` became the operation-level
+   `inline_callbacks` flag, the lock-region resumption rule applies only to
+   primitives with a `wait` operation, and environment and library-primitive
+   operations may be inherited members, attributed by the receiver's static
+   type.
 4. **Environments and reports.** Environment manifests, `lock_safe`,
    obligations and fairness assumptions in the evidence report.
    *Environment manifests are implemented* with `types` (one or more source or

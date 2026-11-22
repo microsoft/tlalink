@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace TlaLink;
 
 public sealed record PrimitiveOperation(string Member, string Role, List<string>? Actions = null,
-    List<string>? Fails = null, string? Wait = null, string? Precondition = null);
+    List<string>? Fails = null, string? Wait = null, string? Precondition = null, bool InlineCallbacks = false);
 public sealed record PrimitiveVerification(List<string> Scenarios, string Inspection);
 public sealed record PrimitiveManifest(int SchemaVersion, string Kind, string Id, string Type, List<string> Sources,
     string PrimitiveKind, List<PrimitiveOperation> Operations, PrimitiveVerification Verification,

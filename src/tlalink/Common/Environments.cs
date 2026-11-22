@@ -89,8 +89,9 @@ public static class Environments
             List<ISymbol> found = DocumentationCommentId.GetSymbolsForDeclarationId(operation.Member, compilation)
                 .Where(s => s is IMethodSymbol or IPropertySymbol).ToList();
             List<INamedTypeSymbol> owners = types;
-            if (found.Count != 1 || !owners.Any(t => SymbolEqualityComparer.Default.Equals(t, found[0].ContainingType)))
-                throw Invalid("Environment operation is not one member of a declared type: " + manifest.Id + ": " + operation.Member);
+            if (found.Count != 1 || !owners.Any(t => Primitives.IsMemberOf(found[0], t)))
+                throw Invalid("Environment operation is not one member of a declared type or of its base types or interfaces: " +
+                    manifest.Id + ": " + operation.Member);
             result.Add(found[0], operation);
         }
         return result;

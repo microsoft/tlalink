@@ -72,7 +72,10 @@ public sealed record RegionEnvironmentSummary(string Id, string EnvironmentKind,
     List<string> Obligations, List<string> Evidence, string Support);
 public sealed record RegionSummary(string Scope, string Role, List<string> Stages, string Status, int Files,
     RegionSites Sites, List<RegionPrimitiveSummary> Primitives, List<RegionEnvironmentSummary> Environments,
-    List<Issue> Diagnostics);
+    List<Issue> Diagnostics, RegionCoverageSummary? Coverage = null);
+/// <summary>Instance site counts by status, per-instance coverage and per-bind contract status of a region with TLA+ targets.</summary>
+public sealed record RegionCoverageSummary(int Bound, int Excluded, int Unbound, int Unresolved, List<RegionInstance> Instances,
+    List<RegionContract> Contracts);
 public sealed record SynchronizationSummary(string Status, RegionSummary Region, string Boundary)
     : CommandSummaryResult("synchronization-result");
 public sealed record PlannedStageSummary(string Id, string Kind, List<string> DependsOn,

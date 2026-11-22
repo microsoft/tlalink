@@ -175,8 +175,11 @@ declarations: `signals-async` (every `TaskCompletionSource` construction passes
 field sets it on every construction path) and `non-blocking` (no blocking
 waits, `Result`/`GetResult` reads or sleeps, and `await` only inside wait
 operations). Preflight records each check's status with the resolved
-primitive; a failed check blocks runs and acceptance. `fifo-waiters`,
-`cancellable-wait` and `inline-callbacks` stay declared and inspection-backed.
+primitive; a failed check blocks runs and acceptance. `fifo-waiters` and
+`cancellable-wait` stay declared and inspection-backed. Running foreign code
+on the caller's stack is a property of an operation, not of the type, so it is
+an operation-level `inline_callbacks` declaration (required for a
+cancellation source's `Cancel`) that restricts where the operation may be used.
 Support is a finite check of a harness against the kind plus inspection; it is
 not a machine-checked refinement proof of the C# type.
 
@@ -202,6 +205,12 @@ optional TLA+ contract operators resolved through SANY, obligations and
 evidence stage or scenario IDs. Obligations are assumptions: plans list them
 and project reports carry them on synchronization stages, and an environment
 without evidence is reported as an unsupported assumption, not a failure.
+Environment and library-primitive operations may be members a declared type
+inherits (an interface's `IDisposable.Dispose`); a use is attributed to a
+declared type by its receiver's static type, because Roslyn resolves such a
+call to the base member. Lock-region resumption is only a hazard for a
+primitive that has waiters, so the `signals-async` requirement under a lock
+applies only to primitives that declare a `wait` operation.
 
 These are syntactic Roslyn checks over explicit files, not alias, data-flow or
 runtime analysis. Instances are not traced through locals or parameters, code
@@ -209,6 +218,34 @@ outside the region and implicit callbacks are not followed, and declared
 dispositions, `lock_safe` and environment obligations are trusted. Passing
 checks establish that the declared vocabulary covers the region's
 synchronization sites; they do not prove deadlock freedom or progress.
+
+When the scope has TLA+ targets, the region checks also cover the model side
+(`SynchronizationInstances.cs`). Region fields of declared primitive types are
+instances; each must be declared by an `instance` annotation on the INSTANCE
+definition of its kind module in some target, or excluded. Attaching the
+annotation to the INSTANCE definition keeps the field, the kind module and the
+instance expression in one place that SANY resolves, and requires no separate
+catalogue. Operation sites are Roslyn member uses on those fields; each must
+be contained in a `bind` source selection or an `exclude`, so the
+code-to-model direction is complete over the region, and receivers that are not
+fields are reported rather than traced. Model expressions are parse-checked by
+SANY in a generated module that extends the target and is discarded, never
+pinned or archived.
+
+The contract check uses a SANY reference index rather than text matching:
+`TlaIndex.java` reports each named INSTANCE definition of the root module with
+the module it instantiates, and, for every root or extended author-module
+operator definition, the top-level operators its body applies or passes, with
+the instance prefix (`Gate!ExitApply` is instance `Gate`, operator
+`ExitApply`) and the defining module. The walk visits SANY semantic children,
+so LET definitions are included in their enclosing operator, and it records
+instantiated operators as references without walking their bodies. TlaLink
+closes a bound operator over author-module references only and requires the
+kind operators of the site's operation behind the declared prefix. The check
+establishes which kind operations an action uses, not that it applies them to
+the declared instance expression, in the declared order, on a reachable path,
+or that the action refines the C# code; those remain model review and trace
+validation concerns.
 
 The checks run in two places. A `synchronization` stage runs them alone,
 without a model checker, and records a `synchronization-result` receipt whose
@@ -473,12 +510,13 @@ and freshness handling are in a separate partial frontend under `PlusCal`.
 | `CSharpFrontend.cs` | Explicit Roslyn compilation, attachments, field symbols and boundaries |
 | `SourcePreparation.cs` | Byte-pinned source copies, Roslyn/SANY annotation targets, explicit C# control mutations and readonly copy validation |
 | `TlaBackend.cs` | Bounded fresh Java processes, normalized spans, dependencies and freshness |
-| `TlaIndex.java` | Authoritative SANY/PlusCal adapter |
+| `TlaIndex.java` | Authoritative SANY/PlusCal adapter, including INSTANCE definitions and operator reference rows |
 | `Tla/Primitives/TlaLink*.tla` | Shipped primitive kind modules, deployed under `primitives` |
 | `Primitives.cs` | Primitive manifests, stage selection, Roslyn completeness, SANY operator resolution and support pins |
 | `SynchronizationGuarantees.cs` | Static `signals-async` and `non-blocking` discharge checks over a source primitive's declarations |
 | `Environments.cs` | Environment manifests, Roslyn member resolution and SANY operator resolution |
 | `SynchronizationRegion.cs` | Region declaration validation and Roslyn region checks (raw synchronization, operations, waits, locks, spawns) |
+| `SynchronizationInstances.cs` | Instance declarations, operation sites, bind/exclude coverage and SANY-reference contract checks for region scopes with TLA+ targets |
 | `SynchronizationWorkflow.cs` | Region scopes of a selection, environment evidence IDs and preflight blocking |
 | `ModelScope.cs` | Model annotations, explicit label bindings and operator arities |
 | `Review.cs` | Scoped uniqueness/link/coverage diagnostics and review questions |

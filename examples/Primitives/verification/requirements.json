@@ -40,6 +40,15 @@
       "diagnostic": "SR104",
       "diagnostic_text": "undeclared spawn (discarded task)",
       "diagnostic_count": 1
+    },
+    {
+      "id": "uploader-unbound-close-rejected",
+      "scenario": "region",
+      "stage": "uploader-unbound-close",
+      "expected": "rejected",
+      "diagnostic": "SR108",
+      "diagnostic_text": "unbound site: M:PrimitivesExample.PermitGate.Close (close) of primitive permit-gate on F:PrimitivesExample.Uploader.gate",
+      "diagnostic_count": 1
     }
   ]
 }

@@ -64,11 +64,20 @@ public sealed record ExcludeAnnotation(string Id, List<string> From, string Reas
     public override string Identity => Id;
 }
 
+/// <summary>A region field modeled as one instance (or an indexed family) of a TLA+ kind INSTANCE definition.</summary>
+public sealed record InstanceAnnotation(string Id, string Field, string KindInstance, string Model, List<string>? Index = null)
+    : SourceAnnotation
+{
+    [JsonIgnore]
+    public override string Identity => Id;
+}
+
 public sealed record AnnotationPayload
 {
     public List<BindAnnotation> Bind { get; init; } = [];
     public List<CaptureAnnotation> Capture { get; init; } = [];
     public List<ExcludeAnnotation> Exclude { get; init; } = [];
+    public List<InstanceAnnotation> Instance { get; init; } = [];
 }
 
 public sealed record LocatedAnnotation(SourceAnnotation Declaration, int Start, int End);
@@ -76,3 +85,4 @@ public sealed record SourceLinkDeclaration(BindAnnotation Binding, CaptureAnnota
     SourceBindingKind SourceKind, Place Location);
 public sealed record FormalLinkDeclaration(BindAnnotation Binding, Endpoint Endpoint, int Arity,
     List<CaptureAnnotation>? Captures = null, List<ExcludeAnnotation>? Exclusions = null);
+public sealed record FormalInstanceDeclaration(InstanceAnnotation Instance, string Definition, string Module, Place Location);

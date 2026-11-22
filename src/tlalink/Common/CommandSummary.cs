@@ -126,7 +126,10 @@ public static class CommandSummary
             region.Primitives.Select(p => new RegionPrimitiveSummary(p.Id, p.Origin,
                 p.Guarantees.Select(g => new GuaranteeSummary(g.Guarantee, g.Status)).ToList())).ToList(),
             region.Environments.Select(e => new RegionEnvironmentSummary(e.Id, e.EnvironmentKind, e.LockSafe, e.Obligations,
-                e.Evidence, e.Support)).ToList(), region.Diagnostics);
+                e.Evidence, e.Support)).ToList(), region.Diagnostics, region.Coverage is not { } coverage ? null :
+                new(coverage.Sites.Count(s => s.Status == "bound"), coverage.Sites.Count(s => s.Status == "excluded"),
+                    coverage.Sites.Count(s => s.Status == "unbound"), coverage.Sites.Count(s => s.Status == "unresolved"),
+                    coverage.Instances, coverage.Contracts));
 
     private static AcceptanceSummary Acceptance(AcceptanceResult result, AcceptanceWorklist? worklist)
     {

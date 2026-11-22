@@ -7,10 +7,9 @@
   "primitive_kind": "cancellation-source",
   "operations": [
     { "member": "M:System.Threading.CancellationTokenSource.#ctor", "role": "create" },
-    { "member": "M:System.Threading.CancellationTokenSource.Cancel", "role": "signal", "actions": ["Cancel"] },
+    { "member": "M:System.Threading.CancellationTokenSource.Cancel", "role": "signal", "actions": ["Cancel"], "inline_callbacks": true },
     { "member": "P:System.Threading.CancellationTokenSource.Token", "role": "query" }
   ],
-  "guarantees": ["inline-callbacks"],
   "verification": { "scenarios": [], "inspection": "shutdown-inspection" },
   "assumptions": ["Callbacks registered on the token do not take region locks."],
   "limits": ["Library type: only the members the region uses are declared; support is inspection only."]

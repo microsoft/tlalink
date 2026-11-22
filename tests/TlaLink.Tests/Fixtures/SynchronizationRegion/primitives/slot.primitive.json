@@ -1,0 +1,15 @@
+{
+  "schema_version": 4,
+  "kind": "primitive",
+  "id": "last",
+  "type": "T:SyncFixture.Slot",
+  "sources": ["../Slot.cs"],
+  "primitive_kind": "register",
+  "operations": [
+    { "member": "M:SyncFixture.Slot.TrySet(System.Int32)", "role": "complete", "actions": ["TrySet"] },
+    { "member": "P:SyncFixture.Slot.Value", "role": "query" }
+  ],
+  "verification": { "scenarios": ["slot"], "inspection": "slot-inspection" },
+  "assumptions": [],
+  "limits": ["Synthetic region fixture: a register without waiters needs no signals-async claim to complete under a lock."]
+}

@@ -14,8 +14,7 @@ public static class Primitives
         "channel", "cancellation-source", "custom"];
     internal static readonly string[] Roles = ["create", "query", "acquire", "try-acquire", "release", "signal", "wait",
         "close", "complete", "enqueue", "dequeue", "pure"];
-    internal static readonly string[] Guarantees = ["signals-async", "non-blocking", "fifo-waiters", "cancellable-wait",
-        "inline-callbacks"];
+    internal static readonly string[] Guarantees = ["signals-async", "non-blocking", "fifo-waiters", "cancellable-wait"];
     private static readonly string[] MutatingRoles = ["acquire", "try-acquire", "release", "signal", "close", "complete",
         "enqueue", "dequeue"];
 
@@ -89,6 +88,11 @@ public static class Primitives
                 throw Invalid("A wait predicate is required exactly for wait operations: " + operation.Member);
             if (MutatingRoles.Contains(operation.Role, StringComparer.Ordinal) && operation.Actions is not { Count: > 0 })
                 throw Invalid("State-changing operations map to at least one kind action: " + operation.Member);
+            if (operation.InlineCallbacks && operation.Role is "create" or "query")
+                throw Invalid("Constructors and queries cannot declare inline_callbacks: " + operation.Member);
+            if (manifest.PrimitiveKind == "cancellation-source" && !operation.InlineCallbacks &&
+                operation.Actions?.Any(a => a.TrimEnd('?') == "Cancel") == true)
+                throw Invalid("Cancel runs registered callbacks on the caller's stack; declare inline_callbacks: " + operation.Member);
         }
         List<string> guarantees = manifest.Guarantees ?? [];
         if (guarantees.Any(g => !Guarantees.Contains(g, StringComparer.Ordinal)) ||
@@ -322,8 +326,7 @@ public static class Primitives
         {
             foreach (PrimitiveOperation operation in manifest.Operations)
                 if (DocumentationCommentId.GetSymbolsForDeclarationId(operation.Member, compilation)
-                    .Where(s => s is IMethodSymbol or IPropertySymbol).ToList() is not [ISymbol member] ||
-                    !SymbolEqualityComparer.Default.Equals(member.ContainingType, type))
+                    .Where(s => s is IMethodSymbol or IPropertySymbol).ToList() is not [ISymbol member] || !IsMemberOf(member, type))
                     throw Invalid("Unknown primitive operation members of " + manifest.Id + ": " + operation.Member);
             return manifest.Operations.Select(o => o.Member).Order(StringComparer.Ordinal).ToList();
         }
@@ -345,6 +348,15 @@ public static class Primitives
         List<string> unknown = listed.Where(m => !declared.Contains(m, StringComparer.Ordinal)).Order(StringComparer.Ordinal).ToList();
         if (unknown.Count > 0) throw Invalid("Unknown primitive operation members of " + manifest.Id + ": " + string.Join(", ", unknown));
         return declared.Order(StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>A member of the declared type itself, of one of its base types, or of an interface it implements.</summary>
+    internal static bool IsMemberOf(ISymbol member, INamedTypeSymbol type)
+    {
+        if (member.ContainingType?.OriginalDefinition is not { } owner) return false;
+        for (INamedTypeSymbol? current = type.OriginalDefinition; current != null; current = current.BaseType?.OriginalDefinition)
+            if (SymbolEqualityComparer.Default.Equals(current, owner)) return true;
+        return type.OriginalDefinition.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i.OriginalDefinition, owner));
     }
 
     internal static CurrentPrimitiveSupport? Support(string projectPath, AnalysisProject project, string inspection,

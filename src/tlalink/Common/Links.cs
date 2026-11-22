@@ -122,7 +122,7 @@ public static class Links
                     source.AttachFormal(candidate);
                     if (source.Diagnostics.Any(d => d.Severity == "error")) throw Invalid("Unsupported source/capture attachment.");
                 }
-                string comment = payload.Bind.Count + payload.Capture.Count + payload.Exclude.Count == 0 ? "" :
+                string comment = payload.Bind.Count + payload.Capture.Count + payload.Exclude.Count + payload.Instance.Count == 0 ? "" :
                     (target.Language == "tla" ? "(* @link " : "/* @link ") + Markup.Encode(payload) +
                     (target.Language == "tla" ? " *)" : " */");
                 int start = attached.Count == 0 ? endpoint.Start : attached[0].Start;

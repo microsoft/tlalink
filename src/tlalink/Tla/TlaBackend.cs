@@ -16,6 +16,17 @@ public sealed record TlaEndpoint(
     string Name, string Kind, string Scope, int Start, int End,
     int Line, int Column, int EndLine, int EndColumn, int Arity = 0);
 
+/// <summary>A named INSTANCE definition of the root module; offsets are UTF-16, end-exclusive.</summary>
+public sealed record TlaInstance(string Name, string Module, bool Local, int Start, int End,
+    int Line, int Column, int EndLine, int EndColumn);
+
+/// <summary>
+/// An operator applied (or passed) in the body of a root or extended author-module definition, by SANY resolution.
+/// <see cref="Instance"/> is the instance prefix (<c>Gate</c> for <c>Gate!ExitApply</c>) and <see cref="Module"/> the
+/// module defining the operator; references inside instantiated modules are not listed.
+/// </summary>
+public sealed record TlaReference(string From, string Name, string? Instance, string Module);
+
 [method: System.Text.Json.Serialization.JsonConstructor]
 public sealed record TlaBackendDiagnostic(
     string Code, string Severity, string Message, string? Path = null, int? Line = null)
@@ -37,6 +48,8 @@ public sealed record TlaDocument(
     public string Module { get; init; } = "";
     public IReadOnlyList<string> StateVariables { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> Variables => StateVariables;
+    public IReadOnlyList<TlaInstance> Instances { get; init; } = Array.Empty<TlaInstance>();
+    public IReadOnlyList<TlaReference> References { get; init; } = Array.Empty<TlaReference>();
 }
 
 /// <summary>Read-only SANY/PlusCal bridge; offsets are UTF-16, end-exclusive.</summary>
@@ -52,6 +65,8 @@ public static partial class TlaBackend
         IReadOnlyList<string> stateVariables = Array.Empty<string>();
         string module = "";
         IReadOnlyList<TlaNativeRow>? index = null;
+        IReadOnlyList<TlaInstance> instances = Array.Empty<TlaInstance>();
+        IReadOnlyList<TlaReference> references = Array.Empty<TlaReference>();
         string? work = null;
         try
         {
@@ -73,6 +88,17 @@ public static partial class TlaBackend
             TlaNativeParse parsed = Index(path, text, jar, work, timeoutSeconds, library);
             index = parsed.Entries.AsReadOnly();
             AddIndex(index, path, text, true, endpoints, diagnostics, dependencies);
+            instances = index.OfType<TlaNativeInstance>().Select(i =>
+            {
+                int start = Offset(text, i.Line, i.Column), end = Offset(text, i.EndLine, Math.Max(1, i.EndColumn)) + 1;
+                if (end < start || end > text.Length || string.IsNullOrWhiteSpace(i.Name) || string.IsNullOrWhiteSpace(i.Module))
+                    throw new BackendFailure("Invalid parser instance entry.");
+                return new TlaInstance(i.Name, i.Module, i.Local, start, end, i.Line, i.Column, i.EndLine, i.EndColumn);
+            }).ToList().AsReadOnly();
+            references = index.OfType<TlaNativeReference>().Select(r =>
+                string.IsNullOrWhiteSpace(r.From) || string.IsNullOrWhiteSpace(r.Name) || string.IsNullOrWhiteSpace(r.Module) ||
+                r.Instance is { Length: 0 } ? throw new BackendFailure("Invalid parser reference entry.")
+                    : new TlaReference(r.From, r.Name, r.Instance, r.Module)).ToList().AsReadOnly();
             (module, stateVariables) = AddMetadata(parsed.Metadata, endpoints);
             CheckImports(path, jar, work, timeoutSeconds, library, endpoints, diagnostics, dependencies);
             foreach (var pin in java.Fingerprints) Files.Pin(dependencies, pin.Key, pin.Value);
@@ -101,7 +127,7 @@ public static partial class TlaBackend
         }
         return new(path, text, hash, endpoints.AsReadOnly(), diagnostics.AsReadOnly(),
             new System.Collections.ObjectModel.ReadOnlyDictionary<string, string>(dependencies))
-            { Module = module, StateVariables = stateVariables, NativeIndex = index };
+            { Module = module, StateVariables = stateVariables, NativeIndex = index, Instances = instances, References = references };
     }
 
     private static (string Module, IReadOnlyList<string> Variables) AddMetadata(TlaNativeMetadata metadata,
@@ -211,7 +237,7 @@ public static partial class TlaBackend
         {
             switch (row)
             {
-                case TlaNativeAssumptions or TlaNativeOperatorLevel:
+                case TlaNativeAssumptions or TlaNativeOperatorLevel or TlaNativeInstance or TlaNativeReference:
                     break;
                 case TlaNativeDependency dependency:
                     AddDependency(dependencies, dependency.Path, dependency.Sha256);

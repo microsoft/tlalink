@@ -55,6 +55,8 @@ internal static class TlaNativeJson
 [JsonDerivedType(typeof(TlaNativeTranslation), "translation")]
 [JsonDerivedType(typeof(TlaNativeAssumptions), "assumptions")]
 [JsonDerivedType(typeof(TlaNativeOperatorLevel), "operator-level")]
+[JsonDerivedType(typeof(TlaNativeInstance), "instance")]
+[JsonDerivedType(typeof(TlaNativeReference), "reference")]
 internal abstract record TlaNativeRow;
 
 internal abstract record TlaNativeEndpoint : TlaNativeRow
@@ -82,6 +84,10 @@ internal sealed record TlaNativeDependency(string Path, string Sha256) : TlaNati
 internal sealed record TlaNativeTranslation(string State, string Detail, int Line) : TlaNativeRow;
 internal sealed record TlaNativeAssumptions(string Module, int Count) : TlaNativeRow;
 internal sealed record TlaNativeOperatorLevel(string Name, int Level) : TlaNativeRow;
+/// <summary>A named INSTANCE definition of the root module and the module it instantiates.</summary>
+internal sealed record TlaNativeInstance(string Name, string Module, bool Local, int Line, int Column, int EndLine, int EndColumn) : TlaNativeRow;
+/// <summary>An operator applied in a definition's body: <c>Gate!ExitApply</c> is instance <c>Gate</c>, name <c>ExitApply</c>.</summary>
+internal sealed record TlaNativeReference(string From, string Name, string? Instance, string Module) : TlaNativeRow;
 internal sealed record TlaNativeMetadata(string Module, List<string> Variables, Dictionary<string, int> Arities);
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record TlaNativeParse(List<TlaNativeRow> Entries, TlaNativeMetadata Metadata);

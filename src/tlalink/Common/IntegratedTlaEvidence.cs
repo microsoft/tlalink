@@ -47,7 +47,7 @@ internal static class IntegratedTlaEvidence
                     throw Invalid("TLA+ inventory span differs from archived source: " + endpoint.Name);
                 spans.Add(new(endpoint, start, start + endpoint.Source.Length));
             }
-            formal.AddRange(FormalCorrespondence.Attach(file.Key, text, spans, ModelScope.FormalComments(text)));
+            formal.AddRange(FormalCorrespondence.Attach(file.Key, text, spans, ModelScope.FormalComments(text), instances: true));
         }
         formal = formal.Where(d => manifest.TlaTargets.Contains(Markup.Name(d.Binding.Id).Alias, StringComparer.Ordinal)).ToList();
         HashSet<string> expected = formal.Select(d => d.Binding.Id).ToHashSet(StringComparer.Ordinal);

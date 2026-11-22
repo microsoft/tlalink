@@ -26,10 +26,20 @@ proof of the C# code; see [what is and is not claimed](../../REFERENCE.md#synchr
   source-only `synchronization` stage and rejects the
   [detached-write control](controls/UploaderDetachedWrite.cs), whose discarded
   write would release the permit before the chunk is written, with `SR104`.
+- Instances and sites: the caller model declares the `gate` field as the
+  instance `"g"` of its `Gate` INSTANCE definition and binds both operation
+  sites of `SendAsync`. `AcquireAsync` maps to the `Acquire` and `Resume` steps
+  and waits on `CanResume`, so its statement binds `AcquirePermit(s)`, which
+  composes both steps; `Release` binds `Finish(s)`. The
+  [unbound-close control](controls/UploaderUnboundClose.cs) adds a `Shutdown`
+  that closes the gate at a site no bind or exclusion covers, rejected with
+  `SR108` by the `uploader-unbound-close` stage.
 
-Both models instance the shipped kind module, for example:
+Both models instance the shipped kind module; the caller model declares the
+field it represents on the INSTANCE definition:
 
 ```tla
+(* @link {"instance":[{"id":"uploader::gate","field":"F:PrimitivesExample.Uploader.gate","kind_instance":"Gate","model":"\"g\""}]} *)
 Gate == INSTANCE TlaLinkCountingResource
     WITH Instances <- {"g"}, Waiters <- Senders, Capacity <- [i \in {"g"} |-> 1], state <- gate
 ```
@@ -66,7 +76,9 @@ changing the harness makes the verification run stale. Either withdraws support
 until the primitive is verified and inspected again. This is agent inspection,
 not human approval.
 
-The `region` scenario needs no model checker. Its checks also run in preflight
+The `region` scenario needs no model checker, but because the scope has a TLA+
+target its instance and site checks resolve `Uploader.tla` through SANY with
+the pinned JAR. Its checks also run in preflight
 for the `uploader` model stage, which uses `permit-gate` from the same scope: a
 failing region makes `doctor` report `failed` and blocks `run`. The
 `permit-gate` verification stages model the primitive's harness and are not
