@@ -24,4 +24,7 @@ CanWait(i) == state[i] # "unset"
 
 Internal(i) == FALSE
 Fairness == \A i \in Instances : WF_state(Internal(i))
+
+\* Scalar projection of one instance's state, compared with a primitive's state_mapping in trace validation.
+View(i) == [status |-> state[i]]
 ================================================================================

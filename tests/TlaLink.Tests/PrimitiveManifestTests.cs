@@ -1,5 +1,7 @@
 using System.Text.Json;
+using Microsoft.CodeAnalysis;
 using TlaLink;
+using TlaLink.Runtime;
 
 namespace TlaLink.Tests;
 
@@ -20,8 +22,67 @@ public static class PrimitiveManifestTests
             _ = Primitives.Load(Mutant(directory, "custom-module"), new(FilePaths.Comparer));
             foreach (string name in new[] { "duplicate-member", "wait-without-predicate", "predicate-without-wait",
                 "custom-without-module", "module-without-custom", "critical-section-kind", "unknown-role",
-                "unknown-guarantee", "state-mapping", "empty-limits" })
+                "unknown-guarantee", "empty-limits" })
                 CoreTests.ThrowsAny<InputException>(() => Primitives.Load(Mutant(directory, name), new(FilePaths.Comparer)));
+            CoreTests.True(Primitives.Load(Mutant(directory, "state-mapping"), new(FilePaths.Comparer)).StateMapping!.ContainsKey("status"));
+            InputException unknownField = Catch<InputException>(() => Primitives.Load(Mutant(directory, "state-mapping-unknown-field"), new(FilePaths.Comparer)));
+            CoreTests.True(unknownField.Code == ErrorCode.InvalidStateMapping &&
+                unknownField.Message.Contains("state_mapping field state is not a View field of kind latch (status).", StringComparison.Ordinal));
+            CoreTests.ThrowsAny<InputException>(() => Primitives.Validate(valid with { Sources = [], StateMapping = new() { ["status"] = "\"set\"" } }));
+            CoreTests.ThrowsAny<InputException>(() => Primitives.Validate(valid with { StateLock = "F:PrimitiveFixture.SignalLatch.done" }));
+        });
+        test("state_mapping expressions bind in the primitive type and reject unsupported or effectful forms", () =>
+        {
+            string directory = Latch(work, "primitive-state-mapping");
+            CSharpScope source = CSharpScope.Parse([Path.Combine(directory, "SignalLatch.cs")], annotations: false);
+            List<MappedStateField> Check(string name)
+            {
+                PrimitiveManifest manifest = Primitives.Load(Mutant(directory, name), new(FilePaths.Comparer));
+                return PrimitiveStateMapping.Check(source.Compilation, Primitives.Type(source.Compilation, manifest, source.Texts.Keys), manifest);
+            }
+            MappedStateField status = Check("state-mapping").Single();
+            CoreTests.True(status.Field == "status" && status.Type == "string");
+            foreach (var (name, code, text) in new[] {
+                ("state-mapping-invalid", ErrorCode.InvalidStateMapping, "state_mapping status = string.Empty: reads static field string.Empty, which is not primitive state."),
+                ("state-mapping-effectful", ErrorCode.EffectfulStateMapping, "calls this.done.TrySetResult; only System.Math.Min, System.Math.Max, System.Math.Abs may be called.") })
+            {
+                InputException error = Catch<InputException>(() => Check(name));
+                if (error.Code != code || !error.Message.Contains(text, StringComparison.Ordinal))
+                    throw new InvalidOperationException(name + ": " + error.Code + " " + error.Message);
+            }
+            PrimitiveManifest valid = Primitives.Load(Mutant(directory, "state-mapping"), new(FilePaths.Comparer));
+            INamedTypeSymbol type = Primitives.Type(source.Compilation, valid, source.Texts.Keys);
+            foreach (var (expression, code) in new[] {
+                ("this.done.Task.IsCompleted", ErrorCode.InvalidStateMapping), ("this.done.Task.Status.ToString()", ErrorCode.EffectfulStateMapping),
+                ("this.done.Task.Result ? \"set\" : \"unset\"", ErrorCode.EffectfulStateMapping), ("this.missing", ErrorCode.InvalidStateMapping),
+                ("$\"{this.done}\"", ErrorCode.InvalidStateMapping), ("(this.done = null) == null ? \"set\" : \"unset\"", ErrorCode.EffectfulStateMapping),
+                ("\"set\"; \"unset\"", ErrorCode.InvalidStateMapping) })
+            {
+                InputException error = Catch<InputException>(() => PrimitiveStateMapping.Check(source.Compilation, type,
+                    valid with { StateMapping = new() { ["status"] = expression } }));
+                if (error.Code != code) throw new InvalidOperationException(expression + ": " + error.Code + " " + error.Message);
+            }
+            _ = PrimitiveStateMapping.Check(source.Compilation, type, valid with { PrimitiveKind = "custom", Module = "CustomLatch.tla",
+                StateMapping = new() { ["done"] = "this.done.Task.IsCompleted && !this.done.Task.IsFaulted", ["bound"] = "System.Math.Max(1, int.MaxValue & 3) + 2" } });
+            CoreTests.ThrowsAny<InputException>(() => PrimitiveStateMapping.Check(source.Compilation, type,
+                valid with { StateLock = "F:PrimitiveFixture.SignalLatch.Missing" }));
+        });
+        test("TLC configurations report specification, temporal properties and symmetry; fairness entries are structural", () =>
+        {
+            Directory.CreateDirectory(work);
+            string config = Path.Combine(work, "temporal-" + Guid.NewGuid().ToString("N") + ".cfg");
+            File.WriteAllText(config, "\\* PROPERTY Commented\nCONSTANTS N = 2 Workers = {a, b}\n(* SYMMETRY Hidden *)\nSPECIFICATION\n  FairSpec\nPROPERTIES Live\n  Drains\nINVARIANT TypeOK\n");
+            TlcConfiguration read = TlcConfiguration.Read(config);
+            CoreTests.True(read.Specification == "FairSpec" && read.Properties.SequenceEqual(["Live", "Drains"]) && !read.Symmetry && read.Temporal);
+            File.WriteAllText(config, "INIT Init\nNEXT Next\nSYMMETRY Perms\nINVARIANT TypeOK\n");
+            read = TlcConfiguration.Read(config);
+            CoreTests.True(read.Specification == null && !read.Temporal && read.Symmetry);
+            AnalysisStage stage = new("live", "tlc", [], 30, Models: ["M.tla"], Config: "M.cfg");
+            ModelAssumptions.Validate(stage with { Fairness = [new("Gate", "Fairness"), new(Assumption: "Weak fairness of Run.")] });
+            foreach (List<FairnessAssumption> invalid in new List<FairnessAssumption>[] { [], [new("Gate")], [new(Assumption: " ")],
+                [new("Gate", "Fairness", "text")], [new(Assumption: "x"), new(Assumption: "x")], [new("Gate!X", "Fairness")] })
+                CoreTests.ThrowsAny<InputException>(() => ModelAssumptions.Validate(stage with { Fairness = invalid }));
+            CoreTests.ThrowsAny<InputException>(() => ModelAssumptions.Validate(stage with { Kind = "synchronization", Fairness = [new(Assumption: "x")] }));
         });
         test("Roslyn resolves every declared member exactly once and accepts asynchronous waits", () =>
         {
@@ -197,6 +258,15 @@ public static class PrimitiveManifestTests
             CoreTests.True(node.Gaps.Any(g => g.Contains("Outstanding guarantee obligation: fifo-waiters", StringComparison.Ordinal)));
             CoreTests.True(!node.Gaps.Any(g => g.Contains("signals-async", StringComparison.Ordinal)) &&
                 node.Claim.Contains("Statically checked guarantees: signals-async", StringComparison.Ordinal));
+            EvidenceReportNode liveness = rendered.Nodes.Single(n => n.Title == "uploader: uploader-liveness");
+            CoreTests.True(liveness.Assumptions.Contains("Fairness: Gate!Fairness (kind-module fairness of instance Gate).") &&
+                liveness.Assumptions.Any(a => a.StartsWith("Fairness (author): Weak fairness", StringComparison.Ordinal)) &&
+                liveness.Assumptions.Any(a => a.StartsWith("Environment chunk-sink (interface): ", StringComparison.Ordinal)) &&
+                liveness.Assumptions.Contains("Temporal properties EveryAcquireCompletes are conditional on the fairness assumptions and environment obligations listed here.") &&
+                liveness.Gaps.Contains("Environment chunk-sink obligations have no declared supporting evidence."));
+            CoreTests.True(!rendered.Nodes.Single(n => n.Title == "uploader: uploader").Assumptions.Any(a => a.StartsWith("Fairness", StringComparison.Ordinal)));
+            using (JsonDocument acceptance = JsonDocument.Parse(f.Cli("accept", "--run", caller, "--format", "summary").Json))
+                CoreTests.Equal(4, acceptance.RootElement.GetProperty("assumptions").GetArrayLength());
             File.AppendAllText(f.Source, "\n");
             CoreTests.Equal("stale", f.Status());
             CoreTests.Equal(2, f.Cli("accept", "--run", caller).Code);
@@ -248,7 +318,8 @@ public static class PrimitiveManifestTests
                 JsonElement[] regions = [.. plan.RootElement.GetProperty("regions").EnumerateArray()];
                 JsonElement verification = regions.Single(r => r.GetProperty("scope").GetString()!.EndsWith(System.IO.Path.Combine("verification", "scope.json"), StringComparison.Ordinal));
                 CoreTests.True(verification.GetProperty("role").GetString() == "preflight" && verification.GetProperty("status").GetString() == "passed");
-                CoreTests.True(verification.GetProperty("stages").EnumerateArray().Select(s => s.GetString()).SequenceEqual(["uploader/uploader", "region/uploader-region"]));
+                CoreTests.True(verification.GetProperty("stages").EnumerateArray().Select(s => s.GetString()).SequenceEqual(["uploader/uploader",
+                    "uploader/uploader-liveness", "uploader/uploader-trace", "uploader/uploader-trace-double-credit", "region/uploader-region"]));
                 JsonElement coverage = verification.GetProperty("coverage");
                 CoreTests.True(coverage.GetProperty("bound").GetInt32() == 2 && coverage.GetProperty("unbound").GetInt32() == 0 &&
                     coverage.GetProperty("instances").EnumerateArray().Single().GetProperty("status").GetString() == "declared");
@@ -278,6 +349,72 @@ public static class PrimitiveManifestTests
             var run = f.Cli("run", "--scenario", "uploader", "--output", System.IO.Path.Combine(f.Directory, "runs", "blocked"));
             CoreTests.True(run.Code != 0 && run.Json.Contains("SR104", StringComparison.Ordinal));
             CoreTests.Equal(0, f.Cli("doctor", "--scenario", "permit-gate").Code);
+        });
+        test("temporal stages declare their fairness and symmetry with liveness is rejected in preflight", () =>
+        {
+            string fixtures = System.IO.Path.Combine(Fixtures, "permit-gate");
+            foreach (var (fixture, code, text) in new[] {
+                ("fairness-missing.uploader.json", "SR112", "Stage uploader/uploader-liveness (UploaderLiveness.cfg): checks temporal properties EveryAcquireCompletes but declares no fairness"),
+                ("fairness-non-temporal.uploader.json", "SR113", "Stage uploader/uploader (Uploader.cfg): declares fairness but its configuration checks no temporal properties"),
+                ("fairness-unresolved.uploader.json", "SR114", "fairness Permits!Fairness: Permits is not an INSTANCE definition of Uploader."),
+                ("UploaderLivenessSymmetry.cfg", "SR115", "declares SYMMETRY and checks temporal properties EveryAcquireCompletes; TLC symmetry reduction is unsound for liveness") })
+            {
+                Example f = new(root, work);
+                if (fixture.EndsWith(".cfg", StringComparison.Ordinal))
+                {
+                    string config = System.IO.Path.Combine(f.Directory, "verification", "UploaderLiveness.cfg");
+                    string approved = Files.Hash(config);
+                    File.Copy(System.IO.Path.Combine(fixtures, fixture), config, overwrite: true);
+                    string requirements = System.IO.Path.Combine(f.Directory, "verification", "requirements.json");
+                    File.WriteAllText(requirements, File.ReadAllText(requirements).Replace(approved, Files.Hash(config), StringComparison.OrdinalIgnoreCase));
+                }
+                else File.Copy(System.IO.Path.Combine(fixtures, fixture), System.IO.Path.Combine(f.Directory, "components", "uploader.json"), overwrite: true);
+                var doctor = f.Cli("doctor", "--scenario", "uploader");
+                using JsonDocument plan = JsonDocument.Parse(doctor.Json);
+                List<JsonElement> diagnostics = [.. plan.RootElement.GetProperty("diagnostics").EnumerateArray()];
+                if (doctor.Code != 1 || plan.RootElement.GetProperty("status").GetString() != "failed" ||
+                    diagnostics.Any(d => d.GetProperty("code").GetString() != code) ||
+                    diagnostics.Count(d => d.GetProperty("message").GetString()!.Contains(text, StringComparison.Ordinal)) != 1)
+                    throw new InvalidOperationException(fixture + ": " + doctor.Json);
+                var run = f.Cli("run", "--scenario", "uploader", "--output", System.IO.Path.Combine(f.Directory, "runs", "blocked"));
+                CoreTests.True(run.Code != 0 && run.Json.Contains(code, StringComparison.Ordinal));
+            }
+        });
+        test("trace capture through state_mapping compares PermitGate snapshots at its sites with the kind state", () =>
+        {
+            Example f = new(root, work);
+            using (JsonDocument plan = JsonDocument.Parse(f.Cli("plan", "--scenario", "uploader").Json))
+            {
+                JsonElement liveness = plan.RootElement.GetProperty("scenarios")[0].GetProperty("stages").EnumerateArray()
+                    .Single(s => s.GetProperty("id").GetString() == "uploader-liveness").GetProperty("assumptions");
+                CoreTests.True(liveness.GetProperty("temporal_properties").EnumerateArray().Single().GetString() == "EveryAcquireCompletes" &&
+                    liveness.GetProperty("fairness")[0].GetProperty("kind_instance").GetString() == "Gate" &&
+                    liveness.GetProperty("environments").EnumerateArray().Single().GetProperty("id").GetString() == "chunk-sink");
+            }
+            string output = f.Run("uploader", "trace");
+            WorkflowRun recorded = ProjectInputs.Read<WorkflowRun>(System.IO.Path.Combine(output, "run.json"));
+            CoreTests.True(recorded.Stages.Select(s => s.Id + ":" + s.Outcome).SequenceEqual(["uploader:passed", "uploader-liveness:passed",
+                "uploader-trace:passed", "uploader-trace-double-credit:rejected"]));
+            CoreTests.Equal("TL511", recorded.Stages.Single(s => s.Id == "uploader-trace-double-credit").Diagnostics.Single());
+            InstrumentManifest manifest = Instrumentation.ReadManifest(System.IO.Path.Combine(output, "uploader-trace", "generated", "bindings.json"));
+            CoreTests.True(manifest.Events.Where(e => e.States != null).Select(e => e.Step).Order(StringComparer.Ordinal)
+                .SequenceEqual(["uploader::acquire", "uploader::release"]));
+            StateObservation state = manifest.Events.Single(e => e.Step == "uploader::release").States!.Single();
+            CoreTests.True(state.Instance == "uploader::gate" && state.KindInstance == "Gate" && state.Model == "\"g\"" &&
+                state.Fields.Select(x => x.Name + ":" + x.Type).SequenceEqual(["available:int", "closed:bool", "waiting:int"]));
+            CoreTests.True(manifest.Fingerprints.Keys.Any(k => k.EndsWith(System.IO.Path.Combine("permit-gate", "primitive.json"), StringComparison.Ordinal)));
+            string generated = File.ReadAllText(System.IO.Path.Combine(output, "uploader-trace", "generated", "PermitGate.cs"));
+            CoreTests.True(generated.Contains("lock (this.@sync)", StringComparison.Ordinal) &&
+                generated.Contains("[\"waiting\"] = (this.waiters.Count)", StringComparison.Ordinal));
+            TraceEnvelope trace = TraceDocuments.Read(System.IO.Path.Combine(output, "uploader-trace", "trace.json"));
+            CoreTests.True(trace.Events.Where(e => e.States != null).Select(e => e.States!["uploader::gate"]["available"].Integer)
+                .SequenceEqual([0L, 1L, 0L, 1L]));
+            TraceEnvelope control = TraceDocuments.Read(System.IO.Path.Combine(output, "uploader-trace-double-credit", "trace.json"));
+            CoreTests.True(control.Events.Where(e => e.States != null).Select(e => e.States!["uploader::gate"]["available"].Integer)
+                .SequenceEqual([0L, 2L, 1L, 3L]));
+            CoreTests.True(File.ReadAllText(System.IO.Path.Combine(output, "uploader-trace", "validation", "TlaLinkTraceCheck.tla"))
+                .Contains("(((Gate!View(\"g\")).available))' = 1", StringComparison.Ordinal));
+            CoreTests.True(recorded.Assumptions.Single(a => a.Stage == "uploader-liveness").Fairness.Count == 2);
         });
     }
 

@@ -11,7 +11,7 @@ public static class SynchronizationInstanceTests
         ("unbound-site.cs", "Pump.cs", ["SR108"], "SR108",
             "M:InstanceFixture.Pump.Abort: unbound site: M:InstanceFixture.Gate.Close (close) of primitive gate on F:InstanceFixture.Pump.admission"),
         ("local-receiver.cs", "Pump.cs", ["SR111"], "SR111", "unresolved instance receiver: M:InstanceFixture.Gate.Exit (release) of primitive gate is applied to local entered"),
-        ("missing-instance.tla", "Pump.tla", ["SR107", "SR109"], "SR107", "undeclared instance: field F:InstanceFixture.Pump.stopped of primitive latch"),
+        ("missing-instance.tla", "Pump.tla", ["SR107", "SR108"], "SR107", "undeclared instance: field F:InstanceFixture.Pump.stopped of primitive latch"),
         ("wrong-operator.tla", "Pump.tla", ["SR109"], "SR109", "bind pump::exit (operator Leave) covers M:InstanceFixture.Gate.Exit (release) of primitive gate on F:InstanceFixture.Pump.admission but does not reference Gate!Exit."),
         ("wait-predicate.tla", "Pump.tla", ["SR109"], "SR109", "bind pump::resume (operator Resume) covers M:InstanceFixture.Latch.WaitAsync (wait) of primitive latch on F:InstanceFixture.Pump.stopped but does not reference Latch!CanWait."),
         ("stale-instance.tla", "Pump.tla", ["SR110"], "SR110", "instance pump::limit (Pump.tla): F:InstanceFixture.Pump.limit is not a region field whose type is a declared primitive."),
@@ -102,6 +102,24 @@ public static class SynchronizationInstanceTests
                     report.Diagnostics.Count(d => d.Code == code && d.Message.Contains(text, StringComparison.Ordinal)) != 1)
                     throw new InvalidOperationException(mutant + ": " + JsonSerializer.Serialize(report.Diagnostics, Files.Json));
             }
+        });
+        test("binds of targets without an instance for a field neither cover its sites nor face its contract checks", () =>
+        {
+            string directory = Copy(work, "instances-coarse");
+            File.Copy(Path.Combine(directory, "mutants", "coarse-scope.json"), Path.Combine(directory, "scope.json"), overwrite: true);
+            SynchronizationRegionReport report = Analyze(directory, new(FilePaths.Comparer), Parse);
+            if (report.Status != "passed") throw new InvalidOperationException(JsonSerializer.Serialize(report.Diagnostics, Files.Json));
+            RegionCoverage coverage = report.Coverage!;
+            CoreTests.True(coverage.Sites.Count == 6 && coverage.Sites.All(s => s.Status == "bound" &&
+                s.Bindings.All(b => b.StartsWith("pump::", StringComparison.Ordinal))));
+            CoreTests.True(coverage.Contracts.Count == 6 && !coverage.Contracts.Any(c => c.Binding == "coarse::stop"));
+            File.Copy(Path.Combine(directory, "mutants", "close-unbound.tla"), Path.Combine(directory, "Pump.tla"), overwrite: true);
+            report = Analyze(directory, new(FilePaths.Comparer), Parse);
+            if (report.Status != "rejected" || report.Diagnostics.Count != 1 || report.Diagnostics[0].Code != "SR108" ||
+                !report.Diagnostics[0].Message.Contains("unbound site: M:InstanceFixture.Gate.Close (close) of primitive gate on " +
+                    "F:InstanceFixture.Pump.admission is not selected by any bind source selector of a TLA+ target that declares an instance",
+                    StringComparison.Ordinal))
+                throw new InvalidOperationException(JsonSerializer.Serialize(report.Diagnostics, Files.Json));
         });
         test("exclusions cover instance fields and their sites, and individual sites", () =>
         {

@@ -430,6 +430,43 @@
                       "default": null,
                       "minItems": 1,
                       "maxItems": 1000
+                    },
+                    "fairness": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": [
+                          "object",
+                          "null"
+                        ],
+                        "properties": {
+                          "kind_instance": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "default": null
+                          },
+                          "operator": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "default": null
+                          },
+                          "assumption": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "default": null
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "default": null
                     }
                   },
                   "required": [
@@ -932,6 +969,43 @@
                 "default": null,
                 "minItems": 1,
                 "maxItems": 1000
+              },
+              "fairness": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "kind_instance": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "default": null
+                    },
+                    "operator": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "default": null
+                    },
+                    "assumption": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "default": null
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "default": null
               }
             },
             "required": [
@@ -1988,6 +2062,26 @@
           },
           "default": null,
           "uniqueItems": true
+        },
+        "state_mapping": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default": null
+        },
+        "state_lock": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
         },
         "$schema": {
           "type": [

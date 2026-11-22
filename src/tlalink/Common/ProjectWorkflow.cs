@@ -29,11 +29,13 @@ public static partial class ProjectWorkflow
         Dictionary<string, TlaDocument> parsed = new(FilePaths.Comparer);
         List<PrimitiveResolution> primitives = [];
         List<PlannedRegion> regions = [];
-        Dictionary<string, string> pins = Pins(path, project, policy, scenarios, parsed, primitives, regions);
+        List<StageAssumptions> assumptions = [];
+        List<Issue> assumptionIssues = [];
+        Dictionary<string, string> pins = Pins(path, project, policy, scenarios, parsed, primitives, regions, assumptions, assumptionIssues);
         List<CheckCoverage> coverage = ProjectInputs.Coverage(project, policy, scenarios.Select(s => s.Id));
         List<Issue> coverageIssues = coverage.SelectMany(o => o.Gaps.Select(gap =>
             new Issue(ErrorCode.WorkflowPrerequisiteMissing, o.Id + ": " + gap))).ToList();
-        List<Issue> blocking = SynchronizationWorkflow.Blocking(regions, primitives);
+        List<Issue> blocking = [.. SynchronizationWorkflow.Blocking(regions, primitives), .. assumptionIssues];
         if (options.Command is "doctor" or "plan")
         {
             ProjectPlan report = new(
@@ -62,7 +64,8 @@ public static partial class ProjectWorkflow
                             stage.Kind == "tlc" ? "finite configured model; fresh JVM; no checkpoint recovery" : "native-resolution",
                             stage.Kind == "tlc" ? stage.Fingerprint ?? 0 : (int?)null,
                             stage.Kind == "tlc" ? StoredOutcomes(path, project, stage, parsed) : null,
-                            policy.Requirements.Where(r => r.Scenario == s.Id && r.Stage == stage.Id).ToList()
+                            policy.Requirements.Where(r => r.Scenario == s.Id && r.Stage == stage.Id).ToList(),
+                            assumptions.FirstOrDefault(a => a.Scenario == s.Id && a.Stage == stage.Id)
                     )).ToList()
                 )).ToList(),
                 project.Obligations.Select(o => new PlannedReview(
@@ -87,7 +90,7 @@ public static partial class ProjectWorkflow
         WorkflowRun run = new() {
             Project = project.Id, ProjectDirectory = Path.GetDirectoryName(path)!, Scenario = scenarios[0].Id, Fingerprints = pins,
             ProjectSha256 = Files.Hash(path), RequirementsSha256 = Files.Hash(ProjectInputs.Resolve(path, project.Requirements)),
-            Primitives = primitives
+            Primitives = primitives, Assumptions = assumptions
         };
         Files.WriteNew(Path.Combine(output, "expanded-project.json"), ProjectComposition.Expansion(path, project));
         foreach (AnalysisStage stage in ProjectInputs.Order(scenarios[0]))
@@ -144,7 +147,8 @@ public static partial class ProjectWorkflow
 
     /// <summary>Preflight pins and resolution. Without a <paramref name="regions"/> collector, blocking region issues throw.</summary>
     private static Dictionary<string, string> Pins(string path, AnalysisProject project, AcceptancePolicy policy, List<AnalysisScenario> scenarios,
-        Dictionary<string, TlaDocument>? parsed = null, List<PrimitiveResolution>? primitives = null, List<PlannedRegion>? regions = null)
+        Dictionary<string, TlaDocument>? parsed = null, List<PrimitiveResolution>? primitives = null, List<PlannedRegion>? regions = null,
+        List<StageAssumptions>? assumptions = null, List<Issue>? assumptionIssues = null)
     {
         Dictionary<string, string> pins = new(FilePaths.Comparer);
         foreach (var pin in project.Authoring!.Fingerprints) Files.Pin(pins, pin.Key, pin.Value);
@@ -262,6 +266,21 @@ public static partial class ProjectWorkflow
         else if (SynchronizationWorkflow.Blocking(analyzed, resolved) is { Count: > 0 } blocking)
             throw new InputException(Enum.GetValues<ErrorCode>().First(c => c.Id() == blocking[0].Code),
                 string.Join("; ", blocking.Select(i => i.Code + ": " + i.Message)));
+        List<Issue> modelIssues = [];
+        foreach (var entry in scenarios.SelectMany(s => s.Stages.Where(stage => stage.Kind is "tlc" or "trace").Select(stage => (Scenario: s.Id, Stage: stage))))
+        {
+            AnalysisStage stage = entry.Stage;
+            var (stageAssumptions, stageIssues) = ModelAssumptions.Analyze(path, project, entry.Scenario, stage,
+                () => ParsedModel(ProjectInputs.Resolve(path, stage.Models![0]), stage.TimeoutSeconds, Primitives.ModulePath(path, project, stage)),
+                analyzed);
+            modelIssues.AddRange(stageIssues);
+            if (stageAssumptions.TemporalProperties.Count > 0 || stageAssumptions.Fairness.Count > 0 || stageAssumptions.Environments.Count > 0)
+                assumptions?.Add(stageAssumptions);
+        }
+        if (assumptionIssues != null) assumptionIssues.AddRange(modelIssues);
+        else if (modelIssues.Count > 0)
+            throw new InputException(Enum.GetValues<ErrorCode>().First(c => c.Id() == modelIssues[0].Code),
+                string.Join("; ", modelIssues.Select(i => i.Code + ": " + i.Message)));
         foreach (AnalysisStage stage in scenarios.SelectMany(s => s.Stages).Where(s => s.Primitives != null))
         {
             TlaDocument consumer = ParsedModel(ProjectInputs.Resolve(path, stage.Models![0]), stage.TimeoutSeconds,

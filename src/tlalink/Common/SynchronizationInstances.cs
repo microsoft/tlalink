@@ -15,7 +15,8 @@ public static partial class SynchronizationRegion
         "enqueue", "dequeue"];
     public const string CoverageBoundary = "Sites are Roslyn member uses on region fields of declared primitive types; receivers that " +
         "are not such fields are unresolved, not traced (no alias analysis). A bind covers a site when its resolved source selection " +
-        "contains it. Contract checks compare which kind operators a bound action references through the declared kind instance, " +
+        "contains it and its target declares an instance for the site's field; binds of other targets are not checked against the " +
+        "kind contract for that field. Contract checks compare which kind operators a bound action references through the declared kind instance, " +
         "directly or through author-module operators it uses; they do not check that the arguments equal the instance expression, " +
         "the order of steps, or that the action is reachable.";
 
@@ -95,7 +96,11 @@ public static partial class SynchronizationRegion
             Dictionary<string, (FormalLinkDeclaration Bind, int Sites, SortedSet<string> Missing)> contracts = new(StringComparer.Ordinal);
             foreach (PrimitiveSite site in instanceSites.OrderBy(s => s.Node.SyntaxTree.FilePath, FilePaths.Comparer).ThenBy(s => s.Node.SpanStart))
             {
-                List<(FormalModel Model, FormalLinkDeclaration Bind, SyntaxNode Node)> covering = binds.Where(b => Covers(b.Node, site.Node)).ToList();
+                // Only targets that model the site's field with a kind instance cover it; other binds may select the statement for
+                // their own correspondence and are ignored by the site and contract checks of that field.
+                List<DeclaredInstance> fieldDeclarations = site.Field == null ? [] : declared.GetValueOrDefault(site.Field) ?? [];
+                List<(FormalModel Model, FormalLinkDeclaration Bind, SyntaxNode Node)> covering = binds.Where(b => Covers(b.Node, site.Node) &&
+                    fieldDeclarations.Any(d => d.Model == b.Model)).ToList();
                 bool excluded = exclusions.Any(e => Covers(e.Node, site.Node)) || site.Field != null && FieldExcluded(site.Field);
                 string operation = site.Operation.Member + " (" + site.Operation.Role + ") of primitive " + site.Primitive.Id;
                 string status = site.Field == null ? excluded ? "excluded" : "unresolved" :
@@ -105,11 +110,11 @@ public static partial class SynchronizationRegion
                         site.Receiver + "; instances are region fields, so apply it to a declared field or exclude the site.");
                 else if (status == "unbound")
                     Report(ErrorCode.UnboundSite, site.Node, "unbound site: " + operation + " on " + Id(site.Field!) +
-                        " is not selected by any bind source selector or exclusion of the scope's TLA+ targets.");
+                        " is not selected by any bind source selector of a TLA+ target that declares an instance for it, nor by an exclusion.");
                 else if (status == "bound")
                     foreach (var (model, bind, _) in covering)
                     {
-                        List<string> missing = Contract(site, model, bind, declared.GetValueOrDefault(site.Field!));
+                        List<string> missing = Contract(site, fieldDeclarations.First(d => d.Model == model), bind);
                         string key = bind.Binding.Id;
                         if (!contracts.TryGetValue(key, out var entry)) entry = (bind, 0, new(StringComparer.Ordinal));
                         entry.Sites++;
@@ -288,13 +293,11 @@ public static partial class SynchronizationRegion
         /// Kind operators the site's operation requires that the bound action does not reference through its target's instance.
         /// Each non-optional action A is met by A, AEnabled or AApply; a wait operation also needs its wait predicate.
         /// </summary>
-        private List<string> Contract(PrimitiveSite site, FormalModel model, FormalLinkDeclaration bind, List<DeclaredInstance>? declarations)
+        private List<string> Contract(PrimitiveSite site, DeclaredInstance instance, FormalLinkDeclaration bind)
         {
-            DeclaredInstance? instance = declarations?.FirstOrDefault(d => d.Model == model);
-            if (instance == null) return ["an instance declaration for " + Id(site.Field!) + " in target " + model.Target.Id];
             if (!instance.Valid) return [];
             string prefix = instance.Declaration.Instance.KindInstance;
-            HashSet<string> referenced = References(model, bind.Endpoint.Name, prefix);
+            HashSet<string> referenced = References(instance.Model, bind.Endpoint.Name, prefix);
             List<string> missing = [];
             foreach (string action in (site.Operation.Actions ?? []).Where(a => !a.EndsWith('?')))
                 if (!referenced.Contains(action) && !referenced.Contains(action + "Enabled") && !referenced.Contains(action + "Apply"))
@@ -304,27 +307,29 @@ public static partial class SynchronizationRegion
             return missing;
         }
 
-        /// <summary>
-        /// Operators an operator references through the kind instance, directly or through the author-module operators it uses;
-        /// the closure does not descend into instantiated or kind modules.
-        /// </summary>
-        private HashSet<string> References(FormalModel model, string start, string prefix)
-        {
-            HashSet<string> kinds = primitives.Select(p => Path.GetFileNameWithoutExtension(PrimitiveModule(p.Manifest)))
-                .ToHashSet(StringComparer.Ordinal);
-            ILookup<string, TlaReference> uses = model.Document.References.ToLookup(r => r.From, StringComparer.Ordinal);
-            HashSet<string> result = new(StringComparer.Ordinal), visited = new(StringComparer.Ordinal) { start };
-            Queue<string> pending = new([start]);
-            while (pending.TryDequeue(out string? current))
-                foreach (TlaReference reference in uses[current])
+        private HashSet<string> References(FormalModel model, string start, string prefix) =>
+            KindReferences(model.Document, start, prefix, primitives.Select(p => Path.GetFileNameWithoutExtension(PrimitiveModule(p.Manifest)))
+                .ToHashSet(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// Operators an operator references through a kind instance prefix, directly or through the author-module operators it
+    /// uses; the closure does not descend into instantiated or kind modules. Shared by contract and fairness checks.
+    /// </summary>
+    internal static HashSet<string> KindReferences(TlaDocument document, string start, string prefix, IReadOnlySet<string> kinds)
+    {
+        ILookup<string, TlaReference> uses = document.References.ToLookup(r => r.From, StringComparer.Ordinal);
+        HashSet<string> result = new(StringComparer.Ordinal), visited = new(StringComparer.Ordinal) { start };
+        Queue<string> pending = new([start]);
+        while (pending.TryDequeue(out string? current))
+            foreach (TlaReference reference in uses[current])
+            {
+                if (reference.Instance != null)
                 {
-                    if (reference.Instance != null)
-                    {
-                        if (reference.Instance == prefix) result.Add(reference.Name);
-                    }
-                    else if (!kinds.Contains(reference.Module) && visited.Add(reference.Name)) pending.Enqueue(reference.Name);
+                    if (reference.Instance == prefix) result.Add(reference.Name);
                 }
-            return result;
-        }
+                else if (!kinds.Contains(reference.Module) && visited.Add(reference.Name)) pending.Enqueue(reference.Name);
+            }
+        return result;
     }
 }

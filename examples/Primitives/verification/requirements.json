@@ -27,6 +27,28 @@
       "config_sha256": "8D4DA8B8E0E5F734F7F7117428B4E2EE60AB763E2089D41C38B66F0544A3FB03"
     },
     {
+      "id": "uploader-liveness-holds",
+      "scenario": "uploader",
+      "stage": "uploader-liveness",
+      "expected": "passed",
+      "config_sha256": "971517072A1135B6DE34BF116B7AC4D6FE427434313325BDC2D69A2B19FE35BE"
+    },
+    {
+      "id": "uploader-trace-conforms",
+      "scenario": "uploader",
+      "stage": "uploader-trace",
+      "expected": "passed",
+      "config_sha256": "9D27805BC314E5CA3E59BA1DE5D7964CADDAB74CFFC77DB09386026AF86E8305"
+    },
+    {
+      "id": "uploader-trace-double-credit-rejected",
+      "scenario": "uploader",
+      "stage": "uploader-trace-double-credit",
+      "expected": "rejected",
+      "diagnostic": "TL511",
+      "config_sha256": "9D27805BC314E5CA3E59BA1DE5D7964CADDAB74CFFC77DB09386026AF86E8305"
+    },
+    {
       "id": "uploader-region-checked",
       "scenario": "region",
       "stage": "uploader-region",

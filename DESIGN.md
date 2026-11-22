@@ -226,11 +226,15 @@ definition of its kind module in some target, or excluded. Attaching the
 annotation to the INSTANCE definition keeps the field, the kind module and the
 instance expression in one place that SANY resolves, and requires no separate
 catalogue. Operation sites are Roslyn member uses on those fields; each must
-be contained in a `bind` source selection or an `exclude`, so the
-code-to-model direction is complete over the region, and receivers that are not
-fields are reported rather than traced. Model expressions are parse-checked by
-SANY in a generated module that extends the target and is discarded, never
-pinned or archived.
+be contained in a `bind` source selection of a target that declares an instance
+for the site's field, or in an `exclude`, so the code-to-model direction is
+complete over the region, and receivers that are not fields are reported rather
+than traced. Coverage and contract checks are scoped to instance-declaring
+targets: another target, such as a coarser model that binds a whole statement
+or method for its own correspondence without modeling the primitive, neither
+discharges the site nor is contract-checked against it. Model expressions are
+parse-checked by SANY in a generated module that extends the target and is
+discarded, never pinned or archived.
 
 The contract check uses a SANY reference index rather than text matching:
 `TlaIndex.java` reports each named INSTANCE definition of the root module with
@@ -256,6 +260,45 @@ primitive's own verification scenarios, which model the primitive's harness
 rather than the region. A failing region there makes `doctor`/`plan` report
 `failed` and blocks `run`, and its files are pinned into the run, so a model
 result cannot be accepted over a changed or failing region.
+
+### Model-stage assumptions, fairness and trace capture
+
+A model result over a region is conditional on the region's environments and,
+for liveness, on fairness. `ModelAssumptions.cs` derives each TLC/trace
+stage's assumptions in preflight from the regions analyzed for it and from its
+configuration (`TlcConfiguration.cs` reads `SPECIFICATION`, `PROPERTY`/
+`PROPERTIES` and `SYMMETRY` tokens after removing comments, skipping constant
+values; it is not a TLA+ expression parser). The same record flows through the
+plan, `run.json`, the acceptance result and the report node, so presentation
+never re-derives it from changed inputs; acceptance only checks that the
+recorded fairness still equals the declaration, while environment changes
+already stale the run through its pins. A stage with temporal properties must
+declare `fairness`, either kind-module formulas or author text. A kind-module
+entry reuses the contract checks' SANY reference closure from the
+`SPECIFICATION` operator: it shows the formula is conjoined, not that it
+suffices. TLC symmetry reduction can miss liveness violations, so `SYMMETRY`
+together with temporal properties is rejected (`SR115`) rather than reported.
+
+`state_mapping` resolves the former open question by restricting expressions
+instead of trusting them: Roslyn binds each one in the primitive type and a
+closed walk admits field reads, constants, allowlisted properties and pure
+`Math` calls under a fixed operator set (`PrimitiveStateMapping.cs`). Property
+getters and calls are effectful unless allowlisted, because a getter can run
+arbitrary code. Kinds expose a scalar `View(i)` so traces compare scalars with
+the existing typed trace values instead of serializing sequences or sets.
+
+Trace capture extends the existing generated-checker approach rather than
+adding a second validator. `PrimitiveStateCapture.cs` resolves the trace
+target's instances whose primitive maps state, finds the sites a bound
+statement contains, and instrumentation inserts one snapshot method into the
+primitive type, called on the calling thread after the statement and before
+`TraceRuntime.EmitStates` takes the recorder lock. The primitive's own lock
+(`state_lock`) gives an internally consistent snapshot; nothing makes it the
+exact post-state of the bound action under concurrency. That is acceptable
+because each snapshot only adds a conjunct to the event's match: interference
+can cause a false rejection, never a false witness. Owner-indexed instances
+have no trace identity for their index and are rejected. Projecting one run
+onto several component models is not implemented.
 
 ### Source and native correspondence
 
@@ -518,6 +561,9 @@ and freshness handling are in a separate partial frontend under `PlusCal`.
 | `SynchronizationRegion.cs` | Region declaration validation and Roslyn region checks (raw synchronization, operations, waits, locks, spawns) |
 | `SynchronizationInstances.cs` | Instance declarations, operation sites, bind/exclude coverage and SANY-reference contract checks for region scopes with TLA+ targets |
 | `SynchronizationWorkflow.cs` | Region scopes of a selection, environment evidence IDs and preflight blocking |
+| `ModelAssumptions.cs` / `TlcConfiguration.cs` | Model-stage environment and fairness assumptions, `SR112`..`SR115`, and the TLC configuration directives they read |
+| `PrimitiveStateMapping.cs` | Roslyn validation of `state_mapping` expressions (`SR116`/`SR117`) against the kind `View` fields |
+| `PrimitiveStateCapture.cs` | Trace-target instances with mapped state, their sites in bound statements and the generated snapshot method |
 | `ModelScope.cs` | Model annotations, explicit label bindings and operator arities |
 | `Review.cs` | Scoped uniqueness/link/coverage diagnostics and review questions |
 | `Instrumentation.cs` | Validated, separately generated source captures and binding manifest |

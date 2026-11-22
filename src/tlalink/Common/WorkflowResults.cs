@@ -26,13 +26,15 @@ public sealed record AcceptanceResult(int SchemaVersion, string Kind, string Pro
     public List<string> ChangedReviewInputs { get; init; } = [];
     public WorkflowPolicyReassessment? PolicyReassessment { get; init; }
     public List<WorkflowNextStep> NextSteps { get; init; } = [];
+    public List<StageAssumptions> Assumptions { get; init; } = [];
 }
 public sealed record WorkflowNextStep(string Kind, string? Stage, string Reason,
     List<string> Arguments, string WorkingDirectory);
 public sealed record StoredOutcome(int Fingerprint, string Outcome, double DurationSeconds, DateTimeOffset StoredAt);
 public sealed record PlannedStage(string Id, string Kind, List<string> DependsOn, int TimeoutSeconds,
     List<PrimitiveUse>? Primitives, TlcResources? RequestedResources, TlcResources? Resources,
-    string Capability, int? Fingerprint, List<StoredOutcome>? Stored, List<AnalysisRequirement> Requirements);
+    string Capability, int? Fingerprint, List<StoredOutcome>? Stored, List<AnalysisRequirement> Requirements,
+    StageAssumptions? Assumptions = null);
 public sealed record PlannedScenario(string Id, List<PlannedStage> Stages);
 public sealed record PlannedReview(string Id, ReviewOrigin Origin, string ClaimSha256, string Status);
 public sealed record ProjectPlan(int SchemaVersion, string Kind, string Project, string Status,

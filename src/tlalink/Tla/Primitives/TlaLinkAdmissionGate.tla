@@ -42,4 +42,7 @@ CanWaitDrained(i) == state[i].signaled
 
 Internal(i) == Signal(i)
 Fairness == \A i \in Instances : WF_state(Internal(i))
+
+\* Scalar projection of one instance's state, compared with a primitive's state_mapping in trace validation.
+View(i) == [count |-> state[i].count, closed |-> state[i].closed, signaled |-> state[i].signaled]
 ================================================================================

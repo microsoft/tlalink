@@ -34,6 +34,24 @@ proof of the C# code; see [what is and is not claimed](../../REFERENCE.md#synchr
   [unbound-close control](controls/UploaderUnboundClose.cs) adds a `Shutdown`
   that closes the gate at a site no bind or exclusion covers, rejected with
   `SR108` by the `uploader-unbound-close` stage.
+- Liveness under stated fairness: the `uploader-liveness` stage checks
+  [`UploaderLiveness.cfg`](verification/UploaderLiveness.cfg), whose
+  `EveryAcquireCompletes` property needs fairness. The stage declares
+  `fairness`: the kind-module `Gate!Fairness` formula, which SANY confirms
+  `LiveSpec` references, and an author assumption of weak fairness for each
+  sender's steps. Plans, acceptance results and reports list both beside the
+  `chunk-sink` obligations, and the property is reported as conditional on them.
+- Trace capture through `state_mapping`: the manifest maps the
+  counting-resource `View` fields `available`, `waiting` and `closed` to
+  `PermitGate` fields, read under its `sync` lock. The `uploader-trace` stage
+  runs the [sequential workload](trace/UploaderWorkload.cs) (one sender, two
+  uncontended sends) and snapshots the gate after the acquire and release
+  sites, whose binds use `point: commit`; the trace validator compares every
+  snapshot with `Gate!View("g")` after the bound action. The
+  [double-credit control](controls/PermitGateDoubleCredit.cs) credits two
+  permits per release; no action or exception reveals that, but the snapshots
+  do, so `uploader-trace-double-credit` is rejected with `TL511`. The workload
+  never queues a waiter, so traces do not exercise the FIFO handoff.
 
 Both models instance the shipped kind module; the caller model declares the
 field it represents on the INSTANCE definition:
@@ -82,7 +100,8 @@ the pinned JAR. Its checks also run in preflight
 for the `uploader` model stage, which uses `permit-gate` from the same scope: a
 failing region makes `doctor` report `failed` and blocks `run`. The
 `permit-gate` verification stages model the primitive's harness and are not
-blocked. The environment's obligations are listed as assumptions; it names no
+blocked. The environment's obligations are listed as assumptions of the
+synchronization stage and of every `uploader` model stage; it names no
 supporting evidence, so they remain unsupported assumptions.
 
 The manifest lists `signals-async` and `fifo-waiters`. The static check

@@ -1,9 +1,9 @@
 # Synchronization primitives and environments
 
-Status: increments 1 to 3 and the environment manifests of increment 4 are
-implemented; see [synchronization primitives](../../REFERENCE.md#synchronization-primitives)
-for the current contract and section 14 for what differs. The rest is a
-proposal. First consumer: a private multiplexed RPC and bulk-transfer
+Status: increments 1 to 5 are implemented except per-component trace
+projection; see [synchronization primitives](../../REFERENCE.md#synchronization-primitives)
+for the current contract and section 14 for what differs. Trace projection
+remains a proposal. First consumer: a private multiplexed RPC and bulk-transfer
 library, a two-endpoint protocol over one ordered frame transport. Its mapping
 stays with that consumer; every example here is synthetic.
 
@@ -243,7 +243,7 @@ beside its scenarios. Paths are relative to the manifest.
 |---|---|
 | `type`, `sources` | The C# type and its explicit source files, resolved with the project compiler profile. |
 | `primitive_kind` | One kind from the library, or `custom` with a `module` property naming the author's TLA+ module. |
-| `state_mapping` | Read-only C# expressions over the type's fields giving each abstract state variable. Used for trace capture and inspection; never evaluated outside a captured observation. |
+| `state_mapping` | Read-only C# expressions over the type's fields giving each abstract state variable. Used for trace capture and inspection; never evaluated outside a captured observation. *Implemented* over the kind's scalar `View(i)` fields, with restricted, Roslyn-checked expressions and an optional `state_lock`. |
 | `operations` | Every public or internal member, including constructors. `role` is one of `create`, `query`, `acquire`, `try-acquire`, `release`, `signal`, `wait`, `close`, `complete`, `enqueue`, `dequeue`, `pure`. `actions` lists kind actions in order; a trailing `?` marks a conditional step. `fails` lists the kind actions that model the member's exceptional outcomes. An optional `precondition` names a module operator the caller must establish, checked as an authored property at the call boundary. |
 | `guarantees` | Claims the kind or the checks rely on (section 6). |
 | `verification` | Scenarios that check the primitive against its kind, and the inspection obligation that pins the source. The obligation keeps today's human or agent origin rules. |
@@ -436,7 +436,9 @@ A multiplexed RPC and bulk-transfer library touches every kind:
 | Shutdown and per-operation cancellation | `cancellation-source` |
 | Lifetime, ordering and table locks | `critical-section` |
 
-Its environments are an ordered frame channel (`interface`), an RPC library a pipe and the applications using sessions (both `consumer`), and the. The consumer's own mapping, region and models stay with it.
+Its environments are an ordered frame channel (`interface`), an RPC library
+reading a pipe and the applications using sessions (both `consumer`), and the
+scheduler. The consumer's own mapping, region and models stay with it.
 
 ## 14. Implementation increments
 
@@ -469,8 +471,9 @@ validated on the first consumer before the next starts.
    Differences from the text above: instance comments attach to the INSTANCE
    definition and carry an explicit `kind_instance`; exclusions reuse the
    formal-owned `exclude` (selecting a field excludes it and its sites); a site
-   must be covered by a bind of any TLA+ target of the scope, and every bind
-   covering it must reference all non-optional actions of the operation and,
+   must be covered by a bind of a TLA+ target that declares an instance for its
+   field (binds of other targets, such as a coarser model, are ignored for that
+   field), and every such bind covering it must reference all non-optional actions of the operation and,
    for a wait, its predicate, through the instance declared by the bind's own
    target, so multi-step operations bind an operator composing their steps; the
    SANY check establishes which kind operations an action references, not that
@@ -489,14 +492,51 @@ validated on the first consumer before the next starts.
    region uses, SANY resolution of `actions`/`wait` when a `module` is given,
    and `evidence` validated against project scenario and stage IDs. Plans
    list obligations, and project reports carry them as assumptions of
-   synchronization stages; fairness assumptions remain for this increment.
+   synchronization stages.
+   *Fairness and model-stage assumptions are implemented* (`SR112`..`SR114`):
+   TLC/trace stages whose primitive uses come from a region scope analyzed in
+   their preflight carry its environment obligations, `lock_safe` operations
+   and evidence gaps as assumptions in plans, `run.json`, acceptance results
+   and project reports. A stage whose configuration checks `PROPERTY`/
+   `PROPERTIES` must declare `fairness` entries, either
+   `{kind_instance, operator}` (resolved to an INSTANCE of a used kind module
+   and required, through the SANY reference closure of increment 3, to be
+   referenced by the `SPECIFICATION` formula) or `{assumption}` text; missing
+   fairness and fairness on a non-temporal stage are errors. Differences from
+   the text above: fairness is declared per stage rather than per wait, because
+   the kind modules export one `Fairness` formula per instance set; trace
+   stages accept `fairness` but trace validation does not check temporal
+   properties, which reports state as a gap.
 5. **Scale.** Instance sets, symmetry rules, trace capture through
    `state_mapping` and per-component projection.
+   *Implemented* except projection: `SR115` rejects `SYMMETRY` on a TLC stage
+   with temporal properties; `state_mapping` (with optional `state_lock`) maps
+   fields of a new per-kind `View(i)` scalar projection to restricted C#
+   expressions validated by Roslyn (`SR116` unsupported, `SR117` effectful);
+   a trace-stage bind with a `commit`/`complete` point whose statement contains
+   a site on a declared, non-indexed instance snapshots the instance through a
+   generated method (under `state_lock`, on the calling thread after the
+   statement, before the recorder lock) and the generated trace checker
+   requires `(K!View(m)).f` to equal each value after the bound action. The
+   slice is end to end for every kind with a `View`; the example covers
+   `counting-resource`. Differences from the text above: mapped fields are the
+   kind's scalar `View` fields, not its raw state (sequences and sets are
+   projected to counts), and may be a subset; instance sets stay the
+   increment-3 `index` mechanism, with no symmetric-set declaration, and
+   indexed instances are not captured. Per-component projection (validating
+   one recorded run against several component models by instance set) is not
+   implemented: it needs a trace event to be attributed to several targets'
+   binds and instance sets at once, which the one-target binding manifest and
+   checker do not express yet.
 
 ## 15. Open questions
 
-- Whether `state_mapping` expressions should be restricted to field reads and
-  a few operators, so they are checked rather than trusted.
+- Resolved: `state_mapping` expressions are restricted to field reads,
+  constants, allowlisted properties and pure calls under a fixed operator set,
+  and checked with Roslyn rather than trusted.
+- How trace projection should attribute one recorded event to several
+  component models, and whether the owner index of an indexed instance can be
+  captured as a trace identity.
 - How to treat `CancellationTokenSource` registrations made outside the region
   that run region code inline when a region token is canceled.
 - Whether pipes should be a library kind (`channel` with pause and resume

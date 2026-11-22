@@ -5,8 +5,10 @@
   "stages": [
     {"id": "tla-links", "kind": "inspect", "timeout_seconds": 120, "bindings": "bindings.json"},
     {"id": "tla-safety", "kind": "tlc", "timeout_seconds": 120, "models": ["Dispatcher.tla"], "config": "Safety.cfg"},
-    {"id": "tla-progress", "kind": "tlc", "timeout_seconds": 120, "models": ["Dispatcher.tla"], "config": "Progress.cfg"},
-    {"id": "tla-unfair", "kind": "tlc", "timeout_seconds": 120, "models": ["Dispatcher.tla"], "config": "Unfair.cfg"},
+    {"id": "tla-progress", "kind": "tlc", "timeout_seconds": 120, "models": ["Dispatcher.tla"], "config": "Progress.cfg",
+     "fairness": [{"assumption": "Weak fairness of Start(j) and of Finish(j, ok) for every job j (FairSpec): a started worker eventually finishes."}]},
+    {"id": "tla-unfair", "kind": "tlc", "timeout_seconds": 120, "models": ["Dispatcher.tla"], "config": "Unfair.cfg",
+     "fairness": [{"assumption": "None: Spec has no fairness conjunct, so this negative control expects DrainProgress to fail by stuttering."}]},
     {"id": "tla-leak", "kind": "tlc", "timeout_seconds": 120, "models": ["LeakedCredit.tla"], "config": "Defect.cfg"},
     {"id": "tla-early", "kind": "tlc", "timeout_seconds": 120, "models": ["EarlyRelease.tla"], "config": "Defect.cfg"},
     {"id": "tla-retry-reachable", "kind": "tlc", "timeout_seconds": 120, "models": ["Dispatcher.tla"], "config": "RetryReachable.cfg"},

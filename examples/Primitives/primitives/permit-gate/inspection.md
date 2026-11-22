@@ -33,6 +33,14 @@ So no waiter code runs on a releasing or closing caller's stack. That is the
 declared `signals-async` guarantee; with `fifo-waiters` it is an outstanding
 obligation in this release, not a checked property.
 
+State mapping. `state_mapping` reads `available` and `closed` directly and
+`waiting` as `waiters.Count`, under `state_lock` (`sync`), the lock every
+operation holds while changing them, so one snapshot is one consistent
+critical-section state. The kind's `waiting` view is the queue length of an
+open resource and zero once closed; `Close` clears `waiters` in the same
+critical section, so the two agree. `granted` is not mapped: a handed-over
+permit leaves no trace in the fields once its waiter is dequeued.
+
 The argument relies on the selected source scope, the .NET `Monitor` and
 `TaskCompletionSource` contracts and the manifest assumptions. It does not
 cover cancellation, scheduling delay or termination. Finite model checks of the

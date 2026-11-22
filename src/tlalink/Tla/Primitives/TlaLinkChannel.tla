@@ -45,4 +45,7 @@ CanDequeue(i) == state[i].items # <<>> \/ state[i].completion # "open"
 
 Internal(i) == FALSE
 Fairness == \A i \in Instances : WF_state(Internal(i))
+
+\* Scalar projection of one instance's state, compared with a primitive's state_mapping in trace validation.
+View(i) == [items |-> Len(state[i].items), completion |-> state[i].completion, waiting |-> state[i].waiting]
 ================================================================================

@@ -6,6 +6,8 @@
   "type": "T:PrimitivesExample.PermitGate",
   "sources": ["..\\..\\src\\PermitGate.cs"],
   "primitive_kind": "counting-resource",
+  "state_lock": "F:PrimitivesExample.PermitGate.sync",
+  "state_mapping": { "available": "this.available", "waiting": "this.waiters.Count", "closed": "this.closed" },
   "operations": [
     { "member": "M:PrimitivesExample.PermitGate.#ctor(System.Int32)", "role": "create" },
     { "member": "P:PrimitivesExample.PermitGate.Available", "role": "query" },
@@ -25,6 +27,7 @@
   ],
   "limits": [
     "Acquire models the enqueue or immediate grant; Resume models completion of the returned task, including failure after Close.",
+    "state_mapping has no field for granted: a handed-over permit whose waiter has not resumed is not visible in PermitGate fields, so traces do not compare it.",
     "No claim about scheduling delay between a handoff and the waiter's continuation.",
     "Inspection is not machine-checked implementation refinement; the listed guarantees are outstanding obligations."
   ]

@@ -5,7 +5,7 @@
   "type": "T:PrimitiveFixture.SignalLatch",
   "sources": ["SignalLatch.cs"],
   "primitive_kind": "latch",
-  "state_mapping": { "state": "this.done.Task.Status" },
+  "state_mapping": { "status": "!this.done.Task.IsCompleted ? \"unset\" : this.done.Task.IsFaulted ? \"failed\" : \"set\"" },
   "operations": [
     { "member": "P:PrimitiveFixture.SignalLatch.IsCompleted", "role": "query" },
     { "member": "M:PrimitiveFixture.SignalLatch.TrySet", "role": "signal", "actions": ["TrySet"] },

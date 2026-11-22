@@ -191,6 +191,15 @@ TlaLink does not model a whole program at once. For a larger system:
   it bound to a model action that uses the mapped kind operations, or excluded
   with a reason. These checks cover declared sites; they are not a deadlock or
   progress proof.
+- **State what liveness assumes.** Model results over a region list its
+  environment obligations as assumptions. A liveness stage must name the
+  fairness it assumes, as kind-module fairness formulas its specification
+  references or as stated author assumptions, and reports show its temporal
+  results as conditional on them. Symmetry reduction is refused for liveness.
+- **Compare primitive state in traces.** A primitive's `state_mapping` maps
+  its abstract kind state to restricted, Roslyn-checked C# expressions. Trace
+  stages then snapshot each bound primitive site and check the snapshot
+  against the model's kind state, without per-field capture annotations.
 - **Only re-check what changed.** With a declared result store, completed
   TLC searches are reused while their models and configurations are unchanged,
   like an incremental build. Expensive searches can run once, separately,

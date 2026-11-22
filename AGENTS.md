@@ -170,7 +170,14 @@ Skills do not install tools, approve correspondence or discharge human gates.
   operators (compose multi-step operations rather than splitting the check);
   never add exclusions, `inline_callbacks` omissions or unused operator
   references merely to clear `SR107`..`SR111`. Contract checks show which kind
-  operators an action references, not that it applies them correctly. See
+  operators an action references, not that it applies them correctly. A
+  liveness stage declares the fairness it actually assumes; never reference a
+  kind `Fairness` formula, write an author assumption or drop a temporal
+  property merely to clear `SR112`..`SR115`. Keep `state_mapping` expressions
+  to the restricted, Roslyn-checked forms over the primitive's own fields,
+  declare its `state_lock` when operations hold one, and treat trace snapshots
+  as one consistent view after the site, not the exact post-state under
+  concurrency. See
   [synchronization primitives](REFERENCE.md#synchronization-primitives).
 - Use annotation version 4 with standard JSON inside native `@link` comments:
   typed `bind`, `capture`, `exclude` and (TLA+ only) `instance` arrays. Do not introduce XML, another

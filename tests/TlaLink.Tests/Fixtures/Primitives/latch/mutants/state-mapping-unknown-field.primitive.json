@@ -1,0 +1,19 @@
+{
+  "schema_version": 4,
+  "kind": "primitive",
+  "id": "signal-latch",
+  "type": "T:PrimitiveFixture.SignalLatch",
+  "sources": ["SignalLatch.cs"],
+  "primitive_kind": "latch",
+  "state_mapping": { "state": "this.done.Task.IsCompleted ? \"set\" : \"unset\"" },
+  "operations": [
+    { "member": "P:PrimitiveFixture.SignalLatch.IsCompleted", "role": "query" },
+    { "member": "M:PrimitiveFixture.SignalLatch.TrySet", "role": "signal", "actions": ["TrySet"] },
+    { "member": "M:PrimitiveFixture.SignalLatch.TryFail(System.Exception)", "role": "signal", "actions": ["TryFail"] },
+    { "member": "M:PrimitiveFixture.SignalLatch.WaitAsync", "role": "wait", "wait": "CanWait" }
+  ],
+  "guarantees": ["signals-async"],
+  "verification": { "scenarios": ["latch"], "inspection": "latch-inspection" },
+  "assumptions": [],
+  "limits": ["Synthetic fixture; no implementation claim."]
+}

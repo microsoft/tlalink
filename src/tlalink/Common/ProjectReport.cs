@@ -129,6 +129,9 @@ public static class ProjectReport
                 List<string> stageReviews = stageRequirements.SelectMany(r => r.Reviews ?? [])
                     .Concat(Primitives.Inspections(path, project, scenario.Id, [stage])).Distinct(StringComparer.Ordinal).ToList();
                 var environment = EnvironmentAssumptions(stage, recorded, runs[i]);
+                if (run.Assumptions.FirstOrDefault(a => a.Stage == stage.Id) is { } modelAssumptions)
+                    environment = ([.. environment.Assumptions, .. ModelAssumptions.Lines(modelAssumptions)],
+                        [.. environment.Gaps, .. modelAssumptions.Gaps]);
                 List<string> incomplete = recorded == null ? ["missing-stage"] :
                     recorded.ExecutionStatus != "completed" || recorded.Outcome == "incomplete"
                         ? [recorded.ExecutionStatus + " / " + recorded.Outcome, .. recorded.Diagnostics] : [];

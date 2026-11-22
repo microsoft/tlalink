@@ -52,6 +52,7 @@ public sealed record AcceptanceSummary(string Project, string Scenario, string E
     public List<string> ChangedReviewInputs { get; init; } = [];
     public WorkflowPolicyReassessment? PolicyReassessment { get; init; }
     public List<WorkflowNextStep> NextSteps { get; init; } = [];
+    public List<StageAssumptions> Assumptions { get; init; } = [];
 }
 public sealed record WorkflowStageSummary(string Id, string Kind, string ExecutionStatus, string Outcome,
     double DurationSeconds, string Evidence, List<string> Diagnostics, TlcStatistics? Statistics,
@@ -80,7 +81,7 @@ public sealed record SynchronizationSummary(string Status, RegionSummary Region,
     : CommandSummaryResult("synchronization-result");
 public sealed record PlannedStageSummary(string Id, string Kind, List<string> DependsOn,
     TlcResources? RequestedResources, TlcResources? Resources, int? Fingerprint,
-    List<StoredOutcome>? Stored, List<PrimitiveUse>? Primitives);
+    List<StoredOutcome>? Stored, List<PrimitiveUse>? Primitives, StageAssumptions? Assumptions = null);
 public sealed record PlannedScenarioSummary(string Id, List<PlannedStageSummary> Stages);
 public sealed record ProjectPlanSummary([property: JsonIgnore] string NativeKind, string Project, string Status, int AnnotationVersion,
     List<PlannedPrimitiveView> Primitives, List<RegionSummary> Regions, List<CoverageSummary> CheckCoverage,

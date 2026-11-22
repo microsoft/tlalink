@@ -14,6 +14,51 @@
       "primitives": [
         {"scope": "..\\verification\\scope.json", "ids": ["permit-gate"]}
       ]
+    },
+    {
+      "id": "uploader-liveness",
+      "kind": "tlc",
+      "timeout_seconds": 60,
+      "models": ["..\\verification\\Uploader.tla"],
+      "config": "..\\verification\\UploaderLiveness.cfg",
+      "resources": {"workers": 1, "max_heap_mib": 256},
+      "primitives": [
+        {"scope": "..\\verification\\scope.json", "ids": ["permit-gate"]}
+      ],
+      "fairness": [
+        {"kind_instance": "Gate", "operator": "Fairness"},
+        {"assumption": "Weak fairness of every sender's AcquirePermit and Finish steps: the scheduler eventually runs each enabled continuation, and WriteAsync returns (environment chunk-sink)."}
+      ]
+    },
+    {
+      "id": "uploader-trace",
+      "kind": "trace",
+      "timeout_seconds": 120,
+      "depends_on": ["uploader"],
+      "scope": "..\\verification\\scope.json",
+      "target": "uploader",
+      "sources": ["..\\src\\Uploader.cs", "..\\src\\PermitGate.cs", "..\\trace\\UploaderWorkload.cs"],
+      "models": ["..\\verification\\Uploader.tla"],
+      "config": "..\\verification\\UploaderTrace.cfg",
+      "resources": {"workers": 1, "max_heap_mib": 256},
+      "primitives": [
+        {"scope": "..\\verification\\scope.json", "ids": ["permit-gate"]}
+      ]
+    },
+    {
+      "id": "uploader-trace-double-credit",
+      "kind": "trace",
+      "timeout_seconds": 120,
+      "depends_on": ["uploader"],
+      "scope": "..\\verification\\scope.json",
+      "target": "uploader",
+      "sources": ["..\\src\\Uploader.cs", "..\\controls\\PermitGateDoubleCredit.cs", "..\\trace\\UploaderWorkload.cs"],
+      "models": ["..\\verification\\Uploader.tla"],
+      "config": "..\\verification\\UploaderTrace.cfg",
+      "resources": {"workers": 1, "max_heap_mib": 256},
+      "primitives": [
+        {"scope": "..\\verification\\scope.json", "ids": ["permit-gate"]}
+      ]
     }
   ]
 }

@@ -74,6 +74,10 @@ public static class ProjectAcceptance
                     " but its static check failed: " + string.Join("; ", failed.Findings));
         }
         Dictionary<string, List<PrimitiveVerificationStatus>> verifications = new(StringComparer.Ordinal);
+        foreach (AnalysisStage declared in scenario.Stages.Where(s => s.Kind is "tlc" or "trace"))
+            if (run.Assumptions.Where(a => a.Stage == declared.Id).ToList() is { Count: > 1 } ||
+                Schema.Hash(run.Assumptions.FirstOrDefault(a => a.Stage == declared.Id)?.Fairness ?? []) != Schema.Hash(declared.Fairness ?? []))
+                Error(ErrorCode.WorkflowStageInconsistent, "Run fairness assumptions differ from the declared fairness of stage " + declared.Id + ".");
         List<PrimitiveVerificationStatus> Verified(SelectedPrimitive primitive)
         {
             string inspection = primitive.Primitive.Verification.Inspection;
@@ -339,7 +343,7 @@ public static class ProjectAcceptance
                     LatestReview(path, project, id))).ToList(),
             issues.Select(i => i.Message).Distinct().ToList(),
             "Acceptance of declared bounded evidence and explicit reviews, not general C# refinement or host authentication.")
-            { ChangedReviewInputs = changedReviewInputs, PolicyReassessment = comparison.Report };
+            { ChangedReviewInputs = changedReviewInputs, PolicyReassessment = comparison.Report, Assumptions = run.Assumptions };
         report = report with { NextSteps = WorkflowRerunGuidance.Create(path, project, scenario, run, report) };
         return (report,
             accepted ? 0 : issues.Any(i => i.Is(ErrorCode.WorkflowProjectChanged, ErrorCode.WorkflowExecutionIncomplete, ErrorCode.WorkflowEvidenceStale)) ? 2 : 1,

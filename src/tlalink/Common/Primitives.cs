@@ -49,7 +49,7 @@ public static class Primitives
             return manifest;
         }
         catch (JsonException error) { throw Invalid(path + ": " + error.Message); }
-        catch (InputException error) { throw Invalid(path + ": " + error.Message); }
+        catch (InputException error) { throw new InputException(error.Code ?? ErrorCode.InvalidWorkflowInput, path + ": " + error.Message); }
     }
 
     public static void Validate(PrimitiveManifest manifest)
@@ -111,6 +111,7 @@ public static class Primitives
         if (manifest.Assumptions.Any(string.IsNullOrWhiteSpace) || manifest.Limits.Count == 0 ||
             manifest.Limits.Any(string.IsNullOrWhiteSpace))
             throw Invalid("Primitives require nonempty assumption entries and at least one limit.");
+        PrimitiveStateMapping.Validate(manifest);
     }
 
     private static Declared Scope(string path, Dictionary<string, Declared> cache)
@@ -266,6 +267,7 @@ public static class Primitives
                     string.Join("; ", source.Diagnostics.Select(d => d.Message)));
             foreach (var pin in source.Fingerprints) Files.Pin(pins, pin.Key, pin.Value);
             List<string> members = Members(source, manifest);
+            _ = PrimitiveStateMapping.Check(source.Compilation, Type(source.Compilation, manifest, source.Texts.Keys), manifest);
             List<string> path = [LibraryDirectory];
             if (manifest.Module != null) path.Add(Path.GetDirectoryName(item.Module)!);
             TlaDocument module = parse(item.Module, path);
@@ -280,6 +282,9 @@ public static class Primitives
                     if (!operators.Contains(name))
                         throw Invalid("Operator " + name + " of " + operation.Member + " is not a parameterized operator of " +
                             module.Module + ".");
+            if (manifest.StateMapping != null && !module.Endpoints.Any(e => e.Kind == "operator" && e.Name == "View" && e.Arity == 1))
+                throw new InputException(ErrorCode.InvalidStateMapping, "Primitive " + manifest.Id + " maps state but its kind module " + module.Module +
+                    " defines no View(i) projection to compare it with.");
             Files.Pin(pins, item.Scope, item.ScopeSha256);
             Files.Pin(pins, item.Manifest, item.ManifestSha256);
             Files.Pin(pins, module.Path, module.Hash);

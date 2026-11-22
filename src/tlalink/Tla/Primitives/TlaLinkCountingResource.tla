@@ -64,4 +64,9 @@ CanResume(i, w) == ResumeEnabled(state, i, w)
 
 Internal(i) == FALSE
 Fairness == \A i \in Instances : WF_state(Internal(i))
+
+\* Scalar projection of one instance's state, compared with a primitive's state_mapping in trace validation.
+\* waiting counts queued waiters a grant can still reach; Close fails them, so a closed resource has none.
+View(i) == [available |-> state[i].available, waiting |-> IF state[i].closed THEN 0 ELSE Len(state[i].queue),
+            granted |-> Cardinality(state[i].granted), closed |-> state[i].closed]
 ================================================================================

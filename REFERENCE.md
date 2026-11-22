@@ -1692,7 +1692,9 @@ contract by instancing its TLA+ module. Primitives replace the former reviewed
 method summaries: a stateless helper is a `custom` primitive whose operations
 are `pure`. Environments and synchronization regions declare the parties
 outside a region and the C# files inside it, checked without a model checker.
-The design and the remaining increments (environment fairness, scale) are in the
+Model stages list the environment obligations and fairness their results
+assume, and trace stages compare primitive state through `state_mapping`. The
+design and what remains (per-component trace projection) are in the
 [proposal](docs/proposals/synchronization-primitives.md). See the runnable
 [synthetic example](examples/Primitives/README.md).
 
@@ -1760,9 +1762,10 @@ kind. Callers substitute their own variable and sets, for example
 | `verification` | Up to 100 project scenario IDs that verify the primitive, each with a TLC/trace stage directly using it (at least one for a source primitive), and one existing review obligation. |
 | `depends_on` | Other primitive IDs in the same scope; unknown IDs and cycles are errors. |
 | `assumptions`, `limits` | Nonempty entries; at least one limit. Carried into acceptance results and reports. |
+| `state_mapping` | Optional, source primitives only: 1..100 entries mapping a field of the kind's `View(i)` projection to a one-line C# expression over the type's own state (see [trace capture](#trace-capture-through-state_mapping)). Fields the type does not represent may be omitted; they are not compared. |
+| `state_lock` | Optional with `state_mapping`: the `F:` ID of a readonly reference-type instance field of the type; snapshots evaluate the mapping inside `lock` on it. |
 
-Unknown or duplicate properties are rejected, including `state_mapping`, which
-arrives with trace capture in a later increment.
+Unknown or duplicate properties are rejected.
 
 A schema-4 `correspondence-scope` declares its primitives and, optionally, a
 [synchronization region](#synchronization-regions):
@@ -1882,8 +1885,8 @@ with the scope file name.
 | `SR105` | Stale declaration | A `spawns` or `waits` entry that does not resolve, selects code outside the region, or matches no (or several) sites; a wait disposition on an already declared wait; an unresolved or unused lock; an unresolved primitive or environment type or member; an environment operator SANY does not resolve. |
 | `SR106` | Undischarged guarantee | A source primitive's `signals-async` or `non-blocking` static check failed. |
 | `SR107` | Undeclared instance | A region field whose declared type is a declared primitive has no `instance` declaration in any TLA+ target of the scope and no formal `exclude` whose `source` selects the field. |
-| `SR108` | Unbound site | An [instance site](#instances-and-sites) whose syntax no `bind` source selection of the scope's TLA+ targets contains, and no `exclude` covers. |
-| `SR109` | Contract mismatch | A `bind` covering a site does not reference, through the declared kind instance, every non-optional action of the site's operation (`A`, `AEnabled` or `AApply`) and, for role `wait`, the wait predicate; or its target declares no instance for the site's field. |
+| `SR108` | Unbound site | An [instance site](#instances-and-sites) whose syntax no `bind` source selection of a TLA+ target declaring an instance for the site's field contains, and no `exclude` covers. Binds of other targets do not count. |
+| `SR109` | Contract mismatch | A `bind` covering a site does not reference, through the declared kind instance, every non-optional action of the site's operation (`A`, `AEnabled` or `AApply`) and, for role `wait`, the wait predicate. Only binds of targets that declare an instance for the site's field are checked. |
 | `SR110` | Stale instance | An `instance` whose field is not a region field of a declared primitive type, whose ID is not of its target or is used by a bind, whose `kind_instance` is not the INSTANCE definition it precedes or does not instantiate the primitive's kind module, whose model expression does not parse, or a second instance of one field in one target. |
 | `SR111` | Unresolved instance receiver | A site's receiver is not a region field (a local, parameter, property, call result, field outside the region or an implicit `this`) and no `exclude` covers it. |
 | `SR200` | Incomplete | The region and primitive sources do not compile with the project compiler profile, or a TLA+ target of the scope does not resolve through SANY or its annotations do not attach; the outcome is incomplete, not rejected. |
@@ -1947,12 +1950,17 @@ of the receiver). Receivers that are not region fields are `SR111`, because
 instances are fields by design and TlaLink does not trace aliases.
 
 Sites are bound with ordinary `bind` entries: a bind **covers** a site when its
-resolved source selection contains the site's syntax, so a statement-level
+target declares an `instance` for the site's field and its resolved source
+selection contains the site's syntax, so a statement-level
 selector covers the sites in that statement and a member-level selector covers
 every site in the member. A formal `exclude` whose `source` contains a site, or
 selects the instance field (which also excludes all of that field's sites),
 accounts for it instead. Bind and exclude selectors that do not resolve to
 region code are ignored by these checks; ordinary link checks report them.
+A bind of a target that declares no instance for the field, for example a coarser
+model binding the whole method for its own correspondence, is ignored for that
+field's sites: it neither covers them nor is contract-checked against them, so
+every site still needs a bind of an instance-declaring target or an exclusion.
 
 For each bind covering a site, TlaLink resolves the bound operator through SANY
 and collects the kind operators it references through the declared
@@ -2047,6 +2055,103 @@ guarantee check does. `run` archives
 the resolved primitives and their inputs; `explain`, acceptance summaries and
 project reports show them.
 
+#### Model-stage assumptions and fairness
+
+A TLC or trace stage that uses a primitive from a scope with a region analyzed
+in its preflight inherits that region's environments: each obligation and
+`lock_safe` operation is an assumption of the stage, and an environment
+without evidence is a gap, exactly as for the synchronization stage. A stage
+whose configuration checks temporal properties (`PROPERTY` or `PROPERTIES`)
+must also say what its liveness result assumes:
+
+```json
+"fairness": [
+  { "kind_instance": "Gate", "operator": "Fairness" },
+  { "assumption": "Weak fairness of every sender's AcquirePermit and Finish steps." }
+]
+```
+
+| Entry | Rule |
+|---|---|
+| `kind_instance`, `operator` | A kind-module fairness formula: `kind_instance` names an INSTANCE definition of the stage's root model that instantiates the kind module of a primitive the stage uses, and the configuration's `SPECIFICATION` formula must reference `kind_instance!operator`, directly or through author-module operators (the SANY reference closure of [contract checks](#instances-and-sites)). |
+| `assumption` | Author fairness as text, for example weak fairness of named actions or of an environment consumer. Trusted, not checked. |
+
+`fairness` holds 1..100 unique entries, each exactly one of the two forms, and
+is accepted on TLC and trace stages only. The configuration directives are read
+token by token after removing comments; constant values are skipped.
+
+| Code | Rule |
+|---|---|
+| `SR112` | Missing fairness: the configuration checks temporal properties and the stage declares no `fairness`. |
+| `SR113` | Unused fairness: the stage declares `fairness` but its configuration checks no temporal property. |
+| `SR114` | Unresolved fairness: a `kind_instance` is not an INSTANCE definition of the root model, instantiates no kind module of a used primitive, or is not referenced through the `SPECIFICATION` formula (or the configuration has none). |
+| `SR115` | Symmetry with liveness: a TLC stage's configuration declares `SYMMETRY` and checks temporal properties. TLC symmetry reduction is unsound for liveness; check those properties in a stage without `SYMMETRY`. Symmetry stays available to safety and deadlock stages. |
+
+These run in preflight: `doctor`/`plan` report them with status `failed` (exit
+1) and `run` refuses to start. `doctor`/`plan` list each model stage's
+`assumptions` (temporal properties, symmetry, fairness, environments with
+obligations, `lock_safe` operations and support, and gaps); `run` records them
+in `run.json`, acceptance results copy them (and reject a run whose recorded
+fairness differs from the declaration) and project reports list them on the
+stage node, with the sentence that its temporal properties are conditional on
+them. Trace validation does not check temporal properties, so a trace stage's
+fairness only describes the model; reports say so as a gap.
+
+#### Trace capture through state_mapping
+
+Each kind module exports `View(i)`, a record of scalar projections of one
+instance's state:
+
+| Kind | `View` fields |
+|---|---|
+| `register` | `value` |
+| `latch`, `once` | `status` (string) |
+| `admission-gate` | `count` (int), `closed`, `signaled` (bool) |
+| `counting-resource` | `available`, `waiting` (queued waiters a grant can still reach; zero once closed), `granted` (int), `closed` (bool) |
+| `channel` | `items` (int, queue length), `completion` (string), `waiting` (bool) |
+| `cancellation-source` | `requested`, `disposed` (bool) |
+| `custom` | the author module's `View(i)` fields; required when the manifest maps state |
+
+A `state_mapping` expression is bound with Roslyn at an instance member body of
+the primitive type and may contain only: reads of the type's own instance
+fields (implicit or through `this`) and of fields of those fields; constants
+such as `int.MaxValue`; the properties `Count`, `Length`, `IsCompleted`,
+`IsCompletedSuccessfully`, `IsFaulted`, `IsCanceled`, `IsCancellationRequested`
+and `Task`; calls of `System.Math.Min`, `Max` and `Abs`; numeric, string,
+boolean and null literals; `!`, unary `-`/`+`, `&&`, `||`, comparisons, `+`,
+`-`, `*`, `/`, `%`, `&`, `|`, `?:` and parentheses. Its type must be the field's
+scalar type (int, bool or string). Anything else is rejected when the manifest
+loads (unknown field names) or in preflight (`Primitives` resolution):
+
+| Code | Rule |
+|---|---|
+| `SR116` | Invalid state mapping: an unknown `View` field, an expression that does not bind or uses other syntax, a read of something other than primitive state, a wrong result type, a missing `View` operator in the kind module, or a `state_lock` that is not a readonly reference-type instance field of the type. |
+| `SR117` | Effectful state mapping: assignments, increments, `await`, object or array creation, lambdas, indexers, conditional access, calls outside the allowlist and reads of other properties, whose getters may run code. |
+
+In a trace stage, a `bind` with `point` `commit` or `complete` whose selected
+statement contains a [site](#instances-and-sites) on an instance declared by the
+trace target, of a primitive with a `state_mapping`, captures that instance
+without capture annotations. Instrumentation adds an `internal` snapshot method
+to the primitive type (its sources must be among the stage's sources) that
+evaluates every mapped expression once, inside `lock (state_lock)` when one is
+declared, and calls it on the calling thread right after the statement
+completes (after an awaited site resumes) and before the trace event is
+recorded, so no primitive lock is taken under the recorder lock. The event
+carries the values under the instance ID; the generated checker requires
+`((K!View(m)).f)' = v` for each field after the bound action, where `K` is the
+instance's `kind_instance` and `m` its `model` expression. Invoke points and
+indexed instances are not captured (instrumentation rejects indexed ones).
+
+Consistency: a snapshot is one atomic view of the primitive's fields with
+respect to `state_lock` (without one, fields are read without synchronization
+and may be torn across fields), taken after the site returned. It equals the
+state right after the bound action only if no other operation on the instance
+completes between the site's return and the snapshot; otherwise validation can
+reject a conforming execution. Captures only add conjuncts, so they can turn a
+witness into a rejection but never create one. A snapshot at a site inside a
+held region lock takes `state_lock` there, nesting like a call of one of the
+primitive's operations at that site.
+
 #### Support, acceptance and staleness
 
 A scenario listed in a primitive's `verification.scenarios` establishes that
@@ -2086,6 +2191,13 @@ and tool inputs outside the project retain absolute identities, so relocating
 the tool also stales support.
 
 #### What is and is not claimed
+
+Environment obligations and fairness entries are assumptions: a temporal result
+holds only under them, and only a kind-module entry's reference from the
+specification formula is checked. A trace with state capture establishes that
+one recorded execution has a model path whose kind state equals each captured
+snapshot under the stated consistency, not that unmapped fields agree or that
+other executions conform.
 
 Support means a finite model check of the primitive's harness against its kind,
 an accepted inspection and declared completeness of its operations. It is not a

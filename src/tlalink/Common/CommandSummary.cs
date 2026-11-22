@@ -21,7 +21,7 @@ public static class CommandSummary
                 plan.CheckCoverage.Select(Coverage).ToList(), plan.Diagnostics,
                 plan.Scenarios.Select(s => new PlannedScenarioSummary(s.Id, s.Stages.Select(stage =>
                     new PlannedStageSummary(stage.Id, stage.Kind, stage.DependsOn, stage.RequestedResources,
-                        stage.Resources, stage.Fingerprint, stage.Stored, stage.Primitives)).ToList())).ToList(),
+                        stage.Resources, stage.Fingerprint, stage.Stored, stage.Primitives, stage.Assumptions)).ToList())).ToList(),
                 plan.ReviewStatus, plan.Boundary),
             SourceInventoryResult inventory => new SourceInventorySummary(inventory.Status, inventory.AnnotationVersion,
                 inventory.SourceCount, inventory.MemberCount, inventory.CallCount, inventory.AwaitCount,
@@ -140,7 +140,7 @@ public static class CommandSummary
             result.Reviews.Select(r => new ReviewSummary(r.Obligation, r.Status, r.Decision?.Disposition,
                 r.Decision?.Reviewer, r.Decision?.Rationale, r.Decision?.RecordedAt, r.Decision?.Origin)).ToList(),
             result.NextActions, result.Boundary) { Run = result.Run, ChangedReviewInputs = result.ChangedReviewInputs,
-                PolicyReassessment = result.PolicyReassessment, NextSteps = result.NextSteps };
+                PolicyReassessment = result.PolicyReassessment, NextSteps = result.NextSteps, Assumptions = result.Assumptions };
         return worklist == null ? summary : worklist.Apply(summary);
     }
 

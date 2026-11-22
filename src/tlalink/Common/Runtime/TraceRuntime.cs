@@ -87,7 +87,9 @@ public sealed record TraceEvent(long Sequence, string Model, string Step, string
     int Thread, long[] Causes, long[] Predecessors,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TraceScalar? Entity = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(TraceArgumentsConverter))]
-    TraceScalar[]? Arguments = null);
+    TraceScalar[]? Arguments = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Dictionary<string, Dictionary<string, TraceScalar>>? States = null);
 
 public sealed class TraceHandoff
 {
@@ -157,6 +159,22 @@ public static class TraceRuntime
             arguments.ToArray(), guard, observations, causes);
     }
 
+    /// <summary>
+    /// An event with primitive state snapshots, taken by the caller after the bound site completed and before this call,
+    /// so no primitive lock is held under the recorder lock.
+    /// </summary>
+    public static long EmitStates(string bindingId, string model, string step, string point, string classification,
+        object connection, object actor, object operation, object? entity, object[]? arguments,
+        object? guard, Dictionary<string, object> observations, Dictionary<string, Dictionary<string, object>> states)
+    {
+        ArgumentNullException.ThrowIfNull(states);
+        if (states.Count == 0 || states.Values.Any(s => s is null || s.Count == 0))
+            throw new InvalidOperationException("State snapshots require at least one instance with mapped fields.");
+        if (entity != null && !TraceScalar.From(entity).IsIdentity) throw new InvalidOperationException("Entity identities require integers or strings.");
+        return EmitCore(bindingId, model, step, point, classification, connection, actor, operation, entity,
+            arguments?.ToArray(), guard, observations, [], states);
+    }
+
     public static TraceHandoff CaptureHandoff(long predecessor)
     {
         lock (Gate)
@@ -193,7 +211,8 @@ public static class TraceRuntime
 
     private static long EmitCore(string bindingId, string model, string step, string point, string classification,
         object connection, object actor, object operation, object? entity, object[]? arguments,
-        object? guard, Dictionary<string, object> observations, long[] causes)
+        object? guard, Dictionary<string, object> observations, long[] causes,
+        Dictionary<string, Dictionary<string, object>>? states = null)
     {
         TraceScalar capturedConnection = TraceScalar.From(connection), capturedActor = TraceScalar.From(actor),
             capturedOperation = TraceScalar.From(operation);
@@ -202,6 +221,8 @@ public static class TraceRuntime
         Dictionary<string, TraceScalar> capturedObservations = observations.ToDictionary(pair => pair.Key, pair => TraceScalar.From(pair.Value));
         TraceScalar? capturedEntity = entity is null ? null : TraceScalar.From(entity);
         TraceScalar[]? capturedArguments = arguments?.Select(TraceScalar.From).ToArray();
+        Dictionary<string, Dictionary<string, TraceScalar>>? capturedStates = states?.ToDictionary(pair => pair.Key,
+            pair => pair.Value.ToDictionary(field => field.Key, field => TraceScalar.From(field.Value)));
         string operationKey = "operation:" + JsonSerializer.Serialize(new object?[] {
             capturedConnection, capturedActor, capturedOperation, capturedEntity });
         lock (Gate)
@@ -230,7 +251,8 @@ public static class TraceRuntime
             Last[threadKey] = current;
             if (guardKey is not null) Last[guardKey] = current;
             Events.Enqueue(new(current, model, step, point, classification, capturedConnection, capturedActor, capturedOperation,
-                capturedObservations, guardId, thread, explicitCauses.Order().ToArray(), predecessors.Order().ToArray(), capturedEntity, capturedArguments));
+                capturedObservations, guardId, thread, explicitCauses.Order().ToArray(), predecessors.Order().ToArray(), capturedEntity, capturedArguments,
+                capturedStates));
             return current;
         }
     }

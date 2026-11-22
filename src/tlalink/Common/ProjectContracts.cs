@@ -16,7 +16,8 @@ public sealed record CompilerProfile(string TargetFramework, string LanguageVers
 public sealed record AnalysisStage(string Id, string Kind, List<string> DependsOn, int TimeoutSeconds,
     string? Bindings = null, List<string>? Sources = null, List<string>? Models = null,
     string? Config = null, List<string>? Arguments = null, TlcResources? Resources = null, int? Fingerprint = null,
-    string? Scope = null, string? Target = null, List<PrimitiveUse>? Primitives = null);
+    string? Scope = null, string? Target = null, List<PrimitiveUse>? Primitives = null,
+    List<FairnessAssumption>? Fairness = null);
 public sealed record AnalysisScenario(string Id, List<AnalysisStage> Stages);
 public enum ReviewOrigin { Human, Agent }
 public sealed record ReviewObligation(string Id, string Claim, List<string> Assumptions, List<string> Inputs,
@@ -65,6 +66,7 @@ public sealed class WorkflowRun
     public Dictionary<string, string> Artifacts { get; init; } = new(StringComparer.Ordinal);
     public List<Issue> Diagnostics { get; init; } = [];
     public List<PrimitiveResolution> Primitives { get; init; } = [];
+    public List<StageAssumptions> Assumptions { get; init; } = [];
 }
 
 public static class ProjectInputs
@@ -128,6 +130,7 @@ public static class ProjectInputs
                     if (stage.Fingerprint != null && (stage.Kind != "tlc" || stage.Fingerprint is < 0 or > TlcResultStore.MaxFingerprint))
                         throw new InputException(ErrorCode.InvalidWorkflowInput, "Fingerprint functions are supported only on tlc stages, as an index 0.." + TlcResultStore.MaxFingerprint + ": " + stage.Id);
                     if (stage.Kind is "tlc" or "trace") _ = TlcResources.Effective(stage.Kind, stage.Resources);
+                    ModelAssumptions.Validate(stage);
                     if (!StageKinds.Contains(stage.Kind, StringComparer.Ordinal) ||
                         stage.TimeoutSeconds is < 1 or > 7200)
                         throw new InputException(ErrorCode.WorkflowPrerequisiteMissing, "Unsupported stage kind or timeout: " + stage.Id);

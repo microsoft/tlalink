@@ -21,17 +21,17 @@ Acquire(s) ==
     /\ Gate!Acquire("g", s)
     /\ pc' = [pc EXCEPT ![s] = "acquiring"]
 
-(* @link {"bind":[{"id":"uploader::send","source":{"symbol":"M:PrimitivesExample.Uploader.SendAsync(System.ReadOnlyMemory{System.Byte})","syntax":"ExpressionStatement","tokens":"await sink.WriteAsync(chunk).ConfigureAwait(false);"}}]} *)
+(* @link {"bind":[{"id":"uploader::send","source":{"symbol":"M:PrimitivesExample.Uploader.SendAsync(System.ReadOnlyMemory{System.Byte})","syntax":"ExpressionStatement","tokens":"await sink.WriteAsync(chunk).ConfigureAwait(false);"}}],"capture":[{"binding":"uploader::send","actor":"\"a\"","operation":"$call","point":"invoke","classification":"transition"}]} *)
 Send(s) ==
     /\ pc[s] = "acquiring"
     /\ Gate!CanResume("g", s)
     /\ Gate!Resume("g", s)
     /\ pc' = [pc EXCEPT ![s] = "sending"]
 
-(* @link {"bind":[{"id":"uploader::acquire","source":{"symbol":"M:PrimitivesExample.Uploader.SendAsync(System.ReadOnlyMemory{System.Byte})","syntax":"ExpressionStatement","tokens":"await this.gate.AcquireAsync().ConfigureAwait(false);"}}]} *)
+(* @link {"bind":[{"id":"uploader::acquire","source":{"symbol":"M:PrimitivesExample.Uploader.SendAsync(System.ReadOnlyMemory{System.Byte})","syntax":"ExpressionStatement","tokens":"await this.gate.AcquireAsync().ConfigureAwait(false);"}}],"capture":[{"binding":"uploader::acquire","actor":"\"a\"","operation":"$call","point":"commit","classification":"transition"}]} *)
 AcquirePermit(s) == Acquire(s) \/ Send(s)
 
-(* @link {"bind":[{"id":"uploader::release","source":{"symbol":"M:PrimitivesExample.Uploader.SendAsync(System.ReadOnlyMemory{System.Byte})","syntax":"ExpressionStatement","tokens":"this.gate.Release();"}}]} *)
+(* @link {"bind":[{"id":"uploader::release","source":{"symbol":"M:PrimitivesExample.Uploader.SendAsync(System.ReadOnlyMemory{System.Byte})","syntax":"ExpressionStatement","tokens":"this.gate.Release();"}}],"capture":[{"binding":"uploader::release","actor":"\"a\"","operation":"$call","point":"commit","classification":"transition"}]} *)
 Finish(s) ==
     /\ pc[s] = "sending"
     /\ Gate!Release("g")
@@ -43,5 +43,12 @@ InFlight == {s \in Senders : pc[s] = "sending"}
 OneInFlight == Cardinality(InFlight) <= 1
 ReleasePrecondition == InFlight # {} => Gate!ReleaseEnabled(gate, "g")
 KindInvariant == Gate!Invariant
+
+Spec == Init /\ [][Next]_vars
+
+\* Liveness: under weak fairness of each sender's steps (and the kind's own fairness), a sender that starts
+\* acquiring eventually sends and releases. FIFO handoff means a queued sender cannot be overtaken forever.
+LiveSpec == Spec /\ Gate!Fairness /\ \A s \in Senders : WF_vars(AcquirePermit(s)) /\ WF_vars(Finish(s))
+EveryAcquireCompletes == \A s \in Senders : pc[s] = "acquiring" ~> pc[s] = "idle"
 
 ====

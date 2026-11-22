@@ -46,6 +46,18 @@ public enum ErrorCode
     StaleInstance,
     [DiagnosticInfo("SR111", IssueSeverity.Error)]
     UnresolvedInstanceReceiver,
+    [DiagnosticInfo("SR112", IssueSeverity.Error)]
+    MissingFairness,
+    [DiagnosticInfo("SR113", IssueSeverity.Error)]
+    UnusedFairness,
+    [DiagnosticInfo("SR114", IssueSeverity.Error)]
+    UnresolvedFairness,
+    [DiagnosticInfo("SR115", IssueSeverity.Error)]
+    SymmetryWithLiveness,
+    [DiagnosticInfo("SR116", IssueSeverity.Error)]
+    InvalidStateMapping,
+    [DiagnosticInfo("SR117", IssueSeverity.Error)]
+    EffectfulStateMapping,
     [DiagnosticInfo("SR200", IssueSeverity.Error)]
     SynchronizationRegionIncomplete,
     [DiagnosticInfo("RP001", IssueSeverity.Error)]

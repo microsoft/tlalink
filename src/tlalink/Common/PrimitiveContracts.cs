@@ -8,7 +8,7 @@ public sealed record PrimitiveVerification(List<string> Scenarios, string Inspec
 public sealed record PrimitiveManifest(int SchemaVersion, string Kind, string Id, string Type, List<string> Sources,
     string PrimitiveKind, List<PrimitiveOperation> Operations, PrimitiveVerification Verification,
     List<string> Assumptions, List<string> Limits, string? Module = null, List<string>? Guarantees = null,
-    List<string>? DependsOn = null,
+    List<string>? DependsOn = null, Dictionary<string, string>? StateMapping = null, string? StateLock = null,
     [property: JsonPropertyName("$schema")] string? EditorSchema = null);
 public sealed record PrimitiveUse(string Scope, List<string> Ids);
 public sealed record PrimitiveVerificationEvidence(string Scenario, string Receipt);

@@ -69,7 +69,7 @@ public static class PrimitiveKindTests
                 Dictionary<string, int> operators = document.Endpoints.Where(e => e.Kind == "operator")
                     .GroupBy(e => e.Name).ToDictionary(g => g.Key, g => g.First().Arity);
                 List<(string Name, int Arity)> expected =
-                    [("InitState", 0), ("Init", 0), ("TypeOK", 0), ("Invariant", 0), ("Internal", 1), ("Fairness", 0)];
+                    [("InitState", 0), ("Init", 0), ("TypeOK", 0), ("Invariant", 0), ("Internal", 1), ("Fairness", 0), ("View", 1)];
                 expected.AddRange(kind.Waits);
                 foreach (var (name, arity) in kind.Actions)
                     expected.AddRange([(name, arity), (name + "Enabled", arity + 1), (name + "Apply", arity + 1)]);

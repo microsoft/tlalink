@@ -92,13 +92,15 @@ public static class Program
                 languageVersion: options.Get("language-version", CSharpLanguages.Default));
             source.ApplyCorrespondence(correspondence!);
             source.SelectedTargets = new(StringComparer.Ordinal) { alias! };
+            PrimitiveStateCapture? capture = options.Command == "instrument"
+                ? PrimitiveStateCapture.Load(FilePaths.Full(options.Required("scope")), correspondence!, models.Documents, source) : null;
             models.BindSources(source, correspondence!, alias);
             Packet packet = Review.Build(options.Command, source, models.Bindings, models.Diagnostics, models.Fingerprints,
                 options.Command == "review" ? options.Required("step") : null, models.Inventory);
             if (options.Optional("baseline") is string baseline) Baseline(baseline, packet);
             if (options.Optional("snapshot") is string snapshot) Files.WriteNew(snapshot, packet);
             if (options.Command == "instrument")
-                Render(Instrumentation.Generate(source, models.Bindings, packet, options.Required("output")), options);
+                Render(Instrumentation.Generate(source, models.Bindings, packet, options.Required("output"), capture), options);
             else Render(packet, options);
             return packet.LinksStatus switch { "passed" => 0, "failed" => 1, _ => 2 };
         }
