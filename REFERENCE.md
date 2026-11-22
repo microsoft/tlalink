@@ -250,7 +250,14 @@ not replacements for an independently selected UCLID solver.
 [TlaLink.ps1](TlaLink.ps1) and native setup share
 [SDK discovery](scripts/DotNet-Toolchain.ps1). They prefer an already provisioned
 `.tools\dotnet\<sdk-version>\distribution` host, otherwise require the exact SDK
-on the selected PATH host. Discovery never installs tools. The wrapper selects
+on the selected PATH host. Discovery never installs tools. When neither host has
+the exact SDK, the wrapper downloads it into
+`.tools\dotnet\<sdk-version>\distribution`, checking the archive against the SHA512
+published in the official .NET release metadata. Before any command other than
+`toolchain`, it also runs `toolchain restore` for each pinned analysis tool whose
+entrypoint is missing from `.tools`. Analysis commands themselves still never
+install tools. Set `TLALINK_AUTO_PROVISION=false` (or `0`) to disable both steps
+and keep setup fully explicit. The wrapper selects
 that host for child builds and restores the caller's environment afterwards.
 For direct `dotnet` commands using a repository-local installation:
 
@@ -348,7 +355,9 @@ dotnet tlalink toolchain restore --directory .\.tools --tool java --tool tlc --o
 dotnet tlalink toolchain restore --directory .\.tools --exclusive true --timeout 600
 ```
 
-`--directory` is required and resolves against the caller's directory. No
+`--directory` resolves against the caller's directory. When omitted from a
+checkout build it defaults to that checkout's ignored `.tools`; a deployed tool
+outside a checkout requires it. No
 environment variables, manifests, requirements, existing evidence or reviews are
 rewritten. Select distinct `--tool` values `java`, `tlc`, `dafny`, `apalache`, `p`;
 omitting them selects all five. Both `--offline` and `--exclusive` default to

@@ -242,6 +242,12 @@ public static class CoreTests
             Files.WriteNew(path, new { good = true });
             ThrowsAny<IOException>(() => Files.WriteNew(path, new { good = false }));
         });
+        test("new-file writes create missing output directories", () =>
+        {
+            string path = Path.Combine(work, "receipts", "nested", "receipt.json");
+            Files.WriteNew(path, new { good = true });
+            True(File.Exists(path));
+        });
         test("missing explicit scope fails", () => Throws(() => Files.Discover([Path.Combine(work, "absent")], ".cs")));
         test("wrong extension fails", () => Throws(() => Files.Discover([Path.Combine(work, "exclusive.json")], ".cs")));
 

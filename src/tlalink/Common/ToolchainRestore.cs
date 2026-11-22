@@ -35,7 +35,9 @@ public static class ToolchainRestore
         };
         try
         {
-            ToolchainRestoreResult result = Restore(options.Required("directory"), tools,
+            string directory = options.Optional("directory") ?? JavaToolchain.RepositoryTools() ??
+                throw new InputException("Required option outside a TlaLink checkout: --directory");
+            ToolchainRestoreResult result = Restore(directory, tools,
                 Flag(options, "offline"), Flag(options, "exclusive"), options.Timeout);
             ProjectWorkflow.Render(result, options);
             return 0;

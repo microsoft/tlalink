@@ -14,7 +14,7 @@ public sealed class CliOptions
         Command = args[0];
         if (Command == "toolchain")
             Action = args.Length > 1 && args[1] == "restore" ? args[1] :
-                throw new InputException("Usage: toolchain restore --directory <cache> [--tool <id> ...] [--offline true|false] [--exclusive true|false].");
+                throw new InputException("Usage: toolchain restore [--directory <cache>] [--tool <id> ...] [--offline true|false] [--exclusive true|false].");
         if (Command == "symbols")
             Action = args.Length > 1 && args[1] is "find" or "show" or "resolve" or
                 "references" or "callers" or "callees" or "describe" ? args[1] :

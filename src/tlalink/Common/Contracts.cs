@@ -164,7 +164,10 @@ public static class Files
 
     public static void WriteNew(string path, object value)
     {
-        using FileStream file = new(FilePaths.Full(path), FileMode.CreateNew, FileAccess.Write);
+        path = FilePaths.Full(path);
+        // Output files are new by contract, but their containing directory need not exist yet.
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using FileStream file = new(path, FileMode.CreateNew, FileAccess.Write);
         JsonSerializer.Serialize(file, value, Json);
     }
 

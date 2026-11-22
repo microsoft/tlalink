@@ -210,8 +210,10 @@ dotnet build .\TlaLink.sln
 dotnet run --project .\tests\TlaLink.Tests\TlaLink.Tests.csproj -- . --core
 ```
 
-These need no formal-methods tools. The checkers themselves are set up
-separately, only when you need them; see the
+These need no formal-methods tools. From a checkout, `.\TlaLink.ps1` provisions
+everything else on first use: it downloads the exact SDK and the pinned checkers
+into the ignored `.tools` directory, verifying each archive's checksum, before
+running the CLI. Set `TLALINK_AUTO_PROVISION=false` to keep setup manual; see the
 [setup instructions](REFERENCE.md#requirements-and-build).
 
 ### Package as a .NET tool
@@ -232,8 +234,9 @@ dotnet tlalink toolchain restore --directory .\.tools --timeout 600
 ```
 
 This installs or checks the pinned JDK, TLC, Dafny, Apalache and P compiler.
+`--directory` defaults to the checkout's `.tools` when run from a checkout.
 Repeat runs check complete file contents; offline reuse and guarded repairs are
-supported. It never installs tools during analysis, upgrades pins or changes
+supported. The CLI never installs tools during analysis, upgrades pins or changes
 proofs or approvals. See [native tool restore](REFERENCE.md#native-tool-restore).
 
 Use [symbol lookup](REFERENCE.md#finding-c-symbols) to discover exact C#
