@@ -21,7 +21,7 @@ public static class PrimitiveKindTests
             [("Publish", 2), ("Start", 1), ("Settle", 1)], [("CanWait", 1)],
             [new("BrokenOnceDoubleWinner", "SingleWinner")]),
         new("AdmissionGate", "MCAdmissionGate", "NoDrainWitness",
-            [("Enter", 1), ("EnterRejected", 1), ("TryEnter", 3), ("Exit", 1), ("Close", 1), ("Signal", 1)],
+            [("Enter", 1), ("EnterRejected", 1), ("TryEnter", 3), ("Exit", 1), ("Close", 1)],
             [("CanWaitDrained", 1)],
             [new("BrokenAdmissionGateEarlySignal", "KindInvariant")]),
         new("CountingResource", "MCCountingResource", "NoClosedWaiterWitness",

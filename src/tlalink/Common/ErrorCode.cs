@@ -58,6 +58,8 @@ public enum ErrorCode
     InvalidStateMapping,
     [DiagnosticInfo("SR117", IssueSeverity.Error)]
     EffectfulStateMapping,
+    [DiagnosticInfo("SR118", IssueSeverity.Error)]
+    SynchronousWaitProbe,
     [DiagnosticInfo("SR200", IssueSeverity.Error)]
     SynchronizationRegionIncomplete,
     [DiagnosticInfo("RP001", IssueSeverity.Error)]

@@ -11,6 +11,8 @@ public static class SynchronizationInstanceTests
         ("unbound-site.cs", "Pump.cs", ["SR108"], "SR108",
             "M:InstanceFixture.Pump.Abort: unbound site: M:InstanceFixture.Gate.Close (close) of primitive gate on F:InstanceFixture.Pump.admission"),
         ("local-receiver.cs", "Pump.cs", ["SR111"], "SR111", "unresolved instance receiver: M:InstanceFixture.Gate.Exit (release) of primitive gate is applied to local entered"),
+        ("wait-probe.cs", "Pump.cs", ["SR108", "SR118"], "SR118",
+            "synchronous wait probe: M:InstanceFixture.Gate.WaitDrainedAsync (wait) of primitive gate is read through IsCompleted."),
         ("missing-instance.tla", "Pump.tla", ["SR107", "SR108"], "SR107", "undeclared instance: field F:InstanceFixture.Pump.stopped of primitive latch"),
         ("wrong-operator.tla", "Pump.tla", ["SR109"], "SR109", "bind pump::exit (operator Leave) covers M:InstanceFixture.Gate.Exit (release) of primitive gate on F:InstanceFixture.Pump.admission but does not reference Gate!Exit."),
         ("wait-predicate.tla", "Pump.tla", ["SR109"], "SR109", "bind pump::resume (operator Resume) covers M:InstanceFixture.Latch.WaitAsync (wait) of primitive latch on F:InstanceFixture.Pump.stopped but does not reference Latch!CanWait."),

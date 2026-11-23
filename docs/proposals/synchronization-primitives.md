@@ -100,7 +100,7 @@ set, keeps per-instance state in functions over that set, and exports:
 | `register` | value, or none | `Set`, `TrySet` (first wins), `Read` | none |
 | `latch` | unset, set or failed | `TrySet`, `TryFail` | `Wait` until set or failed |
 | `once` | empty, published, running, settled | `Publish`, `Start`, `Settle` | `Wait` until settled |
-| `admission-gate` | admitted count, closed, drain signaled | `Enter`, `TryEnter(limit)`, `Exit`, `Close`, `Signal` | `WaitDrained` |
+| `admission-gate` | admitted count, closed, drain signaled | `Enter`, `TryEnter(limit)`, `Exit`, `Close` (the step that drains also signals) | `WaitDrained` |
 | `counting-resource` | available, FIFO waiters, closed | `TryAcquire`, `Acquire`, `Release`, `Close` | `Acquire` until granted or closed |
 | `channel` | item sequence, bound, completion (none, drain, abort) | `Enqueue`, `TryEnqueue`, `Dequeue`, `Complete` | `Dequeue` until item or completion |
 | `critical-section` | none | the whole region is one atomic step | none |
@@ -168,7 +168,7 @@ Every kind module has the same shape:
 | `TlaLinkRegister` | `Values`, `None` | value or `None` | `Set(i, v)`, `TrySet(i, v, won)` | none | none |
 | `TlaLinkLatch` | none | `"unset"`, `"set"` or `"failed"` | `TrySet(i, won)`, `TryFail(i, won)` | `CanWait(i)` | none |
 | `TlaLinkOnce` | none | `"empty"`, `"published"`, `"running"` or `"settled"` | `Publish(i, won)`, `Start(i)`, `Settle(i)` | `CanWait(i)` | none |
-| `TlaLinkAdmissionGate` | none | `[count, closed, signaled]` | `Enter(i)`, `EnterRejected(i)`, `TryEnter(i, limit, ok)`, `Exit(i)`, `Close(i)`, `Signal(i)` | `CanWaitDrained(i)` | `Signal(i)` |
+| `TlaLinkAdmissionGate` | none | `[count, closed, signaled]` | `Enter(i)`, `EnterRejected(i)`, `TryEnter(i, limit, ok)`, `Exit(i)`, `Close(i)` | `CanWaitDrained(i)` | none |
 | `TlaLinkCountingResource` | `Waiters`, `Capacity` (a function of `Instances`) | `[available, queue, granted, closed]` | `TryAcquire(i, ok)`, `Acquire(i, w)`, `Release(i)`, `Close(i)`, `Resume(i, w)` | `CanResume(i, w)` | none |
 | `TlaLinkChannel` | `Items` | `[items, completion, waiting]` | `TryEnqueue(i, x, ok)`, `Dequeue(i, x)`, `StartWait(i)`, `Complete(i, mode)` | `CanDequeue(i)` | none |
 | `TlaLinkCancellationSource` | none | `[requested, disposed]` | `Cancel(i)`, `CancelRejected(i)`, `Dispose(i)` | `CanWait(i)` | none |
@@ -178,9 +178,15 @@ Semantics the modules must make precise:
 - `TlaLinkAdmissionGate`: `Enter` is enabled only while open, and
   `EnterRejected` only while closed, so a throwing `Enter` is an explicit step.
   `TryEnter` is admitted when open and `count < limit`. `Close` is idempotent.
-  `Signal` sets `signaled` once the gate is closed with `count = 0`, as a step
-  separate from the `Close` or `Exit` that made it possible. `Invariant`
-  includes `signaled => closed /\ count = 0`.
+  The `Close` or `Exit` that leaves the gate closed with `count = 0` sets
+  `signaled` in the same step: an implementation completes its drain signal on
+  that caller's stack right after the state change, and completing it only
+  enables waiters, so merging the two is a sound reduction. Waiters resume in a
+  later step guarded by `CanWaitDrained`. A gate that defers its drain signal,
+  for example to a posted callback, composes an admission gate with a latch.
+  A region that checks the drain synchronously (`Drained.IsCompleted`) could
+  observe the merged state, so such sites are rejected (`SR118`) unless excluded.
+  `Invariant` includes `signaled => closed /\ count = 0`.
 - `TlaLinkCountingResource`: FIFO handoff without barging. `Release` grants the
   head waiter if one is queued, otherwise increments `available`, and is not
   enabled at `Capacity[i]`. `Acquire` takes a permit immediately only when one

@@ -1717,7 +1717,7 @@ predicates, `Internal(i)` and `Fairness`. Every action `A` also has pure
 | `register` | `TlaLinkRegister` | `Set`, `TrySet` | none |
 | `latch` | `TlaLinkLatch` | `TrySet`, `TryFail` | `CanWait` |
 | `once` | `TlaLinkOnce` | `Publish`, `Start`, `Settle` | `CanWait` |
-| `admission-gate` | `TlaLinkAdmissionGate` | `Enter`, `EnterRejected`, `TryEnter`, `Exit`, `Close`, `Signal` | `CanWaitDrained` |
+| `admission-gate` | `TlaLinkAdmissionGate` | `Enter`, `EnterRejected`, `TryEnter`, `Exit`, `Close` | `CanWaitDrained` |
 | `counting-resource` | `TlaLinkCountingResource` | `TryAcquire`, `Acquire`, `Release`, `Close`, `Resume` | `CanResume` |
 | `channel` | `TlaLinkChannel` | `TryEnqueue`, `Dequeue`, `StartWait`, `Complete` | `CanDequeue` |
 | `cancellation-source` | `TlaLinkCancellationSource` | `Cancel`, `CancelRejected`, `Dispose` | `CanWait` |
@@ -1893,6 +1893,7 @@ with the scope file name.
 | `SR109` | Contract mismatch | A `bind` covering a site does not reference, through the declared kind instance, every non-optional action of the site's operation (`A`, `AEnabled` or `AApply`) and, for role `wait`, the wait predicate. Only binds of targets that declare an instance for the site's field are checked. |
 | `SR110` | Stale instance | An `instance` whose field is not a region field of a declared primitive type, whose ID is not of its target or is used by a bind, whose `kind_instance` is not the INSTANCE definition it precedes or does not instantiate the primitive's kind module, whose model expression does not parse, or a second instance of one field in one target. |
 | `SR111` | Unresolved instance receiver | A site's receiver is not a region field (a local, parameter, property, call result, field outside the region or an implicit `this`) and no `exclude` covers it. |
+| `SR118` | Synchronous wait probe | A site of an operation with role `wait` whose task is read through `IsCompleted`, `IsCompletedSuccessfully`, `IsFaulted`, `IsCanceled` or `Status`, and no `exclude` covers it. Kind waits are resumptions guarded by the wait predicate, and a kind may complete its signal in the step that enables it (an admission gate's drain, for example), so such a check can observe a state the kind does not represent. |
 | `SR200` | Incomplete | The region and primitive sources do not compile with the project compiler profile, or a TLA+ target of the scope does not resolve through SANY or its annotations do not attach; the outcome is incomplete, not rejected. |
 
 The lock check follows region calls depth first, visiting each callee once per

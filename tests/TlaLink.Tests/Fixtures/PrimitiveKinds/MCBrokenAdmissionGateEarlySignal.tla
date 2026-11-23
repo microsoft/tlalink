@@ -44,7 +44,6 @@ WaitDrained(g) ==
     /\ closer[g] = "reclosed" /\ G!CanWaitDrained(g)
     /\ closer' = [closer EXCEPT ![g] = "drained"]
     /\ UNCHANGED <<gates, phase>>
-Signal(g) == G!Signal(g) /\ UNCHANGED <<phase, closer>>
 
 Terminated ==
     /\ \A g \in Gates : closer[g] = "drained" /\ \A c \in Callers : phase[g][c] = "done"
@@ -54,7 +53,7 @@ Next ==
     \/ \E g \in Gates, c \in Callers :
         \/ Enter(g, c) \/ EnterRejected(g, c) \/ Exit(g, c)
         \/ \E limit \in Limits, ok \in BOOLEAN : TryEnter(g, c, limit, ok)
-    \/ \E g \in Gates : Close(g) \/ CloseAgain(g) \/ WaitDrained(g) \/ Signal(g)
+    \/ \E g \in Gates : Close(g) \/ CloseAgain(g) \/ WaitDrained(g)
     \/ CloseBoth
     \/ Terminated
 

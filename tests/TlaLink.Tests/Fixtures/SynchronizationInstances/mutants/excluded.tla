@@ -42,10 +42,6 @@ Close ==
     /\ UNCHANGED <<latches, pc, waiter>>
 
 (* @link {"exclude":[{"id":"pump-abort","from":["pump"],"reason":"Abort is an emergency path outside this model's claim.","source":{"symbol":"M:InstanceFixture.Pump.Abort"}},{"id":"pump-stopped","from":["pump"],"reason":"This model stops at the drain; the stopped latch and its waiters are not modeled.","source":{"symbol":"F:InstanceFixture.Pump.stopped"}}]} *)
-Drain ==
-    /\ Gate!Signal("admission")
-    /\ UNCHANGED <<latches, pc, stopper, waiter>>
-
 (* @link {"bind":[{"id":"pump::drained","source":{"symbol":"M:InstanceFixture.Pump.StopAsync","syntax":"ExpressionStatement","tokens":"await this.admission.WaitDrainedAsync().ConfigureAwait(false);"}}]} *)
 Drained ==
     /\ stopper = "closed"
@@ -65,6 +61,6 @@ Resume ==
     /\ waiter' = "resumed"
     /\ UNCHANGED <<gates, latches, pc, stopper>>
 
-Next == Close \/ Drain \/ Drained \/ Stop \/ Resume \/ \E w \in Workers : Enter(w) \/ Leave(w)
+Next == Close \/ Drained \/ Stop \/ Resume \/ \E w \in Workers : Enter(w) \/ Leave(w)
 
 ====
