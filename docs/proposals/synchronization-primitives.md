@@ -186,6 +186,7 @@ Semantics the modules must make precise:
   for example to a posted callback, composes an admission gate with a latch.
   A region that checks the drain synchronously (`Drained.IsCompleted`) could
   observe the merged state, so such sites are rejected (`SR118`) unless excluded.
+  Only this kind merges a later signal; a latch's completion is its state.
   `Invariant` includes `signaled => closed /\ count = 0`.
 - `TlaLinkCountingResource`: FIFO handoff without barging. `Release` grants the
   head waiter if one is queued, otherwise increments `available`, and is not

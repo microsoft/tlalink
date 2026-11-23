@@ -14,6 +14,9 @@ public sealed class Pump
 
     public bool Drained => this.admission.WaitDrainedAsync().IsCompleted;
 
+    // A latch's task is its state, so this probe is an exact query and not SR118 (still an unbound site, SR108).
+    public bool Stopped => this.stopped.WaitAsync().IsCompleted;
+
     public bool TryRun()
     {
         if (!this.admission.TryEnter()) return false;

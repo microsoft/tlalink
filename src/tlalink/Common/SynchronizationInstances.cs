@@ -56,6 +56,10 @@ public static partial class SynchronizationRegion
 
         private static string Id(ISymbol symbol) => symbol.OriginalDefinition.GetDocumentationCommentId() ?? symbol.ToDisplayString();
 
+        // Kinds whose wait signal follows the state change in the implementation but shares its step in the kind. Other kinds'
+        // waits complete with their state change (a latch is its task), so a completion read is an exact state query.
+        private static readonly string[] MergedSignalKinds = ["admission-gate"];
+
         private static readonly string[] CompletionProperties = ["IsCompleted", "IsCompletedSuccessfully", "IsFaulted", "IsCanceled", "Status"];
 
         /// <summary>The completion property read directly on a wait site's task, as in <c>f.Drained.IsCompleted</c>, if any.</summary>
@@ -114,11 +118,12 @@ public static partial class SynchronizationRegion
                     fieldDeclarations.Any(d => d.Model == b.Model)).ToList();
                 bool excluded = exclusions.Any(e => Covers(e.Node, site.Node)) || site.Field != null && FieldExcluded(site.Field);
                 string operation = site.Operation.Member + " (" + site.Operation.Role + ") of primitive " + site.Primitive.Id;
-                if (!excluded && site.Operation.Role == "wait" && CompletionProbe(site.Node) is { } probe)
+                if (!excluded && site.Operation.Role == "wait" && MergedSignalKinds.Contains(site.Primitive.PrimitiveKind, StringComparer.Ordinal) &&
+                    CompletionProbe(site.Node) is { } probe)
                     Report(ErrorCode.SynchronousWaitProbe, site.Node, "synchronous wait probe: " + operation + " is read through " + probe +
-                        ". Kind waits are resumptions guarded by the wait predicate, and a kind may complete its signal in the step that " +
-                        "enables it, so a completion check can observe a state the kind does not represent; await it, model the check " +
-                        "with a custom kind, or exclude the site with a reason.");
+                        ". The " + site.Primitive.PrimitiveKind + " kind completes its signal in the step that enables it, so a completion " +
+                        "check can observe a state the kind does not represent; await it, model the check with a custom kind, or exclude " +
+                        "the site with a reason.");
                 string status = site.Field == null ? excluded ? "excluded" : "unresolved" :
                     covering.Count > 0 ? "bound" : excluded ? "excluded" : "unbound";
                 if (status == "unresolved")
