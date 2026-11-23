@@ -178,9 +178,28 @@ TlaLink does not model a whole program at once. For a larger system:
   rather than relying on implementation details.
 - **Keep checks beside their code.** [Component manifests](examples/Components/README.md)
   let each part of the codebase own its checks, combined into one project.
-- **Reuse reviewed method summaries.** [Small TLA+ relations](examples/MethodSummaries/README.md)
-  let caller models omit helper internals. Source-pinned agent inspection
-  supports the abstraction; caller results remain conditional on it.
+- **Verify synchronization primitives once.** [Primitive manifests](examples/Primitives/README.md)
+  map a C# gate, latch or queue onto a shipped TLA+ kind contract that caller
+  models instance. A verification scenario and source-pinned inspection support
+  it; caller results remain conditional on that support.
+- **Declare where code synchronizes.** A synchronization region lists the C#
+  files in which only declared primitives, environments and locks may
+  synchronize. A source-only stage checks raw synchronization, undeclared
+  operations and waits, lock bodies and spawned work with Roslyn, and lists
+  environment obligations as assumptions. With TLA+ models in the scope, every
+  primitive field must be declared as a model instance and every operation on
+  it bound to a model action that uses the mapped kind operations, or excluded
+  with a reason. These checks cover declared sites; they are not a deadlock or
+  progress proof.
+- **State what liveness assumes.** Model results over a region list its
+  environment obligations as assumptions. A liveness stage must name the
+  fairness it assumes, as kind-module fairness formulas its specification
+  references or as stated author assumptions, and reports show its temporal
+  results as conditional on them. Symmetry reduction is refused for liveness.
+- **Compare primitive state in traces.** A primitive's `state_mapping` maps
+  its abstract kind state to restricted, Roslyn-checked C# expressions. Trace
+  stages then snapshot each bound primitive site and check the snapshot
+  against the model's kind state, without per-field capture annotations.
 - **Only re-check what changed.** With a declared result store, completed
   TLC searches are reused while their models and configurations are unchanged,
   like an incremental build. Expensive searches can run once, separately,

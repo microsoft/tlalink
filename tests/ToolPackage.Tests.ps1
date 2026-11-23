@@ -65,6 +65,13 @@ try {
                 'tools/net10.0/any/TlaLink.runtimeconfig.json')) {
                 if (!$archive.GetEntry($path)) { throw "Missing package asset: $path" }
             }
+            $modules = @(Get-ChildItem -LiteralPath (Join-Path $root 'src\tlalink\Tla\Primitives') -Filter 'TlaLink*.tla')
+            if (!$modules.Count) { throw 'Expected shipped primitive kind modules.' }
+            foreach ($module in $modules) {
+                if (!$archive.GetEntry("tools/net10.0/any/primitives/$($module.Name)")) {
+                    throw "Missing primitive kind module: $($module.Name)"
+                }
+            }
             if (@($archive.Entries | Where-Object FullName -match '(^|/)(local|tests|examples|\.tools)/').Count) {
                 throw 'Consumer material, tests, examples and native distributions must not be packaged.'
             }
@@ -103,6 +110,9 @@ try {
                 'PIndex.source.cs' = 'src\tlalink\PLang\PIndex.source.cs'
                 'TraceRuntime.source.cs' = 'src\tlalink\Common\Runtime\TraceRuntime.cs'
                 'NuGet.Config' = 'NuGet.Config'
+            }
+            foreach ($module in @(Get-ChildItem -LiteralPath (Join-Path $root 'src\tlalink\Tla\Primitives') -Filter 'TlaLink*.tla')) {
+                $assets["primitives\$($module.Name)"] = "src\tlalink\Tla\Primitives\$($module.Name)"
             }
             foreach ($asset in $assets.GetEnumerator()) {
                 if ((Get-FileHash -LiteralPath (Join-Path $installed $asset.Key)).Hash -cne

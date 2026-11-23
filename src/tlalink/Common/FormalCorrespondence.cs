@@ -6,7 +6,7 @@ public sealed record ResolvedCorrespondence(string Id, SourceBinding Implementat
 public static class FormalCorrespondence
 {
     public static List<FormalLinkDeclaration> Attach(string path, string text, IEnumerable<NativeDeclarationSpan> declarations,
-        List<(int Start, int End, string Content)> comments)
+        List<(int Start, int End, string Content)> comments, bool instances = false)
     {
         List<NativeDeclarationSpan> native = declarations.OrderBy(d => d.Start).ThenByDescending(d => d.End).ToList();
         if (native.Any(d => d.Start < 0 || d.End <= d.Start || d.End > text.Length))
@@ -16,6 +16,14 @@ public static class FormalCorrespondence
         {
             List<LocatedAnnotation> parsed = Markup.Parse(comment.Content, comment.Start, comment.End);
             if (parsed.Count == 0) continue;
+            if (parsed.Any(a => a.Declaration is InstanceAnnotation))
+            {
+                if (!instances || parsed.Any(a => a.Declaration is not InstanceAnnotation))
+                    throw new InputException(ErrorCode.InvalidAttachment, instances
+                        ? "An instance comment declares only instances and precedes an INSTANCE definition: " + path
+                        : "Instance declarations are TLA+ only: " + path);
+                continue;
+            }
             List<ExcludeAnnotation> exclusions = parsed.Select(a => a.Declaration).OfType<ExcludeAnnotation>().ToList();
             if (exclusions.Any(e => e.Source == null))
                 throw new InputException(ErrorCode.InvalidAttachment, "Formal exclusions require an explicit source selector.");
@@ -37,6 +45,27 @@ public static class FormalCorrespondence
         }
         foreach (var duplicate in result.GroupBy(b => b.Binding.Id, StringComparer.Ordinal).Where(g => g.Count() != 1))
             throw new InputException(ErrorCode.DuplicateBinding, "Duplicate formal correspondence ID: " + duplicate.Key);
+        return result;
+    }
+
+    /// <summary>Instance comments attach to the TLA+ INSTANCE definition that immediately follows them.</summary>
+    public static List<FormalInstanceDeclaration> Instances(string path, string text, IEnumerable<TlaInstance> definitions,
+        List<(int Start, int End, string Content)> comments)
+    {
+        List<TlaInstance> native = definitions.OrderBy(d => d.Start).ToList();
+        List<FormalInstanceDeclaration> result = [];
+        foreach (var comment in comments)
+        {
+            List<InstanceAnnotation> parsed = Markup.Parse(comment.Content, comment.Start, comment.End)
+                .Select(a => a.Declaration).OfType<InstanceAnnotation>().ToList();
+            if (parsed.Count == 0) continue;
+            TlaInstance definition = native.FirstOrDefault(d => d.Start >= comment.End && Markup.OnlyTrivia(text, comment.End, d.Start, comments))
+                ?? throw new InputException(ErrorCode.InvalidAttachment, "Instance declarations must immediately precede an INSTANCE definition: " + path);
+            result.AddRange(parsed.Select(i => new FormalInstanceDeclaration(i, definition.Name, definition.Module,
+                new(path, definition.Line, definition.EndLine, definition.Column))));
+        }
+        foreach (var duplicate in result.GroupBy(i => i.Instance.Id, StringComparer.Ordinal).Where(g => g.Count() != 1))
+            throw new InputException(ErrorCode.DuplicateBinding, "Duplicate formal instance ID: " + duplicate.Key);
         return result;
     }
 

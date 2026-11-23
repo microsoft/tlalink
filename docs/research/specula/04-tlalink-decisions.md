@@ -4,8 +4,9 @@
 
 This is a recommendation based on the investigation, not an implemented design
 or a new acceptance policy.
-It records the comparison before implementation; current TlaLink behavior is
-documented in the [reference](../../../REFERENCE.md#reviewed-method-summaries).
+It records the comparison before implementation. Method summaries were later
+replaced by synchronization primitives; current TlaLink behavior is documented
+in the [reference](../../../REFERENCE.md#synchronization-primitives).
 
 ## 1. What overlaps
 

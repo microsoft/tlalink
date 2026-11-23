@@ -366,17 +366,17 @@ public static partial class EvidenceGarbageCollection
                     foreach (string input in obligation.Inputs)
                         Reference(FilePaths.Full(input, directory), null, "review project input: " + path);
                 }
-                foreach (SelectedMethodSummary summary in MethodSummaries.Select(path, project, project.Scenarios.SelectMany(s => s.Stages)))
+                foreach (SelectedPrimitive primitive in Primitives.Select(path, project, project.Scenarios.SelectMany(s => s.Stages)))
                 {
-                    _ = state.Read(summary.Scope);
-                    if (state.DocumentHashes[summary.Scope] != summary.ScopeSha256)
-                        throw new InputException(ErrorCode.InvalidRetention, "Method-summary scope changed during retention discovery.");
-                    Reference(summary.Scope, null, "method summary scope: " + path);
-                    foreach (string input in summary.Summary.Sources)
-                        Reference(ProjectInputs.Resolve(summary.Scope, input), null, "method summary source: " + path);
-                    foreach (string input in CorrespondenceInputs.Target(summary.Configuration,
-                        Markup.Name(summary.Summary.Binding).Alias, "tla").Inputs)
-                        Reference(input, null, "method summary model: " + path);
+                    foreach (var document in new[] { (Path: primitive.Scope, Hash: primitive.ScopeSha256),
+                        (Path: primitive.Manifest, Hash: primitive.ManifestSha256) })
+                    {
+                        _ = state.Read(document.Path);
+                        if (state.DocumentHashes[document.Path] != document.Hash)
+                            throw new InputException(ErrorCode.InvalidRetention, "Primitive declaration changed during retention discovery.");
+                    }
+                    foreach (string input in Primitives.Inputs(primitive))
+                        Reference(input, null, "primitive input: " + path);
                 }
                 string reviews = FilePaths.Full(project.ReviewDirectory, directory);
                 NoLinks(reviews);

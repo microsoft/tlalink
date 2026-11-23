@@ -1,0 +1,16 @@
+{
+  "schema_version": 4,
+  "kind": "primitive",
+  "id": "latch",
+  "type": "T:InstanceFixture.Latch",
+  "sources": ["../Latch.cs"],
+  "primitive_kind": "latch",
+  "operations": [
+    { "member": "M:InstanceFixture.Latch.TrySet", "role": "signal", "actions": ["TrySet"] },
+    { "member": "M:InstanceFixture.Latch.WaitAsync", "role": "wait", "wait": "CanWait" }
+  ],
+  "guarantees": ["signals-async"],
+  "verification": { "scenarios": ["latch"], "inspection": "latch-inspection" },
+  "assumptions": [],
+  "limits": ["Synthetic instance fixture; its kind verification is not part of these checks."]
+}

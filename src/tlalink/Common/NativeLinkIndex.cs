@@ -4,7 +4,7 @@ internal sealed record NativeLinkIndex(List<NativeDeclarationSpan> Spans,
     List<FormalLinkDeclaration> Declarations, List<Issue> Diagnostics)
 {
     internal static NativeLinkIndex Load(IEnumerable<FormalTarget> targets, CliOptions options,
-        string work, Dictionary<string, string> pins)
+        string work, Dictionary<string, string> pins, IReadOnlyList<string>? modulePath = null)
     {
         List<NativeDeclarationSpan> spans = [];
         List<FormalLinkDeclaration> declarations = [];
@@ -16,7 +16,7 @@ internal sealed record NativeLinkIndex(List<NativeDeclarationSpan> Spans,
             {
                 string jar = FilePaths.Full(options.Required("jar"));
                 Files.Pin(pins, jar, Files.Hash(jar));
-                ModelScope model = ModelScope.Load(inputs, jar, options.Timeout);
+                ModelScope model = ModelScope.Load(inputs, jar, options.Timeout, modulePath: modulePath);
                 diagnostics.AddRange(model.Diagnostics);
                 foreach (var pin in model.Fingerprints) Files.Pin(pins, pin.Key, pin.Value);
                 declarations.AddRange(model.Declarations);

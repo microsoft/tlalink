@@ -21,6 +21,7 @@ public static class Program
             if (options.Command == "links") return Links.Run(options);
             if (options.Command == "inspect-source") return SourceInventory.Run(options);
             if (options.Command == "report") return EvidenceReport.Run(options);
+            if (options.Command == "check-synchronization") return SynchronizationRegion.Run(options, args);
             if (options.Command == "project-schema") return ProjectEditorSchema.Run(options);
             if (options.Command == "gc") return EvidenceGarbageCollection.Run(options);
             if (options.Command is "check-dafny" or "read-dafny") return DafnyAnalysisBackend.Run(options);
@@ -48,7 +49,12 @@ public static class Program
             if (target != null && options.Many("model").Count != 0 &&
                 !Files.Discover(options.Many("model"), ".tla").SequenceEqual(target.Inputs, FilePaths.Comparer))
                 throw new InputException(ErrorCode.InvalidModelBinding, "--model contradicts the selected correspondence target.");
-            ModelScope models = ModelScope.Load(modelPaths, jar, options.Timeout, annotations: options.Command != "inputs");
+            // Project trace stages pass the search path of their declared primitive uses explicitly.
+            List<string> modulePath = options.Command is "instrument" or "validate-trace"
+                ? options.Many("module-path").Select(p => FilePaths.Full(p)).ToList()
+                : correspondence == null ? [] : Primitives.ModulePath(FilePaths.Full(options.Required("scope")), correspondence, scopePins);
+            ModelScope models = ModelScope.Load(modelPaths, jar, options.Timeout, annotations: options.Command != "inputs",
+                modulePath: modulePath);
             foreach (var pin in scopePins) Files.Pin(models.Fingerprints, pin.Key, pin.Value);
             PinTool(models.Fingerprints);
             Files.Pin(models.Fingerprints, jar, Files.Hash(jar));
@@ -86,13 +92,15 @@ public static class Program
                 languageVersion: options.Get("language-version", CSharpLanguages.Default));
             source.ApplyCorrespondence(correspondence!);
             source.SelectedTargets = new(StringComparer.Ordinal) { alias! };
+            PrimitiveStateCapture? capture = options.Command == "instrument"
+                ? PrimitiveStateCapture.Load(FilePaths.Full(options.Required("scope")), correspondence!, models.Documents, source) : null;
             models.BindSources(source, correspondence!, alias);
             Packet packet = Review.Build(options.Command, source, models.Bindings, models.Diagnostics, models.Fingerprints,
                 options.Command == "review" ? options.Required("step") : null, models.Inventory);
             if (options.Optional("baseline") is string baseline) Baseline(baseline, packet);
             if (options.Optional("snapshot") is string snapshot) Files.WriteNew(snapshot, packet);
             if (options.Command == "instrument")
-                Render(Instrumentation.Generate(source, models.Bindings, packet, options.Required("output")), options);
+                Render(Instrumentation.Generate(source, models.Bindings, packet, options.Required("output"), capture), options);
             else Render(packet, options);
             return packet.LinksStatus switch { "passed" => 0, "failed" => 1, _ => 2 };
         }

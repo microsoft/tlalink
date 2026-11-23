@@ -12,13 +12,16 @@ public static class CommandSummary
             AcceptanceResult acceptance => Acceptance(acceptance, worklist),
             WorkflowRun run => Workflow(run),
             ProjectPlan plan => new ProjectPlanSummary(plan.Kind, plan.Project, plan.Status, plan.AnnotationVersion,
-                plan.MethodSummaries.Select(s => new PlannedMethodSummaryView(s.Scope, s.Summary, s.Method,
-                    s.InspectionStatus, s.InspectionOrigin, s.Boundary,
-                    s.Precondition is { } p ? new(p.Name, p.Scope, p.Kind, p.Location) : null)).ToList(),
+                plan.Primitives.Select(p => new PlannedPrimitiveView(p.Scope, p.Primitive.Id, p.Primitive.PrimitiveKind,
+                    p.Primitive.Type, p.Module, p.Primitive.Operations.Count, p.Primitive.Verification.Scenarios,
+                    p.Primitive.Verification.Inspection, p.InspectionStatus, p.InspectionOrigin, p.Primitive.DependsOn ?? [],
+                    p.Guarantees.Select(g => new GuaranteeSummary(g.Guarantee, g.Status)).ToList(), p.OutstandingGuarantees,
+                    p.Boundary)).ToList(),
+                plan.Regions.Select(r => Region(r.Region, r.Role, r.Stages)).ToList(),
                 plan.CheckCoverage.Select(Coverage).ToList(), plan.Diagnostics,
                 plan.Scenarios.Select(s => new PlannedScenarioSummary(s.Id, s.Stages.Select(stage =>
                     new PlannedStageSummary(stage.Id, stage.Kind, stage.DependsOn, stage.RequestedResources,
-                        stage.Resources, stage.Fingerprint, stage.Stored, stage.MethodSummaries)).ToList())).ToList(),
+                        stage.Resources, stage.Fingerprint, stage.Stored, stage.Primitives, stage.Assumptions)).ToList())).ToList(),
                 plan.ReviewStatus, plan.Boundary),
             SourceInventoryResult inventory => new SourceInventorySummary(inventory.Status, inventory.AnnotationVersion,
                 inventory.SourceCount, inventory.MemberCount, inventory.CallCount, inventory.AwaitCount,
@@ -78,6 +81,8 @@ public static class CommandSummary
                 review.Decision.Disposition, review.Decision.Reviewer, review.Decision.Rationale,
                 review.Decision.Origin), review.Boundary),
             ModelInputsResult inputs => new ModelInputsSummary(inputs.Command, inputs.Status, inputs.Diagnostics),
+            SynchronizationResult synchronization => new SynchronizationSummary(synchronization.Status,
+                Region(synchronization.Region, "stage", []), synchronization.Boundary),
             InstrumentManifest manifest => new InstrumentationSummary(manifest.AnnotationVersion, manifest.Boundary),
             ProjectExpansion expansion => new ProjectExpansionSummary(expansion.Project),
             LinkMaintenanceResult links => new LinkMaintenanceSummary(links.Action, links.Status, links.Target,
@@ -116,16 +121,26 @@ public static class CommandSummary
     private static CoverageSummary Coverage(CheckCoverage c) =>
         new(c.Id, c.Kind, c.Scenario, c.Status, c.Requirements, c.Gaps);
 
+    private static RegionSummary Region(SynchronizationRegionReport region, string role, List<string> stages) =>
+        new(region.Scope, role, stages, region.Status, region.Files.Count, region.Sites,
+            region.Primitives.Select(p => new RegionPrimitiveSummary(p.Id, p.Origin,
+                p.Guarantees.Select(g => new GuaranteeSummary(g.Guarantee, g.Status)).ToList())).ToList(),
+            region.Environments.Select(e => new RegionEnvironmentSummary(e.Id, e.EnvironmentKind, e.LockSafe, e.Obligations,
+                e.Evidence, e.Support)).ToList(), region.Diagnostics, region.Coverage is not { } coverage ? null :
+                new(coverage.Sites.Count(s => s.Status == "bound"), coverage.Sites.Count(s => s.Status == "excluded"),
+                    coverage.Sites.Count(s => s.Status == "unbound"), coverage.Sites.Count(s => s.Status == "unresolved"),
+                    coverage.Instances, coverage.Contracts));
+
     private static AcceptanceSummary Acceptance(AcceptanceResult result, AcceptanceWorklist? worklist)
     {
         AcceptanceSummary summary = new(result.Project, result.Scenario, result.ExecutionStatus,
             result.ArchiveStatus, result.CurrentApplicability, result.AcceptanceStatus,
             result.Requirements.Select(r => new RequirementSummary(r.Id, r.Status, r.Missing)).ToList(),
-            result.Diagnostics, result.CheckCoverage.Select(Coverage).ToList(), result.MethodSummaries,
+            result.Diagnostics, result.CheckCoverage.Select(Coverage).ToList(), result.Primitives,
             result.Reviews.Select(r => new ReviewSummary(r.Obligation, r.Status, r.Decision?.Disposition,
                 r.Decision?.Reviewer, r.Decision?.Rationale, r.Decision?.RecordedAt, r.Decision?.Origin)).ToList(),
             result.NextActions, result.Boundary) { Run = result.Run, ChangedReviewInputs = result.ChangedReviewInputs,
-                PolicyReassessment = result.PolicyReassessment, NextSteps = result.NextSteps };
+                PolicyReassessment = result.PolicyReassessment, NextSteps = result.NextSteps, Assumptions = result.Assumptions };
         return worklist == null ? summary : worklist.Apply(summary);
     }
 
@@ -137,8 +152,8 @@ public static class CommandSummary
         int reused = stages.Count(s => s.Reused);
         return new(run.Project, run.Scenario, run.ExecutionStatus, run.AcceptanceStatus, stages,
             run.Diagnostics, new(reused, stages.Count - reused),
-            run.MethodSummaries.Select(s => new ResolvedMethodSummaryView(s.Scope, s.Summary, s.Method,
-                s.Precondition is { } p ? new(p.Name, p.Scope, p.Kind, p.Location) : null)).ToList());
+            run.Primitives.Select(p => new ResolvedPrimitiveView(p.Scope, p.Primitive.Id, p.Primitive.PrimitiveKind,
+                p.Primitive.Type, p.Module, p.Primitive.Operations.Count)).ToList());
     }
 
     private static GcPlanSummary GarbageCollection(GcPlan plan)

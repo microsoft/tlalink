@@ -17,6 +17,12 @@
     },
     {
       "$ref": "#/$defs/correspondenceScope"
+    },
+    {
+      "$ref": "#/$defs/primitive"
+    },
+    {
+      "$ref": "#/$defs/environment"
     }
   ],
   "$defs": {
@@ -235,6 +241,7 @@
                         "inputs",
                         "tlc",
                         "trace",
+                        "synchronization",
                         "csharp-regression",
                         "dafny-verify",
                         "apalache-typecheck",
@@ -268,7 +275,7 @@
                       ],
                       "default": null,
                       "minimum": 1,
-                      "maximum": 7200
+                      "maximum": 172800
                     },
                     "bindings": {
                       "type": [
@@ -387,7 +394,7 @@
                       ],
                       "default": null
                     },
-                    "method_summaries": {
+                    "primitives": {
                       "type": [
                         "array",
                         "null"
@@ -401,7 +408,7 @@
                           "scope": {
                             "type": "string"
                           },
-                          "bindings": {
+                          "ids": {
                             "type": "array",
                             "items": {
                               "type": [
@@ -416,12 +423,50 @@
                         },
                         "required": [
                           "scope",
-                          "bindings"
+                          "ids"
                         ],
                         "additionalProperties": false
                       },
                       "default": null,
+                      "minItems": 1,
                       "maxItems": 1000
+                    },
+                    "fairness": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": [
+                          "object",
+                          "null"
+                        ],
+                        "properties": {
+                          "kind_instance": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "default": null
+                          },
+                          "operator": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "default": null
+                          },
+                          "assumption": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "default": null
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "default": null
                     }
                   },
                   "required": [
@@ -441,7 +486,7 @@
                         "timeout_seconds": {
                           "type": "null",
                           "minimum": 1,
-                          "maximum": 7200
+                          "maximum": 172800
                         },
                         "resources": {
                           "type": "null"
@@ -456,7 +501,7 @@
                         "timeout_seconds": {
                           "type": "integer",
                           "minimum": 1,
-                          "maximum": 7200
+                          "maximum": 172800
                         },
                         "profile": {
                           "type": "null"
@@ -735,6 +780,7 @@
                   "inputs",
                   "tlc",
                   "trace",
+                  "synchronization",
                   "csharp-regression",
                   "dafny-verify",
                   "apalache-typecheck",
@@ -768,7 +814,7 @@
                 ],
                 "default": null,
                 "minimum": 1,
-                "maximum": 7200
+                "maximum": 172800
               },
               "bindings": {
                 "type": [
@@ -887,7 +933,7 @@
                 ],
                 "default": null
               },
-              "method_summaries": {
+              "primitives": {
                 "type": [
                   "array",
                   "null"
@@ -901,7 +947,7 @@
                     "scope": {
                       "type": "string"
                     },
-                    "bindings": {
+                    "ids": {
                       "type": "array",
                       "items": {
                         "type": [
@@ -916,12 +962,50 @@
                   },
                   "required": [
                     "scope",
-                    "bindings"
+                    "ids"
                   ],
                   "additionalProperties": false
                 },
                 "default": null,
+                "minItems": 1,
                 "maxItems": 1000
+              },
+              "fairness": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "kind_instance": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "default": null
+                    },
+                    "operator": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "default": null
+                    },
+                    "assumption": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "default": null
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "default": null
               }
             },
             "required": [
@@ -941,7 +1025,7 @@
                   "timeout_seconds": {
                     "type": "null",
                     "minimum": 1,
-                    "maximum": 7200
+                    "maximum": 172800
                   },
                   "resources": {
                     "type": "null"
@@ -956,7 +1040,7 @@
                   "timeout_seconds": {
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 7200
+                    "maximum": 172800
                   },
                   "profile": {
                     "type": "null"
@@ -1236,6 +1320,7 @@
                   "inputs",
                   "tlc",
                   "trace",
+                  "synchronization",
                   "csharp-regression",
                   "dafny-verify",
                   "apalache-typecheck",
@@ -1252,7 +1337,7 @@
               "timeout_seconds": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 7200
+                "maximum": 172800
               },
               "resources": {
                 "type": [
@@ -1457,11 +1542,14 @@
               }
             ]
           },
-          "minItems": 1,
+          "minItems": 0,
           "maxItems": 1000
         },
         "omissions": {
-          "type": "array",
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {
             "type": [
               "object",
@@ -1518,72 +1606,363 @@
             ],
             "additionalProperties": false
           },
+          "default": null,
           "maxItems": 1000
         },
-        "method_summaries": {
+        "synchronization": {
           "type": [
-            "array",
+            "object",
             "null"
           ],
+          "properties": {
+            "primitives": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "minItems": 0,
+              "maxItems": 1000
+            },
+            "region": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "default": null,
+              "minItems": 1,
+              "maxItems": 1000
+            },
+            "environments": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "default": null,
+              "minItems": 0,
+              "maxItems": 1000
+            },
+            "locks": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "may_hold": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "default": null
+                  },
+                  "indexed_by": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "default": null
+                  }
+                },
+                "required": [
+                  "field"
+                ],
+                "additionalProperties": false
+              },
+              "default": null,
+              "minItems": 0,
+              "maxItems": 1000
+            },
+            "spawns": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "site": {
+                    "type": "object",
+                    "properties": {
+                      "symbol": {
+                        "type": "string"
+                      },
+                      "syntax": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      },
+                      "tokens": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      },
+                      "match": {
+                        "type": "integer",
+                        "default": 1
+                      },
+                      "expected_matches": {
+                        "type": "integer",
+                        "default": 1
+                      }
+                    },
+                    "required": [
+                      "symbol"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "disposition": {
+                    "type": "string",
+                    "enum": [
+                      "joined",
+                      "detached"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "site",
+                  "disposition",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              "default": null,
+              "minItems": 0,
+              "maxItems": 1000
+            },
+            "waits": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "site": {
+                    "type": "object",
+                    "properties": {
+                      "symbol": {
+                        "type": "string"
+                      },
+                      "syntax": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      },
+                      "tokens": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "default": null
+                      },
+                      "match": {
+                        "type": "integer",
+                        "default": 1
+                      },
+                      "expected_matches": {
+                        "type": "integer",
+                        "default": 1
+                      }
+                    },
+                    "required": [
+                      "symbol"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "join",
+                      "timer",
+                      "yield",
+                      "external"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "site",
+                  "kind",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              "default": null,
+              "minItems": 0,
+              "maxItems": 1000
+            }
+          },
+          "required": [
+            "primitives"
+          ],
+          "additionalProperties": false,
+          "default": null
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "annotation_version",
+        "targets"
+      ],
+      "additionalProperties": false
+    },
+    "primitive": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 4
+        },
+        "kind": {
+          "type": "string",
+          "const": "primitive"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,100}$",
+          "not": {
+            "enum": [
+              ".",
+              ".."
+            ]
+          }
+        },
+        "type": {
+          "type": "string"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "maxItems": 1000,
+          "uniqueItems": true
+        },
+        "primitive_kind": {
+          "type": "string",
+          "enum": [
+            "register",
+            "latch",
+            "once",
+            "admission-gate",
+            "counting-resource",
+            "channel",
+            "cancellation-source",
+            "custom"
+          ]
+        },
+        "operations": {
+          "type": "array",
           "items": {
             "type": [
               "object",
               "null"
             ],
             "properties": {
-              "binding": {
+              "member": {
                 "type": "string"
               },
-              "abstraction": {
+              "role": {
                 "type": "string",
                 "enum": [
-                  "pure",
-                  "atomic"
+                  "create",
+                  "query",
+                  "acquire",
+                  "try-acquire",
+                  "release",
+                  "signal",
+                  "wait",
+                  "close",
+                  "complete",
+                  "enqueue",
+                  "dequeue",
+                  "pure"
                 ]
               },
-              "sources": {
-                "type": "array",
+              "actions": {
+                "type": [
+                  "array",
+                  "null"
+                ],
                 "items": {
                   "type": [
                     "string",
                     "null"
                   ]
                 },
-                "minItems": 1,
-                "maxItems": 1000,
-                "uniqueItems": true
+                "default": null
               },
-              "inspection": {
-                "type": "string"
-              },
-              "assumptions": {
-                "type": "array",
-                "items": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                }
-              },
-              "limits": {
-                "type": "array",
+              "fails": {
+                "type": [
+                  "array",
+                  "null"
+                ],
                 "items": {
                   "type": [
                     "string",
                     "null"
                   ]
                 },
-                "minItems": 1
+                "default": null
               },
-              "depends_on": {
-                "type": "array",
-                "items": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "uniqueItems": true
+              "wait": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "default": null
               },
               "precondition": {
                 "type": [
@@ -1591,29 +1970,293 @@
                   "null"
                 ],
                 "default": null
+              },
+              "inline_callbacks": {
+                "type": "boolean",
+                "default": false
               }
             },
             "required": [
-              "binding",
-              "abstraction",
-              "sources",
-              "inspection",
-              "assumptions",
-              "limits",
-              "depends_on"
+              "member",
+              "role"
             ],
             "additionalProperties": false
           },
-          "default": null,
+          "minItems": 1,
           "maxItems": 1000
+        },
+        "verification": {
+          "type": "object",
+          "properties": {
+            "scenarios": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "inspection": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scenarios",
+            "inspection"
+          ],
+          "additionalProperties": false
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "limits": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "minItems": 1
+        },
+        "module": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "guarantees": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "enum": [
+              "signals-async",
+              "non-blocking",
+              "fifo-waiters",
+              "cancellable-wait"
+            ]
+          },
+          "default": null,
+          "uniqueItems": true
+        },
+        "depends_on": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default": null,
+          "uniqueItems": true
+        },
+        "state_mapping": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default": null
+        },
+        "state_lock": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "$schema": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
         }
       },
       "required": [
         "schema_version",
         "kind",
-        "annotation_version",
-        "targets",
-        "omissions"
+        "id",
+        "type",
+        "sources",
+        "primitive_kind",
+        "operations",
+        "verification",
+        "assumptions",
+        "limits"
+      ],
+      "additionalProperties": false
+    },
+    "environment": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 4
+        },
+        "kind": {
+          "type": "string",
+          "const": "environment"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,100}$",
+          "not": {
+            "enum": [
+              ".",
+              ".."
+            ]
+          }
+        },
+        "environment_kind": {
+          "type": "string",
+          "enum": [
+            "interface",
+            "consumer"
+          ]
+        },
+        "types": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "member": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "create",
+                  "query",
+                  "acquire",
+                  "try-acquire",
+                  "release",
+                  "signal",
+                  "wait",
+                  "close",
+                  "complete",
+                  "enqueue",
+                  "dequeue",
+                  "pure",
+                  "submit"
+                ]
+              },
+              "actions": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "default": null
+              },
+              "wait": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "default": null
+              },
+              "lock_safe": {
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "required": [
+              "member",
+              "role"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 1000
+        },
+        "obligations": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 100
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "maxItems": 100,
+          "uniqueItems": true
+        },
+        "module": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "$schema": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "environment_kind",
+        "types",
+        "operations",
+        "obligations",
+        "evidence"
       ],
       "additionalProperties": false
     }

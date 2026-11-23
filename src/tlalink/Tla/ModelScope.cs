@@ -4,17 +4,19 @@ public sealed class ModelScope
 {
     public List<ModelBinding> Bindings { get; } = [];
     public List<FormalLinkDeclaration> Declarations { get; } = [];
+    public List<FormalInstanceDeclaration> Instances { get; } = [];
     public List<Issue> Diagnostics { get; } = [];
     public List<TlaDocument> Documents { get; } = [];
     public List<Endpoint> Inventory { get; } = [];
     public Dictionary<string, string> Fingerprints { get; } = new(FilePaths.Comparer);
 
-    public static ModelScope Load(List<string> paths, string jar, int timeout, bool annotations = true)
+    public static ModelScope Load(List<string> paths, string jar, int timeout, bool annotations = true,
+        IReadOnlyList<string>? modulePath = null)
     {
         ModelScope result = new();
         foreach (string path in paths.Distinct(FilePaths.Comparer))
         {
-            TlaDocument document = TlaBackend.Parse(path, jar, timeout);
+            TlaDocument document = TlaBackend.Parse(path, jar, timeout, modulePath);
             result.Documents.Add(document);
             result.Inventory.AddRange(document.Endpoints.Select(endpoint => new Endpoint(endpoint.Name, endpoint.Scope, endpoint.Kind,
                 new(path, endpoint.Line, endpoint.EndLine, endpoint.Column), document.Text[endpoint.Start..endpoint.End])));
@@ -26,16 +28,18 @@ public sealed class ModelScope
             List<(int Start, int End, string Content)> comments = FormalComments(document.Text);
             try
             {
-                result.Declarations.AddRange(FormalCorrespondence.Attach(path, document.Text,
-                    document.Endpoints.Select(e => new NativeDeclarationSpan(
-                        new(e.Name, e.Scope, e.Kind, new(path, e.Line, e.EndLine, e.Column),
-                            document.Text[e.Start..e.End]), e.Start, e.End,
-                        e.Kind == "label" ? document.Endpoints.Single(o => o.Kind == "operator" && o.Name == e.Name).Arity : e.Arity)), comments));
+                result.Declarations.AddRange(FormalCorrespondence.Attach(path, document.Text, Spans(document, path), comments, instances: true));
+                result.Instances.AddRange(FormalCorrespondence.Instances(path, document.Text, document.Instances, comments));
             }
             catch (InputException error) { result.Diagnostics.Add(new(error.Code ?? ErrorCode.InvalidModelBinding, error.Message)); }
         }
         return result;
     }
+
+    /// <summary>SANY declarations as attachment spans; a label carries the arity of its translated operator.</summary>
+    internal static List<NativeDeclarationSpan> Spans(TlaDocument document, string path) => document.Endpoints.Select(e => new NativeDeclarationSpan(
+        new(e.Name, e.Scope, e.Kind, new(path, e.Line, e.EndLine, e.Column), document.Text[e.Start..e.End]), e.Start, e.End,
+        e.Kind == "label" ? document.Endpoints.Single(o => o.Kind == "operator" && o.Name == e.Name).Arity : e.Arity)).ToList();
 
     internal static List<(int Start, int End, string Content)> FormalComments(string text)
     {

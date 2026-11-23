@@ -1,0 +1,16 @@
+{
+  "schema_version": 4,
+  "kind": "correspondence-scope",
+  "annotation_version": 4,
+  "targets": [],
+  "synchronization": {
+    "region": ["Connection.cs"],
+    "primitives": [],
+    "environments": [],
+    "locks": [
+      { "field": "F:SyncFixture.Connection.stateLock", "may_hold": [] }
+    ],
+    "spawns": [],
+    "waits": []
+  }
+}

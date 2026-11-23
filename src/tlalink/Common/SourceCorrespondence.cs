@@ -10,7 +10,7 @@ public sealed record FormalTarget(string Id, string Language, List<string> Input
 public sealed record OmissionRule(string Id, List<string> Targets, List<string> Calls, string Reason,
     List<string> Assumptions);
 public sealed record CorrespondenceConfiguration(int SchemaVersion, string Kind, int AnnotationVersion,
-    List<FormalTarget> Targets, List<OmissionRule> Omissions, List<MethodSummary>? MethodSummaries = null);
+    List<FormalTarget> Targets, List<OmissionRule>? Omissions = null, SynchronizationDeclaration? Synchronization = null);
 public sealed record SourceDisposition(string Id, string Target, string Status, string Reason, Place Location,
     List<string> Assumptions, List<Boundary> Boundaries);
 public sealed record OmissionRuleMatch(string Id, string Target, int MatchedSites);
@@ -27,14 +27,17 @@ public static class CorrespondenceInputs
         CorrespondenceConfiguration config = System.Text.Json.JsonSerializer.Deserialize<CorrespondenceConfiguration>(
             Files.ReadPinned(path, pins), ProjectInputs.Json)
             ?? throw new InputException(ErrorCode.InvalidAnnotation, "Empty correspondence scope.");
+        List<OmissionRule> omissions = config.Omissions ?? [];
+        config = config with { Omissions = omissions };
         if (config.SchemaVersion != Schema.Version || config.Kind != "correspondence-scope")
             throw new InputException(ErrorCode.InvalidAnnotation, "Expected current correspondence-scope.");
         Markup.RequireVersion(config.AnnotationVersion);
-        if (config.Targets.Count is 0 or > 1000 || config.Omissions.Count > 1000 ||
-            config.Targets.Any(t => t is null) || config.Omissions.Any(r => r is null))
-            throw new InputException(ErrorCode.InvalidAnnotation, "Correspondence scope requires 1..1000 targets and at most 1000 omission rules.");
+        if (config.Targets.Count > 1000 || config.Targets.Count == 0 && config.Synchronization?.Region == null ||
+            omissions.Count > 1000 || config.Targets.Any(t => t is null) || omissions.Any(r => r is null))
+            throw new InputException(ErrorCode.InvalidAnnotation,
+                "Correspondence scope requires 1..1000 targets (none only beside a synchronization region) and at most 1000 omission rules.");
         ProjectInputs.Unique(config.Targets.Select(t => t.Id), "formal targets");
-        ProjectInputs.Unique(config.Omissions.Select(t => t.Id), "omission rules");
+        ProjectInputs.Unique(omissions.Select(t => t.Id), "omission rules");
         string root = Path.GetDirectoryName(path)!;
         List<FormalTarget> targets = [];
         foreach (FormalTarget target in config.Targets)
@@ -63,7 +66,7 @@ public static class CorrespondenceInputs
             else if (target.RequiredBindings != null)
                 throw new InputException(ErrorCode.InvalidAnnotation, "Dafny/P select binding IDs in their native configuration, not twice in the target.");
         }
-        foreach (OmissionRule rule in config.Omissions)
+        foreach (OmissionRule rule in omissions)
         {
             if (string.IsNullOrWhiteSpace(rule.Reason) || rule.Targets.Count is 0 or > 1000 || rule.Calls.Count is 0 or > 1000 ||
                 rule.Assumptions.Count is 0 or > 1000 || rule.Assumptions.Any(string.IsNullOrWhiteSpace) ||
@@ -74,7 +77,7 @@ public static class CorrespondenceInputs
                 throw new InputException(ErrorCode.InvalidAnnotation, "Omissions require exact method declaration IDs, explicit unique targets, a reason and boundary assumptions.");
         }
         config = config with { Targets = targets };
-        MethodSummaries.Validate(config);
+        SynchronizationRegion.Validate(config.Synchronization, root);
         return config;
     }
 
@@ -196,7 +199,7 @@ public sealed partial class CSharpScope
                 (binding.Tag.Options.ContainsKey("point") || binding.Tag.Options.ContainsKey("type")))
                 Diagnostics.Add(new(ErrorCode.InvalidInstrumentation, "No capture adapter for target: " + binding.Model, binding.Endpoint.Location));
         }
-        foreach (OmissionRule rule in config.Omissions)
+        foreach (OmissionRule rule in config.Omissions ?? [])
         {
             if (Bindings.Any(b => b.BindingId == rule.Id) || exclusions.Any(e => e.Declaration.Id == rule.Id))
                 Diagnostics.Add(new(ErrorCode.DuplicateBinding, "Omission rule conflicts with disposition ID: " + rule.Id));
@@ -246,7 +249,7 @@ public sealed partial class CSharpScope
                 string? id = method.OriginalDefinition.GetDocumentationCommentId();
                 foreach (string alias in aliases)
                 {
-                    List<OmissionRule> rules = config.Omissions.Where(r => r.Targets.Contains(alias, StringComparer.Ordinal) &&
+                    List<OmissionRule> rules = (config.Omissions ?? []).Where(r => r.Targets.Contains(alias, StringComparer.Ordinal) &&
                         ruleMethods[r.Id].Contains(method.OriginalDefinition)).ToList();
                     if (rules.Count == 0 || exclusions.Any(e => e.Path == tree.FilePath &&
                         e.Node.Span.Contains(statement.Span) && e.Declaration.From.Contains(alias, StringComparer.Ordinal))) continue;
@@ -260,7 +263,7 @@ public sealed partial class CSharpScope
                     CheckOmittedEffects(statement, semantics, tree.FilePath, text, alias);
                 }
             }
-            foreach (OmissionRule rule in config.Omissions)
+            foreach (OmissionRule rule in config.Omissions ?? [])
                 foreach (string alias in rule.Targets)
                     OmissionMatches.Add(new(rule.Id, alias,
                         Dispositions.Count(d => d.Id == rule.Id && d.Target == alias && d.Status == "rule-omitted")));

@@ -4,13 +4,14 @@ internal static class WorkflowInputRoles
 {
     internal static HashSet<string> ReviewOnly(string path, AnalysisProject project, AcceptancePolicy policy,
         WorkflowRun run, string directory, IReadOnlyDictionary<string, IAnalysisResult> evidence,
-        List<SelectedMethodSummary> summaries, HashSet<string>? policyInputs = null)
+        List<SelectedPrimitive> primitives, HashSet<string>? policyInputs = null)
     {
         HashSet<string> result = new(FilePaths.Comparer);
         if (run.ExecutionStatus != "completed" || evidence.Count != run.Stages.Count) return result;
         result.UnionWith(policyInputs ?? []);
         HashSet<string> reviewIds = policy.Requirements.Where(r => r.Scenario == run.Scenario)
-            .SelectMany(r => r.Reviews ?? []).Concat(summaries.Select(s => s.Summary.Inspection))
+            .SelectMany(r => r.Reviews ?? []).Concat(primitives.Where(p => !p.Primitive.Verification.Scenarios.Contains(run.Scenario))
+                .Select(p => p.Primitive.Verification.Inspection))
             .ToHashSet(StringComparer.Ordinal);
         foreach (ReviewObligation review in project.Obligations.Where(o => reviewIds.Contains(o.Id)))
             foreach (string input in review.Inputs) result.Add(ProjectInputs.Resolve(path, input));
@@ -28,13 +29,7 @@ internal static class WorkflowInputRoles
                 .Concat(new[] { stage.Config, stage.Bindings, stage.Scope }.OfType<string>()))
                 execution.Add(ProjectInputs.Resolve(path, input));
         }
-        foreach (SelectedMethodSummary summary in summaries)
-        {
-            execution.Add(summary.Scope);
-            execution.UnionWith(summary.Summary.Sources.Select(p => ProjectInputs.Resolve(summary.Scope, p)));
-            execution.UnionWith(CorrespondenceInputs.Target(summary.Configuration,
-                Markup.Name(summary.Summary.Binding).Alias, "tla").Inputs);
-        }
+        foreach (SelectedPrimitive primitive in primitives) execution.UnionWith(Primitives.Inputs(primitive));
         foreach (WorkflowStageResult stage in run.Stages)
         {
             if (evidence[stage.Id] is IInputEvidence captured && captured.Fingerprints.Count > 0)

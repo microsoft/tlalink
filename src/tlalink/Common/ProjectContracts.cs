@@ -16,7 +16,8 @@ public sealed record CompilerProfile(string TargetFramework, string LanguageVers
 public sealed record AnalysisStage(string Id, string Kind, List<string> DependsOn, int TimeoutSeconds,
     string? Bindings = null, List<string>? Sources = null, List<string>? Models = null,
     string? Config = null, List<string>? Arguments = null, TlcResources? Resources = null, int? Fingerprint = null,
-    string? Scope = null, string? Target = null, List<MethodSummaryUse>? MethodSummaries = null);
+    string? Scope = null, string? Target = null, List<PrimitiveUse>? Primitives = null,
+    List<FairnessAssumption>? Fairness = null);
 public sealed record AnalysisScenario(string Id, List<AnalysisStage> Stages);
 public enum ReviewOrigin { Human, Agent }
 public sealed record ReviewObligation(string Id, string Claim, List<string> Assumptions, List<string> Inputs,
@@ -27,7 +28,7 @@ public sealed record CheckCoverage(string Id, string Kind, string Scenario, stri
 public sealed record ReviewDecision(int SchemaVersion, string Kind, string Obligation, string ObligationSha256,
     string Disposition, string Reviewer, string Rationale, DateTimeOffset RecordedAt,
     Dictionary<string, string> Fingerprints, List<string> Evidence, ReviewOrigin Origin = ReviewOrigin.Human,
-    MethodSummarySupport? SummarySupport = null);
+    PrimitiveSupport? PrimitiveSupport = null);
 public sealed record AnalysisProject(int SchemaVersion, string Kind, string Id, ProjectTools Tools,
     CompilerProfile Compiler, string Requirements, List<AnalysisScenario> Scenarios,
     List<ReviewObligation> Obligations, string ReviewDirectory, List<CheckObligation>? CheckObligations = null,
@@ -64,13 +65,14 @@ public sealed class WorkflowRun
     public Dictionary<string, string> Fingerprints { get; init; } = new(FilePaths.Comparer);
     public Dictionary<string, string> Artifacts { get; init; } = new(StringComparer.Ordinal);
     public List<Issue> Diagnostics { get; init; } = [];
-    public List<MethodSummaryResolution> MethodSummaries { get; init; } = [];
+    public List<PrimitiveResolution> Primitives { get; init; } = [];
+    public List<StageAssumptions> Assumptions { get; init; } = [];
 }
 
 public static class ProjectInputs
 {
     internal static readonly string[] StageKinds = [
-        "inspect", "verify", "oracle", "inputs", "tlc", "trace", "csharp-regression", "dafny-verify",
+        "inspect", "verify", "oracle", "inputs", "tlc", "trace", "synchronization", "csharp-regression", "dafny-verify",
         "apalache-typecheck", "apalache-check", "apalache-inductive",
         "p-inspect", "p-pchecker", "p-pex", "p-psym", "p-pverifier", "p-pobserve"
     ];
@@ -128,8 +130,9 @@ public static class ProjectInputs
                     if (stage.Fingerprint != null && (stage.Kind != "tlc" || stage.Fingerprint is < 0 or > TlcResultStore.MaxFingerprint))
                         throw new InputException(ErrorCode.InvalidWorkflowInput, "Fingerprint functions are supported only on tlc stages, as an index 0.." + TlcResultStore.MaxFingerprint + ": " + stage.Id);
                     if (stage.Kind is "tlc" or "trace") _ = TlcResources.Effective(stage.Kind, stage.Resources);
+                    ModelAssumptions.Validate(stage);
                     if (!StageKinds.Contains(stage.Kind, StringComparer.Ordinal) ||
-                        stage.TimeoutSeconds is < 1 or > 7200)
+                        stage.TimeoutSeconds < 1 || stage.TimeoutSeconds > ProjectWorkflow.MaxStageTimeoutSeconds)
                         throw new InputException(ErrorCode.WorkflowPrerequisiteMissing, "Unsupported stage kind or timeout: " + stage.Id);
                     Unique(stage.DependsOn, "dependencies");
                     if (stage.DependsOn.Any(d => !scenario.Stages.Any(s => s.Id == d) || d == stage.Id))
@@ -195,6 +198,14 @@ public static class ProjectInputs
                         if (manifest.Models.Count > 0 && project.Tools.Jar == null)
                             throw new InputException(ErrorCode.InvalidWorkflowInput, "Selected TLA+ targets require a pinned JAR.");
                     }
+                    else if (stage.Kind == "synchronization")
+                    {
+                        if (stage.Scope == null || stage.Target != null || stage.Bindings != null || stage.Models != null ||
+                            stage.Sources != null || stage.Config != null || stage.Arguments != null || stage.Primitives != null)
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "Synchronization stages take exactly one correspondence scope.");
+                        if (CorrespondenceInputs.Load(Resolve(path, stage.Scope), new(FilePaths.Comparer)).Synchronization?.Region == null)
+                            throw new InputException(ErrorCode.InvalidWorkflowInput, "Synchronization stage scopes must declare synchronization.region.");
+                    }
                     else if (stage.Models is not { Count: > 0 } || project.Tools.Jar == null)
                         throw new InputException(ErrorCode.InvalidWorkflowInput, "TLA stages require explicit models and a pinned JAR.");
                     if (stage.Kind is "tlc" or "trace" && (stage.Config == null || stage.Models?.Count != 1))
@@ -210,8 +221,8 @@ public static class ProjectInputs
                         if (!target.Inputs.SequenceEqual(stage.Models!.Select(p => Resolve(path, p)), FilePaths.Comparer))
                             throw new InputException(ErrorCode.InvalidWorkflowInput, "Trace model contradicts the selected correspondence target.");
                     }
-                    else if (stage.Scope != null || stage.Target != null)
-                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Only trace stages take scope/target directly; other native stages use their own configuration.");
+                    else if (stage.Kind != "synchronization" && (stage.Scope != null || stage.Target != null))
+                        throw new InputException(ErrorCode.InvalidWorkflowInput, "Only trace and synchronization stages take a scope directly; other native stages use their own configuration.");
                     if (stage.Kind is "inputs" or "tlc" or "trace" && stage.Bindings != null ||
                         stage.Kind is "inputs" or "tlc" && (stage.Sources != null || stage.Arguments != null) ||
                         stage.Kind == "inputs" && stage.Config != null)
@@ -236,7 +247,8 @@ public static class ProjectInputs
                 throw new InputException(ErrorCode.InvalidWorkflowInput, "Review obligations require a claim, explicit inputs and nonempty assumptions.");
             foreach (string input in obligation.Inputs) _ = Resolve(path, input);
         }
-        MethodSummaries.Select(path, project, project.Scenarios.SelectMany(s => s.Stages));
+        Primitives.Select(path, project, project.Scenarios.SelectMany(s => s.Stages));
+        SynchronizationWorkflow.ValidateEvidence(path, project);
         if (string.IsNullOrWhiteSpace(project.ReviewDirectory))
             throw new InputException(ErrorCode.InvalidWorkflowInput, "A review directory must be explicitly selected.");
         if (project.ResultStore != null && string.IsNullOrWhiteSpace(project.ResultStore))

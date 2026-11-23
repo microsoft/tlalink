@@ -40,12 +40,13 @@ public static partial class EvidenceGarbageCollection
             string jar = ProjectInputs.Resolve(path, project.Tools.Jar.Path);
             if (!Files.Hash(jar).Equals(project.Tools.Jar.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new InputException(ErrorCode.InvalidRetention, "Result project's TLA+ tool pin differs: " + jar);
-            if (!parsed.TryGetValue(model, out TlaDocument? document))
+            List<string> modulePath = Primitives.ModulePath(path, project, stage);
+            if (!parsed.TryGetValue(ProjectWorkflow.ParseKey(model, modulePath), out TlaDocument? document))
             {
-                document = TlaBackend.Parse(model, jar, stage.TimeoutSeconds);
+                document = TlaBackend.Parse(model, jar, stage.TimeoutSeconds, modulePath);
                 if (document.Diagnostics.Any(d => d.Severity == "error" || d.Is(ErrorCode.StaleTranslation, ErrorCode.ToolFailure)))
                     throw new InputException(ErrorCode.InvalidRetention, "Cannot establish current TLC closure: " + model);
-                parsed.Add(model, document);
+                parsed.Add(ProjectWorkflow.ParseKey(model, modulePath), document);
             }
             TlcResultKey key = TlcResultStore.Key(model, ProjectInputs.Resolve(path, stage.Config), jar,
                 document.DependencyFingerprints, stage.Fingerprint ?? 0);

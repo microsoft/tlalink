@@ -22,6 +22,46 @@ public enum ErrorCode
     SourceObligationIncomplete,
     [DiagnosticInfo("SP001", IssueSeverity.Error)]
     InvalidSourcePreparation,
+    [DiagnosticInfo("SR100", IssueSeverity.Error)]
+    RawSynchronization,
+    [DiagnosticInfo("SR101", IssueSeverity.Error)]
+    UndeclaredOperation,
+    [DiagnosticInfo("SR102", IssueSeverity.Error)]
+    UndeclaredWait,
+    [DiagnosticInfo("SR103", IssueSeverity.Error)]
+    LockRegionViolation,
+    [DiagnosticInfo("SR104", IssueSeverity.Error)]
+    UndeclaredSpawn,
+    [DiagnosticInfo("SR105", IssueSeverity.Error)]
+    StaleSynchronizationDeclaration,
+    [DiagnosticInfo("SR106", IssueSeverity.Error)]
+    GuaranteeCheckFailed,
+    [DiagnosticInfo("SR107", IssueSeverity.Error)]
+    UndeclaredInstance,
+    [DiagnosticInfo("SR108", IssueSeverity.Error)]
+    UnboundSite,
+    [DiagnosticInfo("SR109", IssueSeverity.Error)]
+    ContractMismatch,
+    [DiagnosticInfo("SR110", IssueSeverity.Error)]
+    StaleInstance,
+    [DiagnosticInfo("SR111", IssueSeverity.Error)]
+    UnresolvedInstanceReceiver,
+    [DiagnosticInfo("SR112", IssueSeverity.Error)]
+    MissingFairness,
+    [DiagnosticInfo("SR113", IssueSeverity.Error)]
+    UnusedFairness,
+    [DiagnosticInfo("SR114", IssueSeverity.Error)]
+    UnresolvedFairness,
+    [DiagnosticInfo("SR115", IssueSeverity.Error)]
+    SymmetryWithLiveness,
+    [DiagnosticInfo("SR116", IssueSeverity.Error)]
+    InvalidStateMapping,
+    [DiagnosticInfo("SR117", IssueSeverity.Error)]
+    EffectfulStateMapping,
+    [DiagnosticInfo("SR118", IssueSeverity.Error)]
+    SynchronousWaitProbe,
+    [DiagnosticInfo("SR200", IssueSeverity.Error)]
+    SynchronizationRegionIncomplete,
     [DiagnosticInfo("RP001", IssueSeverity.Error)]
     InvalidReportInput,
     [DiagnosticInfo("RP002", IssueSeverity.Warning)]

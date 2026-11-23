@@ -1,0 +1,34 @@
+{
+  "$schema": "../../../../schemas/project.schema.json",
+  "schema_version": 4,
+  "kind": "primitive",
+  "id": "permit-gate",
+  "type": "T:PrimitivesExample.PermitGate",
+  "sources": ["..\\..\\src\\PermitGate.cs"],
+  "primitive_kind": "counting-resource",
+  "state_lock": "F:PrimitivesExample.PermitGate.sync",
+  "state_mapping": { "available": "this.available", "waiting": "this.waiters.Count", "closed": "this.closed" },
+  "operations": [
+    { "member": "M:PrimitivesExample.PermitGate.#ctor(System.Int32)", "role": "create" },
+    { "member": "P:PrimitivesExample.PermitGate.Available", "role": "query" },
+    { "member": "M:PrimitivesExample.PermitGate.TryAcquire", "role": "try-acquire", "actions": ["TryAcquire"] },
+    { "member": "M:PrimitivesExample.PermitGate.AcquireAsync", "role": "wait", "actions": ["Acquire", "Resume"], "wait": "CanResume" },
+    { "member": "M:PrimitivesExample.PermitGate.Release", "role": "release", "actions": ["Release"], "precondition": "ReleaseEnabled" },
+    { "member": "M:PrimitivesExample.PermitGate.Close", "role": "close", "actions": ["Close"] }
+  ],
+  "guarantees": ["signals-async", "fifo-waiters"],
+  "verification": {
+    "scenarios": ["permit-gate"],
+    "inspection": "permit-gate-inspection"
+  },
+  "assumptions": [
+    "Each successful TryAcquire or completed AcquireAsync is paired with exactly one Release by its owner.",
+    "A PermitGate instance is constructed with a positive capacity and never shared across processes."
+  ],
+  "limits": [
+    "Acquire models the enqueue or immediate grant; Resume models completion of the returned task, including failure after Close.",
+    "state_mapping has no field for granted: a handed-over permit whose waiter has not resumed is not visible in PermitGate fields, so traces do not compare it.",
+    "No claim about scheduling delay between a handoff and the waiter's continuation.",
+    "Inspection is not machine-checked implementation refinement; the listed guarantees are outstanding obligations."
+  ]
+}

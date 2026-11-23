@@ -17,31 +17,28 @@ public interface IArtifactEvidence : IInputEvidence
 }
 public sealed record RequirementResult(string Id, string Status, List<string> Missing);
 public sealed record ReviewResult(string Obligation, string Status, ReviewDecision? Decision);
-public sealed record AcceptanceMethodSummary(string Scope, string Binding, string Abstraction,
-    List<string> Assumptions, List<string> Limits, string Inspection, string InspectionStatus, string Boundary);
 public sealed record AcceptanceResult(int SchemaVersion, string Kind, string Project, string Scenario,
     string Run, string RunSha256, string ExecutionStatus, string ArchiveStatus, string CurrentApplicability,
     string AcceptanceStatus, List<RequirementResult> Requirements, List<Issue> Diagnostics,
-    List<CheckCoverage> CheckCoverage, List<AcceptanceMethodSummary> MethodSummaries,
+    List<CheckCoverage> CheckCoverage, List<AcceptancePrimitive> Primitives,
     List<ReviewResult> Reviews, List<string> NextActions, string Boundary)
 {
     public List<string> ChangedReviewInputs { get; init; } = [];
     public WorkflowPolicyReassessment? PolicyReassessment { get; init; }
     public List<WorkflowNextStep> NextSteps { get; init; } = [];
+    public List<StageAssumptions> Assumptions { get; init; } = [];
 }
 public sealed record WorkflowNextStep(string Kind, string? Stage, string Reason,
     List<string> Arguments, string WorkingDirectory);
-public sealed record PlannedMethodSummary(string Scope, MethodSummary Summary, string Method,
-    Endpoint Implementation, Endpoint Specification, Endpoint? Precondition, string InspectionStatus,
-    ReviewOrigin InspectionOrigin, string Boundary);
 public sealed record StoredOutcome(int Fingerprint, string Outcome, double DurationSeconds, DateTimeOffset StoredAt);
 public sealed record PlannedStage(string Id, string Kind, List<string> DependsOn, int TimeoutSeconds,
-    List<MethodSummaryUse>? MethodSummaries, TlcResources? RequestedResources, TlcResources? Resources,
-    string Capability, int? Fingerprint, List<StoredOutcome>? Stored, List<AnalysisRequirement> Requirements);
+    List<PrimitiveUse>? Primitives, TlcResources? RequestedResources, TlcResources? Resources,
+    string Capability, int? Fingerprint, List<StoredOutcome>? Stored, List<AnalysisRequirement> Requirements,
+    StageAssumptions? Assumptions = null);
 public sealed record PlannedScenario(string Id, List<PlannedStage> Stages);
 public sealed record PlannedReview(string Id, ReviewOrigin Origin, string ClaimSha256, string Status);
 public sealed record ProjectPlan(int SchemaVersion, string Kind, string Project, string Status,
-    CompilerProfile Compiler, int AnnotationVersion, List<PlannedMethodSummary> MethodSummaries,
+    CompilerProfile Compiler, int AnnotationVersion, List<PlannedPrimitive> Primitives, List<PlannedRegion> Regions,
     List<CheckCoverage> CheckCoverage, List<Issue> Diagnostics, Dictionary<string, string> Fingerprints,
     List<PlannedScenario> Scenarios, List<PlannedReview> ReviewStatus, string Boundary);
 public sealed record RecordedReview(int SchemaVersion, string Kind, string Path, ReviewDecision Decision, string Boundary);

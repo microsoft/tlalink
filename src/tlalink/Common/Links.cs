@@ -40,7 +40,8 @@ public static class Links
         bool completed = false;
         try
         {
-            NativeLinkIndex native = NativeLinkIndex.Load([target], options, work, pins);
+            NativeLinkIndex native = NativeLinkIndex.Load([target], options, work, pins,
+                Primitives.ModulePath(scopePath, config, pins));
             spans.AddRange(native.Spans);
             declarations.AddRange(native.Declarations);
             diagnostics.AddRange(native.Diagnostics);
@@ -121,7 +122,7 @@ public static class Links
                     source.AttachFormal(candidate);
                     if (source.Diagnostics.Any(d => d.Severity == "error")) throw Invalid("Unsupported source/capture attachment.");
                 }
-                string comment = payload.Bind.Count + payload.Capture.Count + payload.Exclude.Count == 0 ? "" :
+                string comment = payload.Bind.Count + payload.Capture.Count + payload.Exclude.Count + payload.Instance.Count == 0 ? "" :
                     (target.Language == "tla" ? "(* @link " : "/* @link ") + Markup.Encode(payload) +
                     (target.Language == "tla" ? " *)" : " */");
                 int start = attached.Count == 0 ? endpoint.Start : attached[0].Start;

@@ -81,7 +81,7 @@ internal static class CorrespondenceEvidence
             throw new InputException(ErrorCode.InvalidAnnotation, "Invalid archived correspondence scope.");
         Markup.RequireVersion(config.AnnotationVersion);
         ProjectInputs.Unique(config.Targets.Select(t => t.Id), "archived formal targets");
-        MethodSummaries.Validate(config);
+        SynchronizationRegion.Validate(config.Synchronization, null);
         return config;
     }
 }

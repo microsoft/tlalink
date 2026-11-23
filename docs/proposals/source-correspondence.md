@@ -28,9 +28,10 @@ annotation versions and source-side `target` properties are rejected.
 | `bind` | Name a correspondence; formal-owned entries select C# through `source` |
 | `capture` | C# observation metadata alongside the formal-owned binding, for a supported adapter |
 | `exclude` | C# correspondence-scope disposition, not code removal |
+| `instance` | TLA+ only: the synchronization-region field a kind-module INSTANCE definition models; see [instances and sites](../../REFERENCE.md#instances-and-sites) |
 
-`BindAnnotation`, `CaptureAnnotation`, `ExcludeAnnotation` and resolved
-`FormalLinkDeclaration` / `ResolvedCorrespondence` records are the data model.
+`BindAnnotation`, `CaptureAnnotation`, `ExcludeAnnotation`, `InstanceAnnotation` and resolved
+`FormalLinkDeclaration` / `FormalInstanceDeclaration` / `ResolvedCorrespondence` records are the data model.
 `System.Text.Json` handles syntax; enums represent finite capture choices.
 Unknown properties, duplicate JSON properties, invalid IDs, null entries and
 unsupported attachments fail explicitly. No XML or custom token DSL is accepted.
@@ -145,20 +146,13 @@ links are review-only. Statement/expression bindings need an explicit adapter
 for oracle execution. P retains native exploration/induction/monitoring inputs
 and claims. Matching identities do not create a common native execution API.
 
-## Reviewed method summaries
+## Synchronization primitives
 
-The same paired method/operator binding can identify a reviewed method summary;
-there is no fourth inline annotation array. Optional correspondence-scope
-`method_summaries` metadata declares explicit C# source files, pure/atomic
-intent, assumptions, limits, inspection identity and acyclic same-scope summary
-dependencies. The behavior remains a stateless parameterized TLA+ relation.
-
-Project TLC/trace stages explicitly select summary bindings and import their
-modules. Current source-pinned inspection supports substitution; it does not
-prove native argument/state mapping, purity, linearizability or caller
-preconditions. An agent-origin inspection is distinct from human approval.
-Source/model changes invalidate support independently of caller model results.
-See the [reference](../../REFERENCE.md#reviewed-method-summaries).
+Reviewed method summaries were replaced by primitive manifests, which map a C#
+type's members onto a shipped TLA+ kind contract instead of pairing one method
+with a stateless relation. There is still no fourth inline annotation array.
+See the [proposal](synchronization-primitives.md) and the
+[reference](../../REFERENCE.md#synchronization-primitives).
 
 ## Source exclusions and routine logging
 

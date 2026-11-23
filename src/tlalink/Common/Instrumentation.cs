@@ -12,7 +12,8 @@ public sealed record Observation(string Id, string Operator, string Type, [prope
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record EventBinding(string Model, string Step, string Operator, int Arity, string Point,
     string Classification, List<Observation> Observations, [property: JsonRequired] bool Entity = false,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] List<string>? ArgumentTypes = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] List<string>? ArgumentTypes = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] List<StateObservation>? States = null)
 {
     [JsonRequired]
     public string Binding { get; init; } = "";
@@ -26,6 +27,11 @@ public sealed record InstrumentManifest(int SchemaVersion, string BindingId, Dic
     [JsonRequired]
     public int AnnotationVersion { get; init; } = Markup.Version;
 }
+/// <summary>A primitive instance snapshot taken after a bound site completes, compared with Kind!View(Model) in the post-state.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record StateObservation(string Instance, string KindInstance, string Model, List<StateObservationField> Fields);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record StateObservationField(string Name, string Type);
 public sealed record ModelBinding(string Model, Tag Tag, Endpoint Endpoint, int Arity);
 internal sealed record InstrumentationIdentity(Dictionary<string, string> Fingerprints, List<EventBinding> Events);
 
@@ -51,11 +57,22 @@ public static class Instrumentation
                 identities is < 0 or > 3 || identities == 3 && !binding.Entity ||
                 count > 0 && binding.Classification != "transition")
                 throw new InputException(ErrorCode.InvalidTrace, "Invalid action argument types or identity/action arity.");
+            if (binding.States != null && (binding.States.Count is < 1 or > 100 || binding.Point is not ("commit" or "complete") ||
+                binding.States.Select(s => s.Instance).Distinct(StringComparer.Ordinal).Count() != binding.States.Count ||
+                binding.States.Any(s => !Markup.IsCorrespondenceId(s.Instance) || !System.Text.RegularExpressions.Regex.IsMatch(s.KindInstance, "^[A-Za-z_][A-Za-z0-9_]*$") ||
+                    string.IsNullOrWhiteSpace(s.Model) || s.Model.Contains('\n') || s.Fields.Count is < 1 or > 100 ||
+                    s.Fields.Select(f => f.Name).Distinct(StringComparer.Ordinal).Count() != s.Fields.Count ||
+                    s.Fields.Any(f => !System.Text.RegularExpressions.Regex.IsMatch(f.Name, "^[A-Za-z_][A-Za-z0-9_]*$") || f.Type is not ("int" or "bool" or "string")))))
+                throw new InputException(ErrorCode.InvalidTrace, "Invalid primitive state observations of event " + binding.Step + ".");
         }
         return manifest;
     }
 
-    public static InstrumentManifest Generate(CSharpScope scope, List<ModelBinding> models, Packet packet, string output)
+    public static InstrumentManifest Generate(CSharpScope scope, List<ModelBinding> models, Packet packet, string output) =>
+        Generate(scope, models, packet, output, null);
+
+    internal static InstrumentManifest Generate(CSharpScope scope, List<ModelBinding> models, Packet packet, string output,
+        PrimitiveStateCapture? capture)
     {
         scope.RequireCompilable();
         if (packet.LinksStatus != "passed" || packet.Diagnostics.Any(d => d.Severity == "error" || d.Is(ErrorCode.UnboundModelEndpoint, ErrorCode.UncoveredStateWrite, ErrorCode.UnresolvedCompilation)))
@@ -70,6 +87,9 @@ public static class Instrumentation
         Dictionary<string, List<TextChange>> changes = [];
         List<(SourceBinding Binding, string Before, string After)> captures = [];
         Dictionary<(string Path, int Start), string> invocationNames = [];
+        Dictionary<INamedTypeSymbol, CapturedInstance> accessors = new(SymbolEqualityComparer.Default);
+        Dictionary<string, string> fingerprints = new(packet.Fingerprints, FilePaths.Comparer);
+        foreach (var pin in capture?.Pins ?? []) Files.Pin(fingerprints, pin.Key, pin.Value);
         string InvocationIdentity(SourceBinding binding)
         {
             SyntaxNode? function = binding.Node.Ancestors().FirstOrDefault(n =>
@@ -187,16 +207,40 @@ public static class Instrumentation
                 observed.Add(new(name, observation.Endpoint.Name, type, observation.Arity));
                 values.Add($"[{Quote(name)}] = {expression}");
             }
+            // A bound statement containing primitive sites snapshots each mapped instance once it completes, on the calling thread.
+            List<StateObservation> states = [];
+            List<string> stateValues = [];
+            if (capture != null && point is "commit" or "complete" && !usingCapture)
+                foreach (CapturedInstance instance in capture.Sites(binding.Node, binding.Semantics))
+                {
+                    if (instance.Instance.Index != null)
+                        throw new InputException(ErrorCode.InvalidInstrumentation, "State capture of indexed instance " + instance.Instance.Id +
+                            " is unsupported: an owner-indexed model expression has no trace identity.");
+                    bool staticContext = binding.Semantics.GetEnclosingSymbol(binding.Node.SpanStart) is { IsStatic: true };
+                    if (!instance.Field.IsStatic && staticContext)
+                        throw new InputException(ErrorCode.InvalidInstrumentation, "State capture of " + instance.Instance.Id + " needs an instance context.");
+                    string receiver = instance.Field.IsStatic
+                        ? instance.Field.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ".@" + instance.Field.Name
+                        : "this.@" + instance.Field.Name;
+                    states.Add(new(instance.Instance.Id, instance.Instance.KindInstance, instance.Instance.Model,
+                        instance.Mapping.Select(m => new StateObservationField(m.Field, m.Type)).ToList()));
+                    stateValues.Add($"[{Quote(instance.Instance.Id)}] = {receiver}.{PrimitiveStateCapture.Accessor}()");
+                    accessors.TryAdd(instance.Type, instance);
+                }
             if (tag.Options.ContainsKey("hook") && binding.Locks.Count != 0)
                 throw new InputException(ErrorCode.InvalidInstrumentation, "Scheduling hooks inside held source locks are not generated.");
             EventBinding eventBinding = new(binding.Model, tag.Identity, action?.Endpoint.Name ?? "", action?.Arity ?? 0,
-                point, classification, observed, entity is not null, argumentTypes.Count == 0 ? null : argumentTypes)
+                point, classification, observed, entity is not null, argumentTypes.Count == 0 ? null : argumentTypes,
+                states.Count == 0 ? null : states)
                 { Binding = binding.BindingId };
             events.Add(eventBinding);
             string method = arguments.Count > 0 ? "EmitArguments" : entity is null ? "Emit" : "EmitEntity";
             string extra = arguments.Count > 0 ? (entity ?? "null") + ", new object[] { " + string.Join(", ", arguments) + " }, " :
                 entity == null ? "" : entity + ", ";
-            string emit = $"global::TlaLink.Runtime.TraceRuntime.{method}(BINDING_ID, {Quote(binding.Model)}, {Quote(tag.Identity)}, {Quote(point)}, {Quote(classification)}, {connection}, {actor}, {operation}, {extra}{guard}, new global::System.Collections.Generic.Dictionary<string, object> {{ {string.Join(", ", values)} }});";
+            string observations = $"new global::System.Collections.Generic.Dictionary<string, object> {{ {string.Join(", ", values)} }}";
+            string emit = states.Count == 0
+                ? $"global::TlaLink.Runtime.TraceRuntime.{method}(BINDING_ID, {Quote(binding.Model)}, {Quote(tag.Identity)}, {Quote(point)}, {Quote(classification)}, {connection}, {actor}, {operation}, {extra}{guard}, {observations});"
+                : $"global::TlaLink.Runtime.TraceRuntime.EmitStates(BINDING_ID, {Quote(binding.Model)}, {Quote(tag.Identity)}, {Quote(point)}, {Quote(classification)}, {connection}, {actor}, {operation}, {entity ?? "null"}, {(arguments.Count > 0 ? "new object[] { " + string.Join(", ", arguments) + " }" : "null")}, {guard}, {observations}, new global::System.Collections.Generic.Dictionary<string, global::System.Collections.Generic.Dictionary<string, object>> {{ {string.Join(", ", stateValues)} }});";
             string before = point == "invoke" ? emit : "";
             string after = point != "invoke" ? emit : "";
             if (tag.Options.TryGetValue("hook", out string? hook))
@@ -209,7 +253,18 @@ public static class Instrumentation
         }
         if (events.Select(e => (e.Model, e.Step)).Distinct().Count() != events.Count)
             throw new InputException(ErrorCode.InvalidInstrumentation, "Observable step IDs must be unique; use distinct invocation/completion bindings.");
-        string bindingId = Files.HashText(JsonSerializer.Serialize(new InstrumentationIdentity(packet.Fingerprints, events), Files.Json));
+        string bindingId = Files.HashText(JsonSerializer.Serialize(new InstrumentationIdentity(fingerprints, events), Files.Json));
+        foreach (var (type, instance) in accessors)
+        {
+            if (type.GetMembers(PrimitiveStateCapture.Accessor).Length != 0 ||
+                type.DeclaringSyntaxReferences.Select(r => r.GetSyntax()).OfType<TypeDeclarationSyntax>().FirstOrDefault() is not { } declaration ||
+                declaration.CloseBraceToken.IsMissing || declaration.OpenBraceToken.IsMissing)
+                throw new InputException(ErrorCode.InvalidInstrumentation, "State capture needs a braced declaration of " + type.ToDisplayString() +
+                    " without a member named " + PrimitiveStateCapture.Accessor + ".");
+            string file = declaration.SyntaxTree.FilePath;
+            if (!changes.TryGetValue(file, out List<TextChange>? edits)) changes[file] = edits = [];
+            edits.Add(new(new TextSpan(declaration.CloseBraceToken.SpanStart, 0), PrimitiveStateCapture.AccessorText(instance)));
+        }
         Dictionary<(string Path, int Position), List<(int Start, string Text)>> closers = [];
         foreach (var group in captures.GroupBy(c => (c.Binding.Path, c.Binding.Node.SpanStart)))
         {
@@ -269,7 +324,7 @@ public static class Instrumentation
             File.WriteAllText(path, pair.Value, new System.Text.UTF8Encoding(false));
             generated[path] = Files.Hash(path);
         }
-        InstrumentManifest manifest = new(Schema.Version, bindingId, new(packet.Fingerprints), generated, events,
+        InstrumentManifest manifest = new(Schema.Version, bindingId, fingerprints, generated, events,
             "Test-only Roslyn instrumentation; selected synchronous reference IDisposable lifetimes and statement faults are explicit. " +
             "Lock-field capture checked, but atomicity, full source coverage, host authenticity and general refinement are not proved.");
         Files.WriteNew(Path.Combine(output, "bindings.json"), manifest);

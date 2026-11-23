@@ -11,13 +11,14 @@ public static partial class ProjectWorkflow
 {
     internal sealed record TlcStageRun(TlcResult Result, List<StoredStageResult> Stored, TlcResources? Requested, TlcResources Effective);
 
-    private static (string Model, string Config, string Jar, TlaDocument Document) PrepareTlc(string path, AnalysisProject project,
-        AnalysisStage stage, Dictionary<string, string> pins, IReadOnlyDictionary<string, TlaDocument>? parsed)
+    private static (string Model, string Config, string Jar, TlaDocument Document, List<string> ModulePath) PrepareTlc(string path,
+        AnalysisProject project, AnalysisStage stage, Dictionary<string, string> pins, IReadOnlyDictionary<string, TlaDocument>? parsed)
     {
         string model = ProjectInputs.Resolve(path, stage.Models![0]);
         string jar = ProjectInputs.Resolve(path, project.Tools.Jar!.Path);
-        TlaDocument document = parsed != null && parsed.TryGetValue(model, out TlaDocument? known) ? known
-            : TlaBackend.Parse(model, jar, stage.TimeoutSeconds);
+        List<string> modulePath = Primitives.ModulePath(path, project, stage);
+        TlaDocument document = parsed != null && parsed.TryGetValue(ParseKey(model, modulePath), out TlaDocument? known) ? known
+            : TlaBackend.Parse(model, jar, stage.TimeoutSeconds, modulePath);
         foreach (var pin in document.DependencyFingerprints) Files.Pin(pins, pin.Key, pin.Value);
         RequireTlcModel(document);
         // A preflight parse is reused only while its model closure still has the parsed bytes.
@@ -25,13 +26,13 @@ public static partial class ProjectWorkflow
             p.Key.EndsWith(".tla", StringComparison.OrdinalIgnoreCase)))
             if (Files.Hash(pin.Key) != pin.Value)
                 throw new InputException(ErrorCode.WorkflowInputChanged, "Model input changed after preflight: " + pin.Key);
-        return (model, ProjectInputs.Resolve(path, stage.Config!), jar, document);
+        return (model, ProjectInputs.Resolve(path, stage.Config!), jar, document, modulePath);
     }
 
     private static TlcStageRun TlcStage(string path, AnalysisProject project, AnalysisStage stage, string output,
         Dictionary<string, string> pins, bool reuse, IReadOnlyDictionary<string, TlaDocument>? parsed)
     {
-        var (model, config, jar, document) = PrepareTlc(path, project, stage, pins, parsed);
+        var (model, config, jar, document, modulePath) = PrepareTlc(path, project, stage, pins, parsed);
         int fingerprint = stage.Fingerprint ?? 0;
         TlcResultKey key = TlcResultStore.Key(model, config, jar, document.DependencyFingerprints, fingerprint);
         string? store = project.ResultStore == null ? null : ProjectInputs.Resolve(path, project.ResultStore);
@@ -63,7 +64,7 @@ public static partial class ProjectWorkflow
         else
         {
             Stopwatch clock = Stopwatch.StartNew();
-            result = ExecuteTlc(model, config, jar, stage, output, fingerprint);
+            result = ExecuteTlc(model, config, jar, modulePath, stage, output, fingerprint);
             requested = stage.Resources;
             effective = TlcResources.Effective(stage.Kind, stage.Resources);
             if (store != null && TlcResultStore.Store(store, key, stage.Id, "run", output, result, requested, effective,
@@ -77,10 +78,12 @@ public static partial class ProjectWorkflow
         return new(result, stored, requested, effective);
     }
 
-    private static TlcResult ExecuteTlc(string model, string config, string jar, AnalysisStage stage, string output, int fingerprint)
+    private static TlcResult ExecuteTlc(string model, string config, string jar, IReadOnlyList<string> modulePath,
+        AnalysisStage stage, string output, int fingerprint)
     {
         TlcResources resources = TlcResources.Effective(stage.Kind, stage.Resources);
-        var result = Invoke(Executable("java"), [resources.HeapArgument, "-cp", jar, "tlc2.TLC", .. TlcResultStore.Options,
+        string[] library = modulePath.Count == 0 ? [] : ["-DTLA-Library=" + string.Join(Path.PathSeparator, modulePath)];
+        var result = Invoke(Executable("java"), [resources.HeapArgument, .. library, "-cp", jar, "tlc2.TLC", .. TlcResultStore.Options,
             "-fp", fingerprint.ToString(System.Globalization.CultureInfo.InvariantCulture), "-workers", resources.WorkerArgument,
             "-metadir", Path.Combine(output, "states"), "-config", config, model],
             output, stage.TimeoutSeconds, "tlc", allowFailure: true);
@@ -99,7 +102,7 @@ public static partial class ProjectWorkflow
     {
         if (project.ResultStore == null) return null;
         string model = ProjectInputs.Resolve(path, stage.Models![0]);
-        if (!parsed.TryGetValue(model, out TlaDocument? document)) return null;
+        if (!parsed.TryGetValue(ParseKey(model, Primitives.ModulePath(path, project, stage)), out TlaDocument? document)) return null;
         TlcResultKey key = TlcResultStore.Key(model, ProjectInputs.Resolve(path, stage.Config!),
             ProjectInputs.Resolve(path, project.Tools.Jar!.Path), document.DependencyFingerprints, stage.Fingerprint ?? 0);
         return TlcResultStore.Find(ProjectInputs.Resolve(path, project.ResultStore), key)
@@ -141,7 +144,7 @@ public static partial class ProjectWorkflow
             TimeoutSeconds = options.Has("timeout") ? options.Timeout : declared.TimeoutSeconds };
         Dictionary<string, TlaDocument> parsed = new(FilePaths.Comparer);
         Dictionary<string, string> pins = Pins(path, project, policy, [new AnalysisScenario(scenario.Id, [declared])], parsed);
-        var (model, config, jar, document) = PrepareTlc(path, project, stage, pins, parsed);
+        var (model, config, jar, document, modulePath) = PrepareTlc(path, project, stage, pins, parsed);
         TlcResultKey key = TlcResultStore.Key(model, config, jar, document.DependencyFingerprints, fingerprint);
         string store = ProjectInputs.Resolve(path, project.ResultStore);
         StageCheckResult Report(string status, string outcome, string? entry, double duration, TlcResult? result) =>
@@ -161,7 +164,7 @@ public static partial class ProjectWorkflow
         try
         {
             Stopwatch clock = Stopwatch.StartNew();
-            TlcResult result = ExecuteTlc(model, config, jar, stage, work, fingerprint);
+            TlcResult result = ExecuteTlc(model, config, jar, modulePath, stage, work, fingerprint);
             string outcome = Outcome("tlc", result);
             string? created = TlcResultStore.Store(store, key, id, "check-stage", work, result, stage.Resources,
                 TlcResources.Effective("tlc", stage.Resources), stage.TimeoutSeconds, clock.Elapsed.TotalSeconds);

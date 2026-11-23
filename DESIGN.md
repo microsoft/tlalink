@@ -129,36 +129,176 @@ Int32 and Boolean, matching the supported C#/Dafny signatures. They are not trac
 identities or arbitrary JSON values; unsupported scalar kinds and numeric
 encodings fail explicitly rather than being coerced.
 
-### Reviewed method summaries
+### Synchronization primitives
 
-TLA+ method summaries are stateless parameterized relations paired with one
-C# method through existing binding IDs. Explicit correspondence-scope metadata
-declares pure/atomic intent, selected source files, assumptions, limits,
-optional native preconditions and acyclic same-scope summary dependencies.
-Source resolution accepts selected concrete synchronous, nonvirtual methods
-and constructors; native resolution uses SANY, not expression parsing.
-Neither shape validation nor an abstraction label proves purity or linearizability.
+A primitive manifest declares one C# type, its explicit sources, an abstract
+kind and a mapping of every public/internal member to kind actions, wait
+predicates and caller preconditions. Kinds are TLA+ modules shipped with the
+tool under one fixed interface; `custom` primitives name an author module with
+the same shape. This replaces reviewed method summaries: a stateless helper is
+a `custom` primitive with `pure` operations, and the summary inspection, origin
+and staleness rules carry over.
 
-TLC/trace stages explicitly reference summaries. Preflight resolves their
-endpoints and requires their modules in the consumer's native import closure.
-Import presence does not prove that the authored caller actually invokes the
-relation correctly. Caller preconditions and the relation between abstract
-arguments/results and C# remain authored checking/review obligations.
+Validation uses existing authorities only. Roslyn resolves the type with the
+project compiler profile and checks operation completeness; SANY, through the
+existing native index, resolves each named operator in the kind module. There
+is no expression parsing and no inferred member mapping. Asynchronous members
+are accepted because a wait is modeled as the caller's action guarded by the
+kind's wait predicate.
 
-The existing append-only review decision carries human/agent origin and
-summary-support fingerprints. Accepted inspection recording resolves the
-summary and pins its source/compiler context, formal imports and tools.
-Changes make support stale independently of the caller's native result.
-Acceptance requires current support for the transitive declared dependencies;
-agent decisions cannot satisfy human-origin obligations. Reports retain this
-conditional basis, not a generic composed C# correctness claim.
+Primitives are declared by a correspondence scope's `synchronization` section
+and used by TLC/trace stages. Only those stages get the shipped library on the
+SANY/TLC module search path; standalone link and review commands over a scope
+that declares primitives get it too, so model-owned links stay checkable. A
+stage's kind modules must appear, at their resolved paths, in the consumer's
+native import closure, so module bytes are pinned, archived and part of
+result-store keys like any model input, and an author module cannot shadow a
+shipped one.
 
-No helper PC/retry state is generated into caller models. Relations take
-explicit abstract state and outcomes; callers supply separate storage for
-independent instances and preserve unrelated state. Atomic summaries describe
-logical effects, not call duration, fairness, termination or hidden partial
-effects. Formal traces, safety results and inspection remain distinct evidence.
-Existing TLC result-store keys and reuse semantics are unchanged.
+Support is evidence about a primitive, not a cached result. A primitive is
+verified once by the scenarios its manifest names; those scenarios do not
+require its support. Other scenarios require, transitively over `depends_on`,
+a current accepted inspection whose review records one acceptance receipt per
+verification scenario, and each recorded verification run must be accepted
+when re-evaluated. Source, manifest, scope, module, compiler-context and tool
+changes stale the inspection; verification-input changes fail re-evaluation.
+Agent decisions cannot satisfy human obligations.
+
+A library primitive declares a referenced metadata type with no sources, for
+example a cancellation source over `CancellationTokenSource`. It declares only
+the members a region uses, its support is inspection plus any listed scenarios,
+and none of its guarantees can be discharged by a source check.
+
+Two guarantees have static discharge checks over a source primitive's own type
+declarations: `signals-async` (every `TaskCompletionSource` construction passes
+`RunContinuationsAsynchronously`, and every `ManualResetValueTaskSourceCore`
+field sets it on every construction path) and `non-blocking` (no blocking
+waits, `Result`/`GetResult` reads or sleeps, and `await` only inside wait
+operations). Preflight records each check's status with the resolved
+primitive; a failed check blocks runs and acceptance. `fifo-waiters` and
+`cancellable-wait` stay declared and inspection-backed. Running foreign code
+on the caller's stack is a property of an operation, not of the type, so it is
+an operation-level `inline_callbacks` declaration (required for a
+cancellation source's `Cancel`) that restricts where the operation may be used.
+Support is a finite check of a harness against the kind plus inspection; it is
+not a machine-checked refinement proof of the C# type.
+
+### Synchronization regions and environments
+
+A correspondence scope's `synchronization.region` names explicit C# files in
+which only declared primitives, environments and locks may synchronize. The
+checks live in `SynchronizationRegion.cs` and run on one Roslyn compilation of
+the region files and the primitive sources under the project compiler profile:
+raw synchronization types and undeclared `lock` targets, members of declared
+primitive and environment types that their manifests do not declare, every
+`await` classified as a primitive wait, an environment operation, a region
+call or a declared spawn (anything else needs a typed `waits` disposition),
+lock bodies followed through the region methods they call, spawn sites
+matched one-to-one with typed `spawns` entries, and the guarantee checks above.
+Scope-owned `spawns` and `waits` entries reuse the typed source selector of
+`bind`; the formal-owned `exclude` mechanism is not used because these checks
+need no model and belong to the region, not to a formal target.
+
+Environment manifests declare parties outside the region: their types (source
+or metadata), the operations the region uses, which of them are `lock_safe`,
+optional TLA+ contract operators resolved through SANY, obligations and
+evidence stage or scenario IDs. Obligations are assumptions: plans list them
+and project reports carry them on synchronization stages, and an environment
+without evidence is reported as an unsupported assumption, not a failure.
+Environment and library-primitive operations may be members a declared type
+inherits (an interface's `IDisposable.Dispose`); a use is attributed to a
+declared type by its receiver's static type, because Roslyn resolves such a
+call to the base member. Lock-region resumption is only a hazard for a
+primitive that has waiters, so the `signals-async` requirement under a lock
+applies only to primitives that declare a `wait` operation.
+
+These are syntactic Roslyn checks over explicit files, not alias, data-flow or
+runtime analysis. Instances are not traced through locals or parameters, code
+outside the region and implicit callbacks are not followed, and declared
+dispositions, `lock_safe` and environment obligations are trusted. Passing
+checks establish that the declared vocabulary covers the region's
+synchronization sites; they do not prove deadlock freedom or progress.
+
+When the scope has TLA+ targets, the region checks also cover the model side
+(`SynchronizationInstances.cs`). Region fields of declared primitive types are
+instances; each must be declared by an `instance` annotation on the INSTANCE
+definition of its kind module in some target, or excluded. Attaching the
+annotation to the INSTANCE definition keeps the field, the kind module and the
+instance expression in one place that SANY resolves, and requires no separate
+catalogue. Operation sites are Roslyn member uses on those fields; each must
+be contained in a `bind` source selection of a target that declares an instance
+for the site's field, or in an `exclude`, so the code-to-model direction is
+complete over the region, and receivers that are not fields are reported rather
+than traced. Coverage and contract checks are scoped to instance-declaring
+targets: another target, such as a coarser model that binds a whole statement
+or method for its own correspondence without modeling the primitive, neither
+discharges the site nor is contract-checked against it. Model expressions are
+parse-checked by SANY in a generated module that extends the target and is
+discarded, never pinned or archived.
+
+The contract check uses a SANY reference index rather than text matching:
+`TlaIndex.java` reports each named INSTANCE definition of the root module with
+the module it instantiates, and, for every root or extended author-module
+operator definition, the top-level operators its body applies or passes, with
+the instance prefix (`Gate!ExitApply` is instance `Gate`, operator
+`ExitApply`) and the defining module. The walk visits SANY semantic children,
+so LET definitions are included in their enclosing operator, and it records
+instantiated operators as references without walking their bodies. TlaLink
+closes a bound operator over author-module references only and requires the
+kind operators of the site's operation behind the declared prefix. The check
+establishes which kind operations an action uses, not that it applies them to
+the declared instance expression, in the declared order, on a reachable path,
+or that the action refines the C# code; those remain model review and trace
+validation concerns.
+
+The checks run in two places. A `synchronization` stage runs them alone,
+without a model checker, and records a `synchronization-result` receipt whose
+outcome requirements accept like any stage; negative controls are separate
+scopes over named mutant files. Preflight also runs them for every region
+scope that a TLC/trace stage uses a primitive from, except stages of a
+primitive's own verification scenarios, which model the primitive's harness
+rather than the region. A failing region there makes `doctor`/`plan` report
+`failed` and blocks `run`, and its files are pinned into the run, so a model
+result cannot be accepted over a changed or failing region.
+
+### Model-stage assumptions, fairness and trace capture
+
+A model result over a region is conditional on the region's environments and,
+for liveness, on fairness. `ModelAssumptions.cs` derives each TLC/trace
+stage's assumptions in preflight from the regions analyzed for it and from its
+configuration (`TlcConfiguration.cs` reads `SPECIFICATION`, `PROPERTY`/
+`PROPERTIES` and `SYMMETRY` tokens after removing comments, skipping constant
+values; it is not a TLA+ expression parser). The same record flows through the
+plan, `run.json`, the acceptance result and the report node, so presentation
+never re-derives it from changed inputs; acceptance only checks that the
+recorded fairness still equals the declaration, while environment changes
+already stale the run through its pins. A stage with temporal properties must
+declare `fairness`, either kind-module formulas or author text. A kind-module
+entry reuses the contract checks' SANY reference closure from the
+`SPECIFICATION` operator: it shows the formula is conjoined, not that it
+suffices. TLC symmetry reduction can miss liveness violations, so `SYMMETRY`
+together with temporal properties is rejected (`SR115`) rather than reported.
+
+`state_mapping` resolves the former open question by restricting expressions
+instead of trusting them: Roslyn binds each one in the primitive type and a
+closed walk admits field reads, constants, allowlisted properties and pure
+`Math` calls under a fixed operator set (`PrimitiveStateMapping.cs`). Property
+getters and calls are effectful unless allowlisted, because a getter can run
+arbitrary code. Kinds expose a scalar `View(i)` so traces compare scalars with
+the existing typed trace values instead of serializing sequences or sets.
+
+Trace capture extends the existing generated-checker approach rather than
+adding a second validator. `PrimitiveStateCapture.cs` resolves the trace
+target's instances whose primitive maps state, finds the sites a bound
+statement contains, and instrumentation inserts one snapshot method into the
+primitive type, called on the calling thread after the statement and before
+`TraceRuntime.EmitStates` takes the recorder lock. The primitive's own lock
+(`state_lock`) gives an internally consistent snapshot; nothing makes it the
+exact post-state of the bound action under concurrency. That is acceptable
+because each snapshot only adds a conjunct to the event's match: interference
+can cause a false rejection, never a false witness. Owner-indexed instances
+have no trace identity for their index and are rejected. Projecting one run
+onto several component models is not implemented.
 
 ### Source and native correspondence
 
@@ -413,7 +553,17 @@ and freshness handling are in a separate partial frontend under `PlusCal`.
 | `CSharpFrontend.cs` | Explicit Roslyn compilation, attachments, field symbols and boundaries |
 | `SourcePreparation.cs` | Byte-pinned source copies, Roslyn/SANY annotation targets, explicit C# control mutations and readonly copy validation |
 | `TlaBackend.cs` | Bounded fresh Java processes, normalized spans, dependencies and freshness |
-| `TlaIndex.java` | Authoritative SANY/PlusCal adapter |
+| `TlaIndex.java` | Authoritative SANY/PlusCal adapter, including INSTANCE definitions and operator reference rows |
+| `Tla/Primitives/TlaLink*.tla` | Shipped primitive kind modules, deployed under `primitives` |
+| `Primitives.cs` | Primitive manifests, stage selection, Roslyn completeness, SANY operator resolution and support pins |
+| `SynchronizationGuarantees.cs` | Static `signals-async` and `non-blocking` discharge checks over a source primitive's declarations |
+| `Environments.cs` | Environment manifests, Roslyn member resolution and SANY operator resolution |
+| `SynchronizationRegion.cs` | Region declaration validation and Roslyn region checks (raw synchronization, operations, waits, locks, spawns) |
+| `SynchronizationInstances.cs` | Instance declarations, operation sites, bind/exclude coverage and SANY-reference contract checks for region scopes with TLA+ targets |
+| `SynchronizationWorkflow.cs` | Region scopes of a selection, environment evidence IDs and preflight blocking |
+| `ModelAssumptions.cs` / `TlcConfiguration.cs` | Model-stage environment and fairness assumptions, `SR112`..`SR115`, and the TLC configuration directives they read |
+| `PrimitiveStateMapping.cs` | Roslyn validation of `state_mapping` expressions (`SR116`/`SR117`) against the kind `View` fields |
+| `PrimitiveStateCapture.cs` | Trace-target instances with mapped state, their sites in bound statements and the generated snapshot method |
 | `ModelScope.cs` | Model annotations, explicit label bindings and operator arities |
 | `Review.cs` | Scoped uniqueness/link/coverage diagnostics and review questions |
 | `Instrumentation.cs` | Validated, separately generated source captures and binding manifest |
@@ -1027,7 +1177,7 @@ New runs do not add required review inputs to their execution fingerprints.
 For a completed run with broad input pins, acceptance can classify an input as
 review-only only when a required review explicitly declares it and validated
 stage evidence establishes the execution closure. Authoring documents, compiler
-references, stage declarations, method-summary support and backend fingerprints
+references, stage declarations, primitive inputs and backend fingerprints
 remain execution dependencies; execution wins when roles overlap. Stored TLC
 keys supply its complete execution inputs. Missing, inconsistent or unknown
 closures keep current-byte checks conservative. Every original archived input
@@ -1058,7 +1208,7 @@ of archive integrity validation.
 Only equivalent execution and checker projections permit automatic current-policy
 reassessment in the existing accept/explain/report flow. The resulting typed
 policy comparison links recorded/current project, policy and authoring hashes,
-compatibility judgments and changed areas. Native stage/compiler/summary input
+compatibility judgments and changed areas. Native stage/compiler/primitive input
 roles override this exemption, including when a stage consumed authoring bytes.
 Incomplete evidence or an unknown execution closure cannot turn a changed
 project into current execution. All original archived inputs and artifacts are

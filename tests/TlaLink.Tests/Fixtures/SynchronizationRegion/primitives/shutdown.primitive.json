@@ -1,0 +1,16 @@
+{
+  "schema_version": 4,
+  "kind": "primitive",
+  "id": "shutdown",
+  "type": "T:System.Threading.CancellationTokenSource",
+  "sources": [],
+  "primitive_kind": "cancellation-source",
+  "operations": [
+    { "member": "M:System.Threading.CancellationTokenSource.#ctor", "role": "create" },
+    { "member": "M:System.Threading.CancellationTokenSource.Cancel", "role": "signal", "actions": ["Cancel"], "inline_callbacks": true },
+    { "member": "P:System.Threading.CancellationTokenSource.Token", "role": "query" }
+  ],
+  "verification": { "scenarios": [], "inspection": "shutdown-inspection" },
+  "assumptions": ["Callbacks registered on the token do not take region locks."],
+  "limits": ["Library type: only the members the region uses are declared; support is inspection only."]
+}

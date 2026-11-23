@@ -136,6 +136,21 @@ public static class TraceValidation
                 string observed = binding.Point == "invoke" ? expression : $"({expression})'";
                 predicates.Add($"{observed} = {TlaValue(value)}");
             }
+            List<StateObservation> expectedStates = binding.States ?? [];
+            Dictionary<string, Dictionary<string, TraceScalar>> states = entry.States ?? [];
+            if (entry.States is { Count: 0 } || states.Count != expectedStates.Count)
+                throw new InputException(ErrorCode.InvalidTrace, "Missing or extra primitive state snapshots.");
+            foreach (StateObservation state in expectedStates)
+            {
+                if (!states.TryGetValue(state.Instance, out Dictionary<string, TraceScalar>? values) || values.Count != state.Fields.Count)
+                    throw new InputException(ErrorCode.InvalidTrace, "Primitive state snapshot disagrees with instance " + state.Instance + ".");
+                foreach (StateObservationField field in state.Fields)
+                {
+                    if (!values.TryGetValue(field.Name, out TraceScalar? value) || !HasType(value, field.Type))
+                        throw new InputException(ErrorCode.InvalidTrace, "Primitive state field " + state.Instance + "." + field.Name + " has an incorrect type.");
+                    predicates.Add($"((({state.KindInstance}!View({state.Model})).{field.Name}))' = {TlaValue(value)}");
+                }
+            }
             matches.Add("(" + string.Join(" /\\ ", predicates.Select(p => "(" + p + ")")) + ")");
         }
         HashSet<string> connections = events.Select(e => TlaValue(e.Connection)).ToHashSet();

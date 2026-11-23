@@ -35,6 +35,7 @@ public sealed class CliOptions
                 "match", "expected-matches", "capture", "clear-capture", "reason", "output", "timeout", "format", "apply", "strip-source", "reason-policy",
                 "context", "view", "include-unlinked", "calls", "source-file", "kind", "status", "capture-point",
                 "search", "section", "offset", "limit", "group-by", "callee-source", "callee-limit", "callee-max-lines"],
+            ["check-synchronization"] = ["scope", "reference", "define", "language-version", "jar", "timeout", "format"],
             ["check-dafny"] = ["config", "dafny", "output", "timeout", "format"],
             ["read-dafny"] = ["result", "current", "format"],
             ["check-regression"] = ["config", "output", "timeout", "format"],
@@ -58,9 +59,9 @@ public sealed class CliOptions
             ["check"] = ["source", "model", "reference", "define", "jar", "timeout", "format", "baseline", "snapshot"],
             ["review"] = ["source", "model", "reference", "define", "jar", "timeout", "format", "step", "baseline", "snapshot"],
             ["inputs"] = ["model", "jar", "timeout", "format"],
-            ["instrument"] = ["source", "model", "reference", "define", "jar", "timeout", "format", "output"],
+            ["instrument"] = ["source", "model", "reference", "define", "jar", "timeout", "format", "output", "module-path"],
             ["execute"] = ["manifest", "project", "trace", "output", "timeout", "format", "arg"],
-            ["validate-trace"] = ["model", "manifest", "trace", "config", "execution", "jar", "output", "timeout", "format", "init", "next", "workers", "max-heap-mib"],
+            ["validate-trace"] = ["model", "manifest", "trace", "config", "execution", "jar", "output", "timeout", "format", "init", "next", "workers", "max-heap-mib", "module-path"],
             ["inspect-integrated"] = ["bindings", "dafny", "jar", "reference", "define", "output", "baseline", "timeout", "format"],
             ["verify-integrated"] = ["bindings", "dafny", "jar", "reference", "define", "output", "baseline", "timeout", "format"],
             ["test-integrated"] = ["bindings", "dafny", "jar", "reference", "define", "output", "baseline", "timeout", "format"],
@@ -75,7 +76,7 @@ public sealed class CliOptions
         if (Command is "links" or "symbols" or "inspect-source" or "inspect" or "check" or "review" or "instrument" or
             "inspect-integrated" or "verify-integrated" or "test-integrated" or "inspect-p" or "check-p")
             options = [.. options, "language-version"];
-        HashSet<string> repeated = ["source", "model", "reference", "define", "arg", "evidence", "capture"];
+        HashSet<string> repeated = ["source", "model", "reference", "define", "arg", "evidence", "capture", "module-path"];
         if (Command == "toolchain") repeated.Add("tool");
         if (Command == "report") repeated.Add("run");
         if (Command == "links" && Action == "inspect")
@@ -96,7 +97,7 @@ public sealed class CliOptions
             "source-file", "kind", "status", "capture-point", "search", "section", "offset", "limit",
             "group-by", "callee-source", "callee-limit", "callee-max-lines" }.Any(Has))
             throw new InputException(ErrorCode.InvalidAnnotation, "Inspection filters and presentation options require links inspect.");
-        int maximum = Command == "check-stage" ? 172800 : 7200;
+        int maximum = Command == "check-stage" ? ProjectWorkflow.MaxStageTimeoutSeconds : 7200;
         if (!int.TryParse(Get("timeout", "30"), out int timeout) || timeout < 1 || timeout > maximum) throw new InputException($"Timeout must be 1..{maximum} seconds.");
     }
 

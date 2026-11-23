@@ -49,9 +49,9 @@ against the caller's directory; do not assume the tool changes that directory.
 | Can I read the member and its structural facts together? | `symbols describe --id <emitted-ID>` |
 
 ```powershell
-.\TlaLink.ps1 symbols find --source .\examples\MethodSummaries\src\PermitGate.cs --name TryTake --format summary
-.\TlaLink.ps1 symbols describe --source .\examples\MethodSummaries\src\PermitGate.cs --id 'M:SummaryExample.PermitGate.TryTake' --format summary
-.\TlaLink.ps1 symbols callees --source .\examples\MethodSummaries\src\PermitGate.cs --id 'M:SummaryExample.PermitGate.TryTake' --format summary
+.\TlaLink.ps1 symbols find --source .\examples\Primitives\src\PermitGate.cs --name TryAcquire --format summary
+.\TlaLink.ps1 symbols describe --source .\examples\Primitives\src\PermitGate.cs --id 'M:PrimitivesExample.PermitGate.TryAcquire' --format summary
+.\TlaLink.ps1 symbols callees --source .\examples\Primitives\src\PermitGate.cs --id 'M:PrimitivesExample.PermitGate.TryAcquire' --format summary
 ```
 
 Start with `summary`: it retains symbol matches and utility-query details

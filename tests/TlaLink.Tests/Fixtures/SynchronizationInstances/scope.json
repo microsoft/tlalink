@@ -1,0 +1,17 @@
+{
+  "schema_version": 4,
+  "kind": "correspondence-scope",
+  "annotation_version": 4,
+  "targets": [
+    {
+      "id": "pump",
+      "language": "tla",
+      "inputs": ["Pump.tla"],
+      "required_bindings": ["pump::enter", "pump::exit", "pump::close", "pump::drained", "pump::stop", "pump::resume"]
+    }
+  ],
+  "synchronization": {
+    "region": ["Pump.cs"],
+    "primitives": ["primitives/gate.primitive.json", "primitives/latch.primitive.json"]
+  }
+}

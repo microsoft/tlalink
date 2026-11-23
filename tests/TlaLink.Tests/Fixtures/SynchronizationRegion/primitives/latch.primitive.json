@@ -1,0 +1,16 @@
+{
+  "schema_version": 4,
+  "kind": "primitive",
+  "id": "closed",
+  "type": "T:SyncFixture.Latch",
+  "sources": ["../Latch.cs"],
+  "primitive_kind": "latch",
+  "operations": [
+    { "member": "M:SyncFixture.Latch.TrySet", "role": "signal", "actions": ["TrySet"] },
+    { "member": "M:SyncFixture.Latch.WaitAsync", "role": "wait", "wait": "CanWait" }
+  ],
+  "guarantees": ["signals-async"],
+  "verification": { "scenarios": ["latch"], "inspection": "latch-inspection" },
+  "assumptions": [],
+  "limits": ["Synthetic region fixture; its kind verification is not part of these checks."]
+}

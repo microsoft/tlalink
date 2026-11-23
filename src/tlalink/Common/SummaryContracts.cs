@@ -34,7 +34,7 @@ public sealed record ReviewSummary(string Id, string Status, string? Disposition
 public sealed record AcceptanceSummary(string Project, string Scenario, string ExecutionStatus,
     string ArchiveStatus, string CurrentApplicability, string AcceptanceStatus,
     List<RequirementSummary> Requirements, List<Issue> Diagnostics, List<CoverageSummary> CheckCoverage,
-    List<AcceptanceMethodSummary> MethodSummaries, List<ReviewSummary> ReviewStatus,
+    List<AcceptancePrimitive> Primitives, List<ReviewSummary> ReviewStatus,
     List<string> NextActions, string Boundary) : CommandSummaryResult("acceptance-result")
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -52,6 +52,7 @@ public sealed record AcceptanceSummary(string Project, string Scenario, string E
     public List<string> ChangedReviewInputs { get; init; } = [];
     public WorkflowPolicyReassessment? PolicyReassessment { get; init; }
     public List<WorkflowNextStep> NextSteps { get; init; } = [];
+    public List<StageAssumptions> Assumptions { get; init; } = [];
 }
 public sealed record WorkflowStageSummary(string Id, string Kind, string ExecutionStatus, string Outcome,
     double DurationSeconds, string Evidence, List<string> Diagnostics, TlcStatistics? Statistics,
@@ -59,17 +60,31 @@ public sealed record WorkflowStageSummary(string Id, string Kind, string Executi
 public sealed record ReuseSummary(int Reused, int Executed);
 public sealed record WorkflowRunSummary(string Project, string Scenario, string ExecutionStatus,
     string AcceptanceStatus, List<WorkflowStageSummary> Stages, List<Issue> Diagnostics,
-    ReuseSummary Reuse, List<ResolvedMethodSummaryView> MethodSummaries) : CommandSummaryResult("analysis-run");
-public sealed record ResolvedMethodSummaryView(string Scope, MethodSummary Summary, string Method,
-    EndpointSummary? Precondition);
-public sealed record PlannedMethodSummaryView(string Scope, MethodSummary Summary, string Method,
-    string InspectionStatus, ReviewOrigin InspectionOrigin, string Boundary, EndpointSummary? Precondition);
+    ReuseSummary Reuse, List<ResolvedPrimitiveView> Primitives) : CommandSummaryResult("analysis-run");
+public sealed record ResolvedPrimitiveView(string Scope, string Id, string PrimitiveKind, string Type, string Module,
+    int Operations);
+public sealed record PlannedPrimitiveView(string Scope, string Id, string PrimitiveKind, string Type, string Module,
+    int Operations, List<string> VerificationScenarios, string Inspection, string InspectionStatus,
+    ReviewOrigin InspectionOrigin, List<string> DependsOn, List<GuaranteeSummary> Guarantees,
+    List<string> OutstandingGuarantees, string Boundary);
+public sealed record GuaranteeSummary(string Guarantee, string Status);
+public sealed record RegionPrimitiveSummary(string Id, string Origin, List<GuaranteeSummary> Guarantees);
+public sealed record RegionEnvironmentSummary(string Id, string EnvironmentKind, List<string> LockSafe,
+    List<string> Obligations, List<string> Evidence, string Support);
+public sealed record RegionSummary(string Scope, string Role, List<string> Stages, string Status, int Files,
+    RegionSites Sites, List<RegionPrimitiveSummary> Primitives, List<RegionEnvironmentSummary> Environments,
+    List<Issue> Diagnostics, RegionCoverageSummary? Coverage = null);
+/// <summary>Instance site counts by status, per-instance coverage and per-bind contract status of a region with TLA+ targets.</summary>
+public sealed record RegionCoverageSummary(int Bound, int Excluded, int Unbound, int Unresolved, List<RegionInstance> Instances,
+    List<RegionContract> Contracts);
+public sealed record SynchronizationSummary(string Status, RegionSummary Region, string Boundary)
+    : CommandSummaryResult("synchronization-result");
 public sealed record PlannedStageSummary(string Id, string Kind, List<string> DependsOn,
     TlcResources? RequestedResources, TlcResources? Resources, int? Fingerprint,
-    List<StoredOutcome>? Stored, List<MethodSummaryUse>? MethodSummaries);
+    List<StoredOutcome>? Stored, List<PrimitiveUse>? Primitives, StageAssumptions? Assumptions = null);
 public sealed record PlannedScenarioSummary(string Id, List<PlannedStageSummary> Stages);
 public sealed record ProjectPlanSummary([property: JsonIgnore] string NativeKind, string Project, string Status, int AnnotationVersion,
-    List<PlannedMethodSummaryView> MethodSummaries, List<CoverageSummary> CheckCoverage,
+    List<PlannedPrimitiveView> Primitives, List<RegionSummary> Regions, List<CoverageSummary> CheckCoverage,
     List<Issue> Diagnostics, List<PlannedScenarioSummary> Scenarios, List<PlannedReview> ReviewStatus,
     string Boundary) : CommandSummaryResult(NativeKind);
 public sealed record SourceInventorySummary(string Status, int AnnotationVersion, int SourceCount,
