@@ -122,13 +122,31 @@ public static class TlcResultStore
             Files.WriteNew(Path.Combine(temporary, "entry.json"), new TlcStoredResult(Schema.Version, "tlc-stored-result",
                 Hash(key), Family(key), key, outcome, stage, producer, DateTimeOffset.UtcNow,
                 Files.Hash(typeof(Program).Assembly.Location), requested, resources, timeout, duration, result.Statistics, files));
-            try { Directory.Move(temporary, final); }
-            catch (IOException) when (Directory.Exists(final)) { return null; }
-            return final;
+            return MoveIntoPlace(temporary, final) ? final : null;
         }
         finally
         {
-            if (Directory.Exists(temporary)) Directory.Delete(temporary, true);
+            try { if (Directory.Exists(temporary)) Directory.Delete(temporary, true); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+    }
+
+    // Scanners and indexers can briefly hold a freshly written file open, which makes the rename fail with
+    // access denied; retry before treating the entry as unstorable. A concurrent writer of the same key wins.
+    static bool MoveIntoPlace(string temporary, string final)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                Directory.Move(temporary, final);
+                return true;
+            }
+            catch (IOException) when (Directory.Exists(final)) { return false; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException && attempt < 6)
+            {
+                Thread.Sleep(100 * attempt);
+            }
         }
     }
 

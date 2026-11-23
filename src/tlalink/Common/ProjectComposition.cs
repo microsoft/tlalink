@@ -191,8 +191,8 @@ public static class ProjectComposition
                 foreach (ExecutionProfile profile in document.Profiles)
                 {
                     Id(file, profile.Id);
-                    if (profile.TimeoutSeconds is < 1 or > 7200)
-                        throw Error(file, "Profile timeout must be 1..7200 seconds: " + profile.Id);
+                    if (profile.TimeoutSeconds < 1 || profile.TimeoutSeconds > ProjectWorkflow.MaxStageTimeoutSeconds)
+                        throw Error(file, $"Profile timeout must be 1..{ProjectWorkflow.MaxStageTimeoutSeconds} seconds: " + profile.Id);
                     Budget(file, profile.Kind, profile.Resources);
                     if (!profiles.TryAdd(profile.Id, profile)) throw Error(file, "Duplicate execution profile: " + profile.Id);
                 }
@@ -281,7 +281,8 @@ public static class ProjectComposition
                 resources = profile.Resources;
             }
             else timeout = source.TimeoutSeconds ?? throw Error(file, source.Id + ": timeout_seconds or profile is required.");
-            if (timeout is < 1 or > 7200) throw Error(file, source.Id + ": timeout must be 1..7200 seconds.");
+            if (timeout < 1 || timeout > ProjectWorkflow.MaxStageTimeoutSeconds)
+                throw Error(file, source.Id + $": timeout must be 1..{ProjectWorkflow.MaxStageTimeoutSeconds} seconds.");
             Budget(file, source.Kind, resources);
             return new(source.Id, source.Kind, source.DependsOn ?? [], timeout,
                 source.Bindings == null ? null : Rebase(file, source.Bindings),

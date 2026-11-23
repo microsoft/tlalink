@@ -97,7 +97,7 @@ public sealed class CliOptions
             "source-file", "kind", "status", "capture-point", "search", "section", "offset", "limit",
             "group-by", "callee-source", "callee-limit", "callee-max-lines" }.Any(Has))
             throw new InputException(ErrorCode.InvalidAnnotation, "Inspection filters and presentation options require links inspect.");
-        int maximum = Command == "check-stage" ? 172800 : 7200;
+        int maximum = Command == "check-stage" ? ProjectWorkflow.MaxStageTimeoutSeconds : 7200;
         if (!int.TryParse(Get("timeout", "30"), out int timeout) || timeout < 1 || timeout > maximum) throw new InputException($"Timeout must be 1..{maximum} seconds.");
     }
 

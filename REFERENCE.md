@@ -1100,7 +1100,8 @@ composition with the ordinary source reader. This file-list expansion does
 not validate preparation semantics, establish acceptance or authorize deletion.
 
 An execution-profile document declares `profiles`, each with `id`, stage `kind`,
-`timeout_seconds` and optional TLC/trace `resources`. A stage selects `profile`
+`timeout_seconds` (1..172800, that is up to 48 hours) and optional TLC/trace
+`resources`. A stage selects `profile`
 instead of inline timeout/resources; mixing them or selecting a different kind is
 an error. Omitted `depends_on` means no dependencies. Profiles do not change native
 properties, bounds, configuration approvals or acceptance requirements.
@@ -1288,7 +1289,10 @@ store. The project's routine budget and requirements stay unchanged:
 .\TlaLink.ps1 check-stage --project .\tlalink.project.json --stage <tlc-stage> --fingerprint 3 --workers 16 --max-heap-mib 16384 --timeout 14400
 ```
 
-`check-stage` accepts deadlines up to 48 hours. It reports `stored`,
+`check-stage` accepts deadlines up to 48 hours, the same ceiling as stage and
+profile `timeout_seconds`. A deadline is a process wait timeout, not a wall-clock
+end time: on Windows it does not advance while the host sleeps or hibernates, so a
+suspended run resumes with its remaining budget. It reports `stored`,
 `already-stored` or `incomplete` (exit 2) and never accepts requirements.
 `plan` lists the stored outcomes available for each TLC stage. In run
 summaries, each stage reports `reused` and the top-level `reuse` reports the

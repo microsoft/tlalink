@@ -6,6 +6,9 @@ namespace TlaLink;
 
 public static partial class ProjectWorkflow
 {
+    /// <summary>Longest stage or profile timeout a project may declare (48 hours).</summary>
+    public const int MaxStageTimeoutSeconds = 172800;
+
     internal static IReadOnlyList<string>? CliHost { get; set; }
 
     public static int Run(CliOptions options)

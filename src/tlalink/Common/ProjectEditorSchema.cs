@@ -104,7 +104,7 @@ public static class ProjectEditorSchema
                 if (properties["timeout_seconds"] is JsonObject timeout)
                 {
                     timeout["minimum"] = 1;
-                    timeout["maximum"] = 7200;
+                    timeout["maximum"] = ProjectWorkflow.MaxStageTimeoutSeconds;
                 }
                 if (properties["primitives"] is JsonObject primitives)
                 {

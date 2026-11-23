@@ -132,7 +132,7 @@ public static class ProjectInputs
                     if (stage.Kind is "tlc" or "trace") _ = TlcResources.Effective(stage.Kind, stage.Resources);
                     ModelAssumptions.Validate(stage);
                     if (!StageKinds.Contains(stage.Kind, StringComparer.Ordinal) ||
-                        stage.TimeoutSeconds is < 1 or > 7200)
+                        stage.TimeoutSeconds < 1 || stage.TimeoutSeconds > ProjectWorkflow.MaxStageTimeoutSeconds)
                         throw new InputException(ErrorCode.WorkflowPrerequisiteMissing, "Unsupported stage kind or timeout: " + stage.Id);
                     Unique(stage.DependsOn, "dependencies");
                     if (stage.DependsOn.Any(d => !scenario.Stages.Any(s => s.Id == d) || d == stage.Id))
